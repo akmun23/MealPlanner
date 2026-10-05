@@ -146,11 +146,7 @@ enum class AppTab(val label: String, val icon: ImageVector) {
 private sealed interface AppPage {
     data object Settings : AppPage
     data object IngredientLibrary : AppPage
-    data class IngredientEditor(
-        val ingredientId: String?,
-        val returnToRecipeEditor: Boolean = false,
-        val recipeId: String? = null
-    ) : AppPage
+    data class IngredientEditor(val ingredientId: String?) : AppPage
     data class RecipeDetail(val recipeId: String) : AppPage
     data class RecipeEditor(val recipeId: String?) : AppPage
 }
@@ -212,20 +208,8 @@ fun MealPlannerApp(
         is AppPage.IngredientEditor -> IngredientEditorScreen(
             state = state,
             ingredientId = current.ingredientId,
-            onBack = {
-                page = if (current.returnToRecipeEditor) {
-                    AppPage.RecipeEditor(current.recipeId)
-                } else {
-                    AppPage.IngredientLibrary
-                }
-            },
-            onSaved = {
-                page = if (current.returnToRecipeEditor) {
-                    AppPage.RecipeEditor(current.recipeId)
-                } else {
-                    AppPage.IngredientLibrary
-                }
-            }
+            onBack = { page = AppPage.IngredientLibrary },
+            onSaved = { page = AppPage.IngredientLibrary }
         )
 
         is AppPage.RecipeDetail -> RecipeDetailScreen(
@@ -240,13 +224,6 @@ fun MealPlannerApp(
             recipeId = current.recipeId,
             onBack = {
                 page = current.recipeId?.let { AppPage.RecipeDetail(it) }
-            },
-            onNewIngredient = {
-                page = AppPage.IngredientEditor(
-                    ingredientId = null,
-                    returnToRecipeEditor = true,
-                    recipeId = current.recipeId
-                )
             },
             onSaved = { savedId ->
                 page = savedId?.let { AppPage.RecipeDetail(it) }
@@ -1005,7 +982,6 @@ private fun RecipeEditorScreen(
     state: MealPlannerState,
     recipeId: String?,
     onBack: () -> Unit,
-    onNewIngredient: () -> Unit,
     onSaved: (String?) -> Unit
 ) {
     val existing = recipeId?.let { id ->
@@ -1018,6 +994,62 @@ private fun RecipeEditorScreen(
     var notes by remember(recipeId) { mutableStateOf(existing?.notes ?: "") }
     var imageUri by remember(recipeId) { mutableStateOf(existing?.imageUri) }
     var ingredientSearch by remember { mutableStateOf("") }
+    var showNewIngredient by remember { mutableStateOf(false) }
+    var newIngredientName by remember { mutableStateOf("") }
+    var newIngredientType by remember { mutableStateOf(QuantityType.MASS) }
+
+    if (showNewIngredient) {
+        AlertDialog(
+            onDismissRequest = { showNewIngredient = false },
+            title = { Text("Ny ingrediens") },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedTextField(
+                        value = newIngredientName,
+                        onValueChange = { newIngredientName = it },
+                        label = { Text("Navn") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    SelectorChips(
+                        items = QuantityType.entries,
+                        selected = newIngredientType,
+                        label = { it.danishName() },
+                        onSelected = { newIngredientType = it }
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val clean = newIngredientName.trim()
+                        state.addIngredient(
+                            name = clean,
+                            type = newIngredientType,
+                            preferredUnit = MeasurementUnit.defaultFor(newIngredientType)
+                        )
+                        ingredientSearch = clean
+                        newIngredientName = ""
+                        newIngredientType = QuantityType.MASS
+                        showNewIngredient = false
+                    },
+                    enabled = newIngredientName.isNotBlank()
+                ) {
+                    Text("Tilføj")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showNewIngredient = false }
+                ) {
+                    Text("Annuller")
+                }
+            }
+        )
+    }
 
     val drafts = remember(recipeId) {
         mutableStateListOf<DraftRequirement>().apply {
@@ -1140,7 +1172,10 @@ private fun RecipeEditorScreen(
             ) {
                 item {
                     OutlinedButton(
-                        onClick = onNewIngredient,
+                        onClick = {
+                            newIngredientName = ingredientSearch.trim()
+                            showNewIngredient = true
+                        },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(14.dp)
                     ) {
