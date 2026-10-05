@@ -53,6 +53,28 @@ private data class IngredientCategoryRow(
 )
 
 @Serializable
+private data class IngredientProteinRow(
+    @SerialName("household_id") val householdId: String,
+    @SerialName("ingredient_id") val ingredientId: String,
+    @SerialName("is_protein") val isProtein: Boolean = false
+)
+
+@Serializable
+private data class RecipeCategoryRow(
+    val id: String,
+    @SerialName("household_id") val householdId: String,
+    val name: String,
+    val position: Int = 0
+)
+
+@Serializable
+private data class RecipeCategoryAssignmentRow(
+    @SerialName("household_id") val householdId: String,
+    @SerialName("recipe_id") val recipeId: String,
+    @SerialName("category_id") val categoryId: String
+)
+
+@Serializable
 private data class RecipeRow(
     val id: String,
     @SerialName("household_id") val householdId: String,
@@ -163,6 +185,7 @@ private data class FeedbackRow(
 data class CloudSnapshot(
     val ingredients: List<Ingredient>,
     val ingredientCategories: List<IngredientCategory>,
+    val recipeCategories: List<RecipeCategoryOption>,
     val recipes: List<Recipe>,
     val pantry: Map<String, Double>,
     val dayModes: Map<DayOfWeek, DayMode>,
@@ -207,6 +230,21 @@ class CloudMealRepository(
                     filter { eq("household_id", householdId) }
                 }.decodeList<IngredientCategoryRow>()
             }
+            val proteinFlagsDeferred = async {
+                supabase.from("ingredient_protein_flags").select {
+                    filter { eq("household_id", householdId) }
+                }.decodeList<IngredientProteinRow>()
+            }
+            val recipeCategoriesDeferred = async {
+                supabase.from("recipe_categories").select {
+                    filter { eq("household_id", householdId) }
+                }.decodeList<RecipeCategoryRow>()
+            }
+            val categoryAssignmentsDeferred = async {
+                supabase.from("recipe_category_assignments").select {
+                    filter { eq("household_id", householdId) }
+                }.decodeList<RecipeCategoryAssignmentRow>()
+            }
             val recipesDeferred = async {
                 supabase.from("recipes").select {
                     filter { eq("household_id", householdId) }
@@ -248,6 +286,9 @@ class CloudMealRepository(
 
             val ingredientRows = ingredientsDeferred.await()
             val categoryRows = categoriesDeferred.await()
+            val proteinFlagRows = proteinFlagsDeferred.await()
+            val recipeCategoryRows = recipeCategoriesDeferred.await()
+            val categoryAssignmentRows = categoryAssignmentsDeferred.await()
             val recipeRows = recipesDeferred.await()
             val rotationRows = rotationDeferred.await()
             val recipeTimeRows = recipeTimeDeferred.await()
@@ -310,6 +351,8 @@ class CloudMealRepository(
                 .awaitAll()
                 .toMap()
 
+            val proteinByIngredient = proteinFlagRows.associateBy { it.ingredientId }
+
             val ingredients = ingredientRows.mapNotNull { row ->
                 val type = runCatching { QuantityType.valueOf(row.quantityType) }.getOrNull()
                     ?: return@mapNotNull null
@@ -322,12 +365,14 @@ class CloudMealRepository(
                     quantityType = type,
                     preferredUnit = unit,
                     shoppingCategoryId = row.shoppingCategoryId,
+                    isProtein = proteinByIngredient[row.id]?.isProtein == true,
                     imageUri = row.imagePath?.let(urls::get),
                     imagePath = row.imagePath
                 )
             }
 
             val requirements = recipeIngredientRows.groupBy { it.recipeId }
+            val categoryByRecipe = categoryAssignmentRows.associateBy { it.recipeId }
             val rotationByRecipe = rotationRows.associateBy { it.recipeId }
             val timeByRecipe = recipeTimeRows.associateBy { it.recipeId }
             val recipes = recipeRows.map { row ->
@@ -342,6 +387,7 @@ class CloudMealRepository(
                     prepMinutes = timeByRecipe[row.id]?.prepMinutes,
                     proteinTag = row.proteinTag,
                     categoryTag = row.categoryTag,
+                    categoryId = categoryByRecipe[row.id]?.categoryId,
                     notes = row.notes,
                     imageUri = row.imagePath?.let(urls::get),
                     imagePath = row.imagePath,
@@ -371,6 +417,15 @@ class CloudMealRepository(
                     .sortedWith(compareBy<IngredientCategoryRow> { it.position }.thenBy { it.name.lowercase() })
                     .map {
                         IngredientCategory(
+                            id = it.id,
+                            name = it.name,
+                            position = it.position
+                        )
+                    },
+                recipeCategories = recipeCategoryRows
+                    .sortedWith(compareBy<RecipeCategoryRow> { it.position }.thenBy { it.name.lowercase() })
+                    .map {
+                        RecipeCategoryOption(
                             id = it.id,
                             name = it.name,
                             position = it.position
@@ -521,6 +576,16 @@ class CloudMealRepository(
             onConflict = "id"
         }
 
+        supabase.from("ingredient_protein_flags").upsert(
+            IngredientProteinRow(
+                householdId = householdId,
+                ingredientId = ingredient.id,
+                isProtein = ingredient.isProtein
+            )
+        ) {
+            onConflict = "household_id,ingredient_id"
+        }
+
         ingredient.copy(
             imagePath = finalImage.first,
             imageUri = finalImage.second
@@ -618,6 +683,25 @@ class CloudMealRepository(
             onConflict = "household_id,recipe_id"
         }
 
+        if (recipe.categoryId == null) {
+            supabase.from("recipe_category_assignments").delete {
+                filter {
+                    eq("household_id", householdId)
+                    eq("recipe_id", recipe.id)
+                }
+            }
+        } else {
+            supabase.from("recipe_category_assignments").upsert(
+                RecipeCategoryAssignmentRow(
+                    householdId = householdId,
+                    recipeId = recipe.id,
+                    categoryId = recipe.categoryId
+                )
+            ) {
+                onConflict = "household_id,recipe_id"
+            }
+        }
+
         supabase.from("recipe_ingredients").delete {
             filter {
                 eq("household_id", householdId)
@@ -642,6 +726,44 @@ class CloudMealRepository(
             imagePath = finalImage.first,
             imageUri = finalImage.second
         )
+    }
+
+    suspend fun createRecipeCategory(
+        name: String,
+        position: Int
+    ): RecipeCategoryOption = withContext(Dispatchers.IO) {
+        val row = RecipeCategoryRow(
+            id = UUID.randomUUID().toString(),
+            householdId = householdId,
+            name = name.normalizedDisplayName(),
+            position = position
+        )
+
+        val saved = supabase.from("recipe_categories").insert(row) {
+            select()
+        }.decodeList<RecipeCategoryRow>().firstOrNull() ?: row
+
+        RecipeCategoryOption(
+            id = saved.id,
+            name = saved.name,
+            position = saved.position
+        )
+    }
+
+    suspend fun renameRecipeCategory(
+        categoryId: String,
+        name: String
+    ) = withContext(Dispatchers.IO) {
+        supabase.from("recipe_categories").update(
+            {
+                set("name", name.normalizedDisplayName())
+            }
+        ) {
+            filter {
+                eq("household_id", householdId)
+                eq("id", categoryId)
+            }
+        }
     }
 
     suspend fun deleteRecipe(id: String, imagePath: String?) = withContext(Dispatchers.IO) {
@@ -809,7 +931,10 @@ class CloudMealRepository(
 
         val watchedTables = listOf(
             "ingredients",
+            "ingredient_protein_flags",
             "shopping_categories",
+            "recipe_categories",
+            "recipe_category_assignments",
             "recipes",
             "recipe_rotation_settings",
             "recipe_time_settings",
