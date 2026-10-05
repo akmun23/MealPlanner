@@ -344,8 +344,11 @@ object WeeklyPlanner {
             )
 
             if (index > 0) {
-                val previous = visible[index - 1].second
+                val (previousDay, previous) = visible[index - 1]
+                val isAdjacentCalendarDay = day.value == previousDay.value + 1
+
                 if (
+                    isAdjacentCalendarDay &&
                     previous != null &&
                     recipe.proteinTag.isNotBlank() &&
                     previous.proteinTag.equals(recipe.proteinTag, ignoreCase = true)
@@ -353,6 +356,7 @@ object WeeklyPlanner {
                     score -= weights.adjacentProtein
                 }
                 if (
+                    isAdjacentCalendarDay &&
                     previous != null &&
                     recipe.categoryTag.isNotBlank() &&
                     previous.categoryTag.equals(recipe.categoryTag, ignoreCase = true)
