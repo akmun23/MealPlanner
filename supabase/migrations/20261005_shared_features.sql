@@ -580,6 +580,9 @@ create table if not exists public.recipe_category_assignments (
 create index if not exists idx_recipe_category_assignment_category_household
     on public.recipe_category_assignments(category_id, household_id);
 
+create index if not exists idx_recipe_category_assignment_recipe_household
+    on public.recipe_category_assignments(recipe_id, household_id);
+
 alter table public.recipe_category_assignments enable row level security;
 
 drop policy if exists recipe_category_assignments_member_all
