@@ -40,6 +40,8 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+private const val AUTH_REDIRECT_URL = "com.example.mealplanner://login-callback"
+
 
 @Serializable
 data class HouseholdMemberDto(
@@ -97,7 +99,10 @@ class CloudAccountRepository {
         email: String,
         password: String
     ) {
-        supabase.auth.signUpWith(Email) {
+        supabase.auth.signUpWith(
+            provider = Email,
+            redirectUrl = AUTH_REDIRECT_URL
+        ) {
             this.email = email.trim()
             this.password = password
         }
