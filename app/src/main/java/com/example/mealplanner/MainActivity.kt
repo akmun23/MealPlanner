@@ -944,7 +944,9 @@ fun RecipesScreen(
                     searchQuery.isBlank() ||
                         recipe.name.contains(searchQuery, ignoreCase = true) ||
                         category.danishName().contains(searchQuery, ignoreCase = true) ||
-                        recipe.proteinTag.contains(searchQuery, ignoreCase = true)
+                        state.recipeProteinNames(recipe).any {
+                            it.contains(searchQuery, ignoreCase = true)
+                        }
 
                 val matchesMeal =
                     mealFilter == "Alle måltider" ||
@@ -1098,7 +1100,9 @@ private fun RecipeListCard(
                         add("Kun manuelt")
                     }
                     recipe.prepMinutes?.let { add("${it} min") }
-                    if (recipe.proteinTag.isNotBlank()) add(recipe.proteinTag)
+                    state.recipeProteinNames(recipe)
+                        .takeIf { it.isNotEmpty() }
+                        ?.let { add(it.joinToString(" + ")) }
                 }
 
                 Text(
@@ -1179,7 +1183,9 @@ private fun RecipeDetailScreen(
                             add("Kun manuelt")
                         }
                         recipe.prepMinutes?.let { add("${it} min") }
-                        if (recipe.proteinTag.isNotBlank()) add(recipe.proteinTag)
+                        state.recipeProteinNames(recipe)
+                            .takeIf { it.isNotEmpty() }
+                            ?.let { add(it.joinToString(" + ")) }
                     }.joinToString(" · "),
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1308,7 +1314,6 @@ private fun RecipeEditorScreen(
         ?.takeIf { it in 1..1440 }
     val prepTimeValid =
         prepMinutesText.isBlank() || prepMinutes != null
-    var protein by remember(recipeId) { mutableStateOf(existing?.proteinTag ?: "") }
     var category by remember(recipeId) {
         mutableStateOf(
             existing?.categoryTag?.toRecipeCategory()
@@ -1459,16 +1464,6 @@ private fun RecipeEditorScreen(
             }
 
             item {
-                OutlinedTextField(
-                    value = protein,
-                    onValueChange = { protein = it },
-                    label = { Text("Protein") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-            }
-
-            item {
                 Text(
                     "Ingredienser",
                     style = MaterialTheme.typography.titleLarge,
@@ -1549,7 +1544,6 @@ private fun RecipeEditorScreen(
                                 mealType = mealType,
                                 autoRotationEnabled = autoRotationEnabled,
                                 prepMinutes = prepMinutes,
-                                protein = protein,
                                 category = category,
                                 notes = notes,
                                 imageUri = imageUri,
@@ -1566,7 +1560,6 @@ private fun RecipeEditorScreen(
                                 mealType = mealType,
                                 autoRotationEnabled = autoRotationEnabled,
                                 prepMinutes = prepMinutes,
-                                protein = protein,
                                 category = category,
                                 notes = notes,
                                 imageUri = imageUri,
@@ -1745,7 +1738,11 @@ private fun IngredientListCard(
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    "${ingredient.quantityType.danishName()} · ${ingredient.preferredUnit.selectorLabel()}",
+                    buildList {
+                        add(ingredient.quantityType.danishName())
+                        add(ingredient.preferredUnit.selectorLabel())
+                        if (ingredient.isProtein) add("Protein")
+                    }.joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1788,6 +1785,10 @@ private fun IngredientEditorScreen(
                     ?.id
                 ?: state.ingredientCategories.firstOrNull()?.id
         )
+    }
+
+    var isProtein by remember(ingredientId) {
+        mutableStateOf(existing?.isProtein ?: false)
     }
 
     var imageUri by remember(ingredientId) {
@@ -1892,6 +1893,23 @@ private fun IngredientEditorScreen(
             }
 
             item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Protein",
+                        modifier = Modifier.weight(1f),
+                        fontWeight = FontWeight.Bold
+                    )
+                    Switch(
+                        checked = isProtein,
+                        onCheckedChange = { isProtein = it }
+                    )
+                }
+            }
+
+            item {
                 Button(
                     onClick = {
                         val saved = if (existing == null) {
@@ -1899,6 +1917,7 @@ private fun IngredientEditorScreen(
                                 name = name,
                                 type = type,
                                 shoppingCategoryId = shoppingCategoryId,
+                                isProtein = isProtein,
                                 imageUri = imageUri,
                                 preferredUnit = preferredUnit
                             )
@@ -1908,6 +1927,7 @@ private fun IngredientEditorScreen(
                                 name = name,
                                 type = type,
                                 shoppingCategoryId = shoppingCategoryId,
+                                isProtein = isProtein,
                                 preferredUnit = preferredUnit,
                                 imageUri = imageUri
                             )
