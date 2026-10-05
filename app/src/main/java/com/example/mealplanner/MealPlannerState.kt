@@ -72,9 +72,12 @@ class MealPlannerState(
 
     private suspend fun initialize() {
         try {
-            if (repository.isCloudEmpty()) {
-                legacyStorage.load()?.let { snapshot ->
-                    repository.importLocal(snapshot)
+            if (repository.needsLocalImport()) {
+                val localSnapshot = legacyStorage.load()
+                if (localSnapshot != null) {
+                    repository.importLocal(localSnapshot)
+                } else {
+                    repository.markLocalImportCompleted()
                 }
             }
 
