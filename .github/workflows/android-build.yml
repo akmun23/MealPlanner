@@ -30,5 +30,8 @@ jobs:
           echo "SUPABASE_URL=https://example.supabase.co" >> local.properties
           echo "SUPABASE_PUBLISHABLE_KEY=sb_publishable_build_check" >> local.properties
 
+      - name: Run unit tests
+        run: bash ./gradlew :app:testDebugUnitTest --stacktrace
+
       - name: Build debug APK
         run: bash ./gradlew :app:assembleDebug --stacktrace

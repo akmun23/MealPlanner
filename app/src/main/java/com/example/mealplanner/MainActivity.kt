@@ -52,6 +52,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -75,11 +76,14 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.awaitCancellation
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -153,14 +157,43 @@ fun MealPlannerApp(
     onLogout: () -> Unit
 ) {
     val context = LocalContext.current
-    val state = remember { MealPlannerState(context.applicationContext) }
+    val scope = rememberCoroutineScope()
+    val state = remember(household.id) {
+        MealPlannerState(
+            context = context.applicationContext,
+            householdId = household.id,
+            scope = scope
+        )
+    }
+
+    LaunchedEffect(state) {
+        try {
+            awaitCancellation()
+        } finally {
+            state.close()
+        }
+    }
 
     var tab by remember { mutableStateOf(AppTab.WEEK) }
     var page by remember { mutableStateOf<AppPage?>(null) }
 
+    state.lastError?.let { error ->
+        AlertDialog(
+            onDismissRequest = { state.clearError() },
+            title = { Text("Fejl") },
+            text = { Text(error) },
+            confirmButton = {
+                TextButton(onClick = { state.clearError() }) {
+                    Text("OK")
+                }
+            }
+        )
+    }
+
     when (val current = page) {
         AppPage.Settings -> SettingsScreen(
             household = household,
+            state = state,
             onBack = { page = null },
             onLogout = onLogout
         )
@@ -233,6 +266,11 @@ fun MealPlannerApp(
                         .fillMaxSize()
                         .padding(padding)
                 ) {
+                    if (state.isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                    } else {
                     when (tab) {
                         AppTab.WEEK -> WeekScreen(state)
                         AppTab.RECIPES -> RecipesScreen(
@@ -243,6 +281,7 @@ fun MealPlannerApp(
                         )
                         AppTab.PANTRY -> PantryScreen(state)
                         AppTab.SHOPPING -> ShoppingScreen(state)
+                    }
                     }
                 }
             }
@@ -329,13 +368,21 @@ fun WeekScreen(state: MealPlannerState) {
             onClick = { state.generateWeek() },
             enabled = state.recipes.isNotEmpty() &&
                 state.weeklySandwichRecipeId != null &&
-                homeCount > 0,
+                homeCount > 0 &&
+                !state.isPlanning,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp),
             shape = RoundedCornerShape(16.dp)
         ) {
-            Icon(Icons.Filled.Refresh, contentDescription = null)
+            if (state.isPlanning) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Icon(Icons.Filled.Refresh, contentDescription = null)
+            }
             Spacer(Modifier.width(8.dp))
             Text("Ny madplan", fontWeight = FontWeight.Bold)
         }
@@ -515,59 +562,64 @@ fun DayCard(
 
                 Spacer(Modifier.height(8.dp))
 
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Box(modifier = Modifier.weight(1f)) {
-                        OutlinedButton(
-                            onClick = { showRecipePicker = true },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text("Skift ret")
-                        }
+                if (isSandwich) {
+                    OutlinedButton(
+                        onClick = { state.moveSandwich() },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Flyt sandwich")
+                    }
+                } else {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            OutlinedButton(
+                                onClick = { showRecipePicker = true },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text("Skift ret")
+                            }
 
-                        DropdownMenu(
-                            expanded = showRecipePicker,
-                            onDismissRequest = { showRecipePicker = false }
-                        ) {
-                            DropdownMenuItem(
-                                text = { Text("Ingen ret") },
-                                onClick = {
-                                    state.setRecipeForDay(day, null)
-                                    showRecipePicker = false
-                                }
-                            )
-
-                            state.recipes.forEach { candidate ->
+                            DropdownMenu(
+                                expanded = showRecipePicker,
+                                onDismissRequest = { showRecipePicker = false }
+                            ) {
                                 DropdownMenuItem(
-                                    text = { Text(candidate.name) },
+                                    text = { Text("Ingen ret") },
                                     onClick = {
-                                        state.setRecipeForDay(day, candidate.id)
+                                        state.setRecipeForDay(day, null)
                                         showRecipePicker = false
                                     }
                                 )
+
+                                state.recipes
+                                    .filter { it.id != state.weeklySandwichRecipeId }
+                                    .forEach { candidate ->
+                                        DropdownMenuItem(
+                                            text = { Text(candidate.name) },
+                                            onClick = {
+                                                state.setRecipeForDay(day, candidate.id)
+                                                showRecipePicker = false
+                                            }
+                                        )
+                                    }
                             }
                         }
-                    }
 
-                    if (isSandwich) {
-                        OutlinedButton(
-                            onClick = { state.moveSandwich() },
-                            shape = RoundedCornerShape(12.dp)
-                        ) {
-                            Text("Flyt")
-                        }
-                    } else if (!isLocked && recipe != null) {
-                        IconButton(
-                            onClick = { state.reroll(day) }
-                        ) {
-                            Icon(
-                                Icons.Filled.Refresh,
-                                contentDescription = "Ny ret"
-                            )
+                        if (!isLocked && recipe != null) {
+                            IconButton(
+                                onClick = { state.reroll(day) }
+                            ) {
+                                Icon(
+                                    Icons.Filled.Refresh,
+                                    contentDescription = "Ny ret"
+                                )
+                            }
                         }
                     }
                 }
@@ -942,6 +994,62 @@ private fun RecipeEditorScreen(
     var notes by remember(recipeId) { mutableStateOf(existing?.notes ?: "") }
     var imageUri by remember(recipeId) { mutableStateOf(existing?.imageUri) }
     var ingredientSearch by remember { mutableStateOf("") }
+    var showNewIngredient by remember { mutableStateOf(false) }
+    var newIngredientName by remember { mutableStateOf("") }
+    var newIngredientType by remember { mutableStateOf(QuantityType.MASS) }
+
+    if (showNewIngredient) {
+        AlertDialog(
+            onDismissRequest = { showNewIngredient = false },
+            title = { Text("Ny ingrediens") },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    OutlinedTextField(
+                        value = newIngredientName,
+                        onValueChange = { newIngredientName = it },
+                        label = { Text("Navn") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+
+                    SelectorChips(
+                        items = QuantityType.entries,
+                        selected = newIngredientType,
+                        label = { it.danishName() },
+                        onSelected = { newIngredientType = it }
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val clean = newIngredientName.trim()
+                        state.addIngredient(
+                            name = clean,
+                            type = newIngredientType,
+                            preferredUnit = MeasurementUnit.defaultFor(newIngredientType)
+                        )
+                        ingredientSearch = clean
+                        newIngredientName = ""
+                        newIngredientType = QuantityType.MASS
+                        showNewIngredient = false
+                    },
+                    enabled = newIngredientName.isNotBlank()
+                ) {
+                    Text("Tilføj")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showNewIngredient = false }
+                ) {
+                    Text("Annuller")
+                }
+            }
+        )
+    }
 
     val drafts = remember(recipeId) {
         mutableStateListOf<DraftRequirement>().apply {
@@ -1056,6 +1164,26 @@ private fun RecipeEditorScreen(
                     onValueChange = { ingredientSearch = it },
                     placeholder = "Tilføj ingrediens"
                 )
+            }
+
+            if (
+                ingredientSearch.isNotBlank() &&
+                matches.isEmpty()
+            ) {
+                item {
+                    OutlinedButton(
+                        onClick = {
+                            newIngredientName = ingredientSearch.trim()
+                            showNewIngredient = true
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Ny ingrediens")
+                    }
+                }
             }
 
             items(matches, key = { it.id }) { ingredient ->
@@ -1226,15 +1354,7 @@ private fun IngredientLibraryScreen(
 
     SubpageScaffold(
         title = "Ingredienser",
-        onBack = onBack,
-        action = {
-            IconButton(onClick = onAdd) {
-                Icon(
-                    Icons.Filled.Add,
-                    contentDescription = "Ny ingrediens"
-                )
-            }
-        }
+        onBack = onBack
     ) { padding ->
         LazyColumn(
             modifier = Modifier
@@ -1243,6 +1363,18 @@ private fun IngredientLibraryScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
+            item {
+                Button(
+                    onClick = onAdd,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Ny ingrediens")
+                }
+            }
+
             item {
                 SearchField(
                     value = search,
@@ -1783,10 +1915,55 @@ private fun ShoppingItemCard(
 @Composable
 private fun SettingsScreen(
     household: HouseholdDto,
+    state: MealPlannerState,
     onBack: () -> Unit,
     onLogout: () -> Unit
 ) {
     val context = LocalContext.current
+    var showFeedback by remember { mutableStateOf(false) }
+    var feedback by remember { mutableStateOf("") }
+
+    if (showFeedback) {
+        AlertDialog(
+            onDismissRequest = { showFeedback = false },
+            title = { Text("Send forslag") },
+            text = {
+                OutlinedTextField(
+                    value = feedback,
+                    onValueChange = { feedback = it.take(2000) },
+                    placeholder = { Text("Hvad kan blive bedre?") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 4,
+                    maxLines = 8
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        state.submitFeedback(feedback) { sent ->
+                            if (sent) {
+                                feedback = ""
+                                showFeedback = false
+                                Toast.makeText(
+                                    context,
+                                    "Forslag sendt",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    },
+                    enabled = feedback.trim().length >= 3
+                ) {
+                    Text("Send")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showFeedback = false }) {
+                    Text("Annuller")
+                }
+            }
+        )
+    }
 
     SubpageScaffold(
         title = "Indstillinger",
@@ -1843,6 +2020,16 @@ private fun SettingsScreen(
                             Text("Kopiér")
                         }
                     }
+                }
+            }
+
+            item {
+                OutlinedButton(
+                    onClick = { showFeedback = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("Send forslag")
                 }
             }
 

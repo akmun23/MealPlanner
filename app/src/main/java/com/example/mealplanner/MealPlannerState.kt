@@ -7,13 +7,30 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import java.text.NumberFormat
 import java.time.DayOfWeek
+import java.time.LocalDate
+import java.time.temporal.TemporalAdjusters
 import java.util.Locale
+import java.util.UUID
 
-class MealPlannerState(context: Context) {
-
-    private val storage = LocalStorage(context)
+class MealPlannerState(
+    context: Context,
+    householdId: String,
+    private val scope: CoroutineScope
+) {
+    private val repository = CloudMealRepository(
+        context = context.applicationContext,
+        householdId = householdId
+    )
+    private val legacyStorage = LocalStorage(context.applicationContext)
+    private val reloadMutex = Mutex()
 
     val ingredients = mutableStateListOf<Ingredient>()
     val recipes = mutableStateListOf<Recipe>()
@@ -22,8 +39,24 @@ class MealPlannerState(context: Context) {
     val plan = mutableStateMapOf<DayOfWeek, String?>()
     val lockedDays = mutableStateSetOf<DayOfWeek>()
     val shoppingChecked = mutableStateMapOf<String, Boolean>()
+    val history = mutableStateListOf<MealHistoryEntry>()
 
     var weeklySandwichRecipeId by mutableStateOf<String?>(null)
+        private set
+
+    var sandwichDay by mutableStateOf<DayOfWeek?>(null)
+        private set
+
+    var weeklyPlanId by mutableStateOf<String?>(null)
+        private set
+
+    var isLoading by mutableStateOf(true)
+        private set
+
+    var isPlanning by mutableStateOf(false)
+        private set
+
+    var lastError by mutableStateOf<String?>(null)
         private set
 
     init {
@@ -32,41 +65,135 @@ class MealPlannerState(context: Context) {
             plan[day] = null
         }
 
-        storage.load()?.let { snapshot ->
-            ingredients.addAll(snapshot.ingredients)
-            recipes.addAll(snapshot.recipes)
-            pantry.putAll(snapshot.pantry)
-            dayModes.putAll(snapshot.dayModes)
-            plan.putAll(snapshot.plan)
-            weeklySandwichRecipeId = snapshot.weeklySandwichRecipeId
-            shoppingChecked.putAll(snapshot.shoppingChecked)
+        scope.launch {
+            initialize()
         }
-
-        orderedWeekDays.forEach { day ->
-            if (dayModes[day] == DayMode.FIXED) dayModes[day] = DayMode.AUTO
-        }
-
-        if (recipes.isEmpty()) createTestData()
-        save()
     }
 
-    fun toggleLockDay(day: DayOfWeek) {
-        if (day in lockedDays) {
-            lockedDays.remove(day)
-        } else {
-            if (plan[day] != null && dayModes[day] != DayMode.AWAY) {
-                lockedDays.add(day)
+    private suspend fun initialize() {
+        try {
+            if (repository.needsLocalImport()) {
+                val localSnapshot = legacyStorage.load()
+                if (localSnapshot != null) {
+                    repository.importLocal(localSnapshot)
+                } else {
+                    repository.markLocalImportCompleted()
+                }
+            }
+
+            reload()
+            repository.startRealtime(scope) {
+                reload()
+            }
+        } catch (e: Exception) {
+            lastError = e.message ?: "Kunne ikke hente data."
+        } finally {
+            isLoading = false
+        }
+    }
+
+    suspend fun close() {
+        repository.stopRealtime()
+    }
+
+    fun clearError() {
+        lastError = null
+    }
+
+    private suspend fun reload() {
+        reloadMutex.withLock {
+            applySnapshot(repository.loadCurrent())
+        }
+    }
+
+    private fun applySnapshot(snapshot: CloudSnapshot) {
+        ingredients.clear()
+        ingredients.addAll(snapshot.ingredients)
+
+        recipes.clear()
+        recipes.addAll(snapshot.recipes)
+
+        pantry.clear()
+        pantry.putAll(snapshot.pantry)
+
+        dayModes.clear()
+        orderedWeekDays.forEach { day ->
+            dayModes[day] = snapshot.dayModes[day] ?: DayMode.AUTO
+        }
+
+        plan.clear()
+        orderedWeekDays.forEach { day ->
+            plan[day] = snapshot.plan[day]
+        }
+
+        lockedDays.clear()
+        lockedDays.addAll(snapshot.lockedDays)
+
+        shoppingChecked.clear()
+        shoppingChecked.putAll(snapshot.shoppingChecked)
+
+        history.clear()
+        history.addAll(snapshot.history)
+
+        weeklyPlanId = snapshot.weeklyPlanId
+        weeklySandwichRecipeId = snapshot.weeklySandwichRecipeId
+        sandwichDay = snapshot.sandwichDay
+    }
+
+    private fun runMutation(block: suspend () -> Unit) {
+        scope.launch {
+            try {
+                block()
+            } catch (e: Exception) {
+                lastError = e.message ?: "Ændringen kunne ikke gemmes."
+                runCatching { reload() }
             }
         }
     }
 
+    private fun persistWeek(clearChecks: Boolean = false) {
+        val id = weeklyPlanId ?: return
+        val planSnapshot = plan.toMap()
+        val modesSnapshot = dayModes.toMap()
+        val locksSnapshot = lockedDays.toSet()
+        val sandwichRecipe = weeklySandwichRecipeId
+        val selectedSandwichDay = sandwichDay
+
+        runMutation {
+            if (clearChecks) {
+                repository.clearShoppingChecks(id)
+            }
+            repository.saveWeekState(
+                weeklyPlanId = id,
+                plan = planSnapshot,
+                dayModes = modesSnapshot,
+                lockedDays = locksSnapshot,
+                sandwichRecipeId = sandwichRecipe,
+                sandwichDay = selectedSandwichDay
+            )
+        }
+    }
+
+    fun toggleLockDay(day: DayOfWeek) {
+        if (dayModes[day] == DayMode.AWAY || recipeFor(day) == null) return
+
+        if (day in lockedDays) {
+            lockedDays.remove(day)
+        } else {
+            lockedDays.add(day)
+        }
+        persistWeek()
+    }
+
     fun setRecipeForDay(day: DayOfWeek, recipeId: String?) {
+        if (day == sandwichDay) return
+
         plan[day] = recipeId
         if (recipeId != null) {
             dayModes[day] = DayMode.AUTO
         }
         shoppingChecked.clear()
-        save()
+        persistWeek(clearChecks = true)
     }
 
     fun addIngredient(
@@ -76,17 +203,27 @@ class MealPlannerState(context: Context) {
         preferredUnit: MeasurementUnit = MeasurementUnit.defaultFor(type)
     ) {
         val clean = name.trim()
-        if (clean.isBlank()) return
-        if (ingredients.any { it.name.equals(clean, ignoreCase = true) }) return
-        if (preferredUnit.quantityType != type) return
+        if (
+            clean.isBlank() ||
+            preferredUnit.quantityType != type ||
+            ingredients.any { it.name.equals(clean, ignoreCase = true) }
+        ) return
 
-        ingredients += Ingredient(
+        val ingredient = Ingredient(
+            id = UUID.randomUUID().toString(),
             name = clean,
             quantityType = type,
             preferredUnit = preferredUnit,
             imageUri = imageUri
         )
-        save()
+
+        ingredients += ingredient
+
+        runMutation {
+            val saved = repository.upsertIngredient(ingredient)
+            val index = ingredients.indexOfFirst { it.id == saved.id }
+            if (index >= 0) ingredients[index] = saved
+        }
     }
 
     fun updateIngredient(
@@ -97,24 +234,47 @@ class MealPlannerState(context: Context) {
         imageUri: String? = null
     ) {
         val index = ingredients.indexOfFirst { it.id == id }
-        if (index == -1) return
-        val clean = name.trim()
-        if (clean.isBlank()) return
+        if (
+            index < 0 ||
+            name.isBlank() ||
+            preferredUnit.quantityType != type
+        ) return
 
-        ingredients[index] = ingredients[index].copy(
-            name = clean,
+        val updated = ingredients[index].copy(
+            name = name.trim(),
             quantityType = type,
             preferredUnit = preferredUnit,
             imageUri = imageUri
         )
-        save()
+        ingredients[index] = updated
+
+        runMutation {
+            val saved = repository.upsertIngredient(updated)
+            val current = ingredients.indexOfFirst { it.id == id }
+            if (current >= 0) ingredients[current] = saved
+        }
     }
 
     fun deleteIngredient(ingredientId: String) {
+        if (recipes.any { recipe ->
+                recipe.ingredients.any { it.ingredientId == ingredientId }
+            }
+        ) {
+            lastError = "Ingrediensen bruges i en opskrift."
+            return
+        }
+
+        val ingredient = ingredients.find { it.id == ingredientId } ?: return
         ingredients.removeAll { it.id == ingredientId }
         pantry.remove(ingredientId)
         shoppingChecked.remove(ingredientId)
-        save()
+
+        runMutation {
+            repository.deleteIngredient(
+                id = ingredientId,
+                imagePath = ingredient.imagePath
+            )
+        }
     }
 
     fun addRecipe(
@@ -125,28 +285,24 @@ class MealPlannerState(context: Context) {
         imageUri: String? = null,
         requirements: List<DraftRequirement>
     ) {
-        val clean = name.trim()
-        if (clean.isBlank() || requirements.isEmpty()) return
-
-        val converted = requirements.mapNotNull { draft ->
-            val ingredient = ingredients.find { it.id == draft.ingredientId } ?: return@mapNotNull null
-            if (draft.unit.quantityType != ingredient.quantityType) return@mapNotNull null
-            RecipeIngredient(
-                ingredientId = draft.ingredientId,
-                amountBase = draft.unit.toBase(draft.amount)
-            )
-        }
-
-        if (converted.isEmpty()) return
-        recipes += Recipe(
-            name = clean,
-            proteinTag = protein.trim(),
-            categoryTag = category.trim(),
-            notes = notes.trim(),
+        val recipe = buildRecipe(
+            id = UUID.randomUUID().toString(),
+            name = name,
+            protein = protein,
+            category = category,
+            notes = notes,
             imageUri = imageUri,
-            ingredients = converted
-        )
-        save()
+            imagePath = null,
+            requirements = requirements
+        ) ?: return
+
+        recipes += recipe
+
+        runMutation {
+            val saved = repository.upsertRecipe(recipe)
+            val index = recipes.indexOfFirst { it.id == saved.id }
+            if (index >= 0) recipes[index] = saved
+        }
     }
 
     fun updateRecipe(
@@ -159,145 +315,317 @@ class MealPlannerState(context: Context) {
         requirements: List<DraftRequirement>
     ) {
         val index = recipes.indexOfFirst { it.id == id }
-        if (index == -1) return
+        if (index < 0) return
+
+        val existing = recipes[index]
+        val updated = buildRecipe(
+            id = id,
+            name = name,
+            protein = protein,
+            category = category,
+            notes = notes,
+            imageUri = imageUri,
+            imagePath = existing.imagePath,
+            requirements = requirements
+        ) ?: return
+
+        recipes[index] = updated
+
+        runMutation {
+            val saved = repository.upsertRecipe(updated)
+            val current = recipes.indexOfFirst { it.id == saved.id }
+            if (current >= 0) recipes[current] = saved
+        }
+    }
+
+    private fun buildRecipe(
+        id: String,
+        name: String,
+        protein: String,
+        category: String,
+        notes: String,
+        imageUri: String?,
+        imagePath: String?,
+        requirements: List<DraftRequirement>
+    ): Recipe? {
         val clean = name.trim()
-        if (clean.isBlank() || requirements.isEmpty()) return
+        if (clean.isBlank() || requirements.isEmpty()) return null
 
         val converted = requirements.mapNotNull { draft ->
-            val ingredient = ingredients.find { it.id == draft.ingredientId } ?: return@mapNotNull null
-            if (draft.unit.quantityType != ingredient.quantityType) return@mapNotNull null
+            val ingredient = ingredients.find { it.id == draft.ingredientId }
+                ?: return@mapNotNull null
+
+            if (
+                draft.amount <= 0.0 ||
+                draft.unit.quantityType != ingredient.quantityType
+            ) return@mapNotNull null
+
             RecipeIngredient(
                 ingredientId = draft.ingredientId,
                 amountBase = draft.unit.toBase(draft.amount)
             )
         }
 
-        if (converted.isEmpty()) return
-        recipes[index] = recipes[index].copy(
+        if (converted.isEmpty()) return null
+
+        return Recipe(
+            id = id,
             name = clean,
             proteinTag = protein.trim(),
             categoryTag = category.trim(),
             notes = notes.trim(),
             imageUri = imageUri,
+            imagePath = imagePath,
             ingredients = converted
         )
-        save()
     }
 
     fun deleteRecipe(recipeId: String) {
+        val recipe = recipes.find { it.id == recipeId } ?: return
+
         recipes.removeAll { it.id == recipeId }
-        plan.keys.forEach { day -> if (plan[day] == recipeId) plan[day] = null }
-        if (weeklySandwichRecipeId == recipeId) weeklySandwichRecipeId = null
-        save()
+        plan.keys.forEach { day ->
+            if (plan[day] == recipeId) plan[day] = null
+        }
+
+        if (weeklySandwichRecipeId == recipeId) {
+            weeklySandwichRecipeId = null
+            sandwichDay = null
+        }
+
+        shoppingChecked.clear()
+
+        runMutation {
+            repository.deleteRecipe(
+                id = recipeId,
+                imagePath = recipe.imagePath
+            )
+            repository.setHouseholdSandwich(weeklySandwichRecipeId)
+            weeklyPlanId?.let {
+                repository.clearShoppingChecks(it)
+                repository.saveWeekState(
+                    weeklyPlanId = it,
+                    plan = plan.toMap(),
+                    dayModes = dayModes.toMap(),
+                    lockedDays = lockedDays.toSet(),
+                    sandwichRecipeId = weeklySandwichRecipeId,
+                    sandwichDay = sandwichDay
+                )
+            }
+        }
     }
 
     fun setWeeklySandwichRecipe(recipeId: String) {
         if (recipes.none { it.id == recipeId }) return
-        val previousSandwichId = weeklySandwichRecipeId
-        weeklySandwichRecipeId = recipeId
 
-        if (previousSandwichId != null && previousSandwichId != recipeId) {
-            plan.keys.forEach { day ->
-                if (plan[day] == previousSandwichId) plan[day] = null
-            }
+        weeklySandwichRecipeId = recipeId
+        if (
+            sandwichDay == null ||
+            sandwichDay?.let { dayModes[it] == DayMode.AWAY } == true
+        ) {
+            sandwichDay = WeeklyPlanner.preferredSandwichDay(dayModes)
         }
 
-        if (plan.values.any { it != null }) repositionSandwichToPreferredDay(fillVacatedDay = true)
-        save()
+        shoppingChecked.clear()
+
+        runMutation {
+            repository.setHouseholdSandwich(recipeId)
+            weeklyPlanId?.let {
+                repository.clearShoppingChecks(it)
+                repository.saveWeekState(
+                    weeklyPlanId = it,
+                    plan = plan.toMap(),
+                    dayModes = dayModes.toMap(),
+                    lockedDays = lockedDays.toSet(),
+                    sandwichRecipeId = weeklySandwichRecipeId,
+                    sandwichDay = sandwichDay
+                )
+            }
+        }
     }
 
     fun toggleEatingAtHome(day: DayOfWeek) {
-        val wasSandwichDay = plan[day] == weeklySandwichRecipeId
-        val newMode = if (dayModes[day] == DayMode.AWAY) DayMode.AUTO else DayMode.AWAY
-        dayModes[day] = newMode
+        val result = WeekRules.toggleHome(
+            day = day,
+            modes = dayModes.toMap(),
+            currentSandwichDay = sandwichDay,
+            hasSandwichRecipe = weeklySandwichRecipeId != null
+        )
 
-        if (newMode == DayMode.AWAY) {
-            plan[day] = null
+        dayModes.clear()
+        dayModes.putAll(result.modes)
+        sandwichDay = result.sandwichDay
+
+        if (dayModes[day] == DayMode.AWAY) {
             lockedDays.remove(day)
-            if (wasSandwichDay) repositionSandwichToPreferredDay(fillVacatedDay = false)
-        } else {
-            if (plan.values.any { it != null } && weeklySandwichRecipeId != null) {
-                repositionSandwichToPreferredDay(fillVacatedDay = true)
-                if (plan[day] == null) fillDay(day)
-            }
         }
+
         shoppingChecked.clear()
-        save()
+        persistWeek(clearChecks = true)
     }
 
-    fun setPantry(ingredientId: String, amount: Double, unit: MeasurementUnit) {
+    fun setPantry(
+        ingredientId: String,
+        amount: Double,
+        unit: MeasurementUnit
+    ) {
         val ingredient = ingredients.find { it.id == ingredientId } ?: return
         if (unit.quantityType != ingredient.quantityType) return
-        pantry[ingredientId] = unit.toBase(amount.coerceAtLeast(0.0))
-        save()
+
+        val base = unit.toBase(amount.coerceAtLeast(0.0))
+        pantry[ingredientId] = base
+
+        runMutation {
+            repository.setPantry(ingredientId, base)
+        }
     }
 
     fun generateWeek() {
-        plan.putAll(
-            WeeklyPlanner.generate(
-                recipes = recipes,
-                pantry = pantry,
-                dayModes = dayModes,
-                weeklySandwichRecipeId = weeklySandwichRecipeId,
-                currentPlan = plan,
-                lockedDays = lockedDays.toSet()
-            )
-        )
-        shoppingChecked.clear()
-        save()
+        if (isPlanning || weeklyPlanId == null) return
+
+        val recipesSnapshot = recipes.toList()
+        val pantrySnapshot = pantry.toMap()
+        val modeSnapshot = dayModes.toMap()
+        val planSnapshot = plan.toMap()
+        val lockSnapshot = lockedDays.toSet()
+        val historySnapshot = history.toList()
+        val sandwichRecipe = weeklySandwichRecipeId
+        val currentSandwichDay = sandwichDay
+
+        scope.launch {
+            isPlanning = true
+            try {
+                val result = withContext(Dispatchers.Default) {
+                    WeeklyPlanner.generate(
+                        recipes = recipesSnapshot,
+                        pantry = pantrySnapshot,
+                        dayModes = modeSnapshot,
+                        weeklySandwichRecipeId = sandwichRecipe,
+                        currentPlan = planSnapshot,
+                        currentSandwichDay = currentSandwichDay,
+                        lockedDays = lockSnapshot,
+                        history = historySnapshot,
+                        weekStart = currentWeekStart()
+                    )
+                }
+
+                plan.putAll(result.plan)
+                sandwichDay = result.sandwichDay
+                shoppingChecked.clear()
+
+                val id = weeklyPlanId ?: return@launch
+                repository.clearShoppingChecks(id)
+                repository.saveWeekState(
+                    weeklyPlanId = id,
+                    plan = plan.toMap(),
+                    dayModes = dayModes.toMap(),
+                    lockedDays = lockedDays.toSet(),
+                    sandwichRecipeId = weeklySandwichRecipeId,
+                    sandwichDay = sandwichDay
+                )
+            } catch (e: Exception) {
+                lastError = e.message ?: "Madplanen kunne ikke opdateres."
+            } finally {
+                isPlanning = false
+            }
+        }
     }
 
     fun reroll(day: DayOfWeek) {
-        if (day in lockedDays) return // Locked day is not rerolled
-        plan.putAll(
-            WeeklyPlanner.rerollDay(
-                day = day,
-                recipes = recipes,
-                pantry = pantry,
-                dayModes = dayModes,
-                weeklySandwichRecipeId = weeklySandwichRecipeId,
-                currentPlan = plan
-            )
-        )
-        shoppingChecked.clear()
-        save()
+        if (
+            day in lockedDays ||
+            dayModes[day] == DayMode.AWAY ||
+            day == sandwichDay
+        ) return
+
+        val recipesSnapshot = recipes.toList()
+        val pantrySnapshot = pantry.toMap()
+        val modeSnapshot = dayModes.toMap()
+        val planSnapshot = plan.toMap()
+        val historySnapshot = history.toList()
+
+        scope.launch {
+            try {
+                val updated = withContext(Dispatchers.Default) {
+                    WeeklyPlanner.rerollDay(
+                        day = day,
+                        recipes = recipesSnapshot,
+                        pantry = pantrySnapshot,
+                        dayModes = modeSnapshot,
+                        weeklySandwichRecipeId = weeklySandwichRecipeId,
+                        sandwichDay = sandwichDay,
+                        currentPlan = planSnapshot,
+                        history = historySnapshot,
+                        weekStart = currentWeekStart()
+                    )
+                }
+
+                plan.putAll(updated)
+                shoppingChecked.clear()
+                val id = weeklyPlanId ?: return@launch
+                repository.clearShoppingChecks(id)
+                repository.saveWeekState(
+                    weeklyPlanId = id,
+                    plan = plan.toMap(),
+                    dayModes = dayModes.toMap(),
+                    lockedDays = lockedDays.toSet(),
+                    sandwichRecipeId = weeklySandwichRecipeId,
+                    sandwichDay = sandwichDay
+                )
+            } catch (e: Exception) {
+                lastError = e.message ?: "Retten kunne ikke skiftes."
+            }
+        }
     }
 
     fun moveSandwich() {
-        val sandwichId = weeklySandwichRecipeId ?: return
-        val currentDay = sandwichDay() ?: return
-        val candidateDays = sandwichDayPreference.filter {
-            it != currentDay && dayModes[it] != DayMode.AWAY
-        }
-        val target = candidateDays.firstOrNull() ?: return
+        if (weeklySandwichRecipeId == null) return
 
-        val targetRecipe = plan[target]
-        plan[target] = sandwichId
-        plan[currentDay] = targetRecipe
-        if (plan[currentDay] == null && dayModes[currentDay] != DayMode.AWAY) fillDay(currentDay)
+        sandwichDay = WeekRules.nextSandwichDay(
+            current = sandwichDay,
+            modes = dayModes.toMap()
+        )
+
         shoppingChecked.clear()
-        save()
+        persistWeek(clearChecks = true)
     }
 
-    fun sandwichDay(): DayOfWeek? {
-        val sandwichId = weeklySandwichRecipeId ?: return null
-        return orderedWeekDays.firstOrNull { plan[it] == sandwichId && dayModes[it] != DayMode.AWAY }
-    }
+    fun sandwichDay(): DayOfWeek? = sandwichDay
 
-    fun recipeFor(day: DayOfWeek): Recipe? =
-        plan[day]?.let { id -> recipes.find { it.id == id } }
+    fun recipeFor(day: DayOfWeek): Recipe? {
+        if (dayModes[day] == DayMode.AWAY) return null
+
+        val id = if (
+            day == sandwichDay &&
+            weeklySandwichRecipeId != null
+        ) {
+            weeklySandwichRecipeId
+        } else {
+            plan[day]
+        }
+
+        return id?.let { recipeId ->
+            recipes.find { it.id == recipeId }
+        }
+    }
 
     fun shoppingItems(): List<ShoppingItem> {
         val totals = mutableMapOf<String, Double>()
+
         orderedWeekDays.forEach { day ->
+            if (dayModes[day] == DayMode.AWAY) return@forEach
+
             val recipe = recipeFor(day) ?: return@forEach
             recipe.ingredients.forEach { req ->
-                totals[req.ingredientId] = (totals[req.ingredientId] ?: 0.0) + req.amountBase
+                totals[req.ingredientId] =
+                    (totals[req.ingredientId] ?: 0.0) + req.amountBase
             }
         }
 
         return totals.mapNotNull { (ingredientId, requiredBase) ->
-            val ingredient = ingredients.find { it.id == ingredientId } ?: return@mapNotNull null
+            val ingredient = ingredients.find { it.id == ingredientId }
+                ?: return@mapNotNull null
+
             ShoppingItem(
                 ingredient = ingredient,
                 requiredBase = requiredBase,
@@ -306,230 +634,72 @@ class MealPlannerState(context: Context) {
         }.sortedBy { it.ingredient.name.lowercase() }
     }
 
-    fun setShoppingChecked(ingredientId: String, checked: Boolean) {
+    fun setShoppingChecked(
+        ingredientId: String,
+        checked: Boolean
+    ) {
         shoppingChecked[ingredientId] = checked
-        save()
+        val id = weeklyPlanId ?: return
+
+        runMutation {
+            repository.setShoppingChecked(
+                weeklyPlanId = id,
+                ingredientId = ingredientId,
+                checked = checked
+            )
+        }
     }
 
-    fun formatBaseAmount(ingredient: Ingredient, amountBase: Double): String {
+    fun submitFeedback(
+        message: String,
+        onResult: (Boolean) -> Unit
+    ) {
+        val clean = message.trim()
+        if (clean.length < 3) {
+            onResult(false)
+            return
+        }
+
+        scope.launch {
+            try {
+                repository.submitFeedback(clean)
+                onResult(true)
+            } catch (e: Exception) {
+                lastError = e.message ?: "Forslaget kunne ikke sendes."
+                onResult(false)
+            }
+        }
+    }
+
+    fun formatBaseAmount(
+        ingredient: Ingredient,
+        amountBase: Double
+    ): String {
         val unit = ingredient.preferredUnit
         val value = unit.fromBase(amountBase)
         return "${formatNumber(value)} ${unit.labelFor(value)}"
     }
 
-    fun formatEnteredAmount(amount: Double, unit: MeasurementUnit): String =
+    fun formatEnteredAmount(
+        amount: Double,
+        unit: MeasurementUnit
+    ): String =
         "${formatNumber(amount)} ${unit.labelFor(amount)}"
 
+    private fun currentWeekStart(): LocalDate =
+        LocalDate.now().with(
+            TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)
+        )
+
     private fun formatNumber(value: Double): String {
-        val formatter = NumberFormat.getNumberInstance(Locale.forLanguageTag("da-DK")).apply {
-            maximumFractionDigits = 2
-            minimumFractionDigits = 0
-            isGroupingUsed = false
-        }
-        return formatter.format(value)
-    }
-
-    private fun repositionSandwichToPreferredDay(fillVacatedDay: Boolean) {
-        val sandwichId = weeklySandwichRecipeId ?: return
-        val target = WeeklyPlanner.preferredSandwichDay(dayModes) ?: return
-        val current = sandwichDay()
-
-        if (current == target) return
-
-        val targetRecipe = plan[target]
-        plan[target] = sandwichId
-
-        if (current != null) {
-            plan[current] = targetRecipe
-            if (fillVacatedDay && plan[current] == null && dayModes[current] != DayMode.AWAY) {
-                fillDay(current)
+        val formatter = NumberFormat
+            .getNumberInstance(Locale.forLanguageTag("da-DK"))
+            .apply {
+                maximumFractionDigits = 2
+                minimumFractionDigits = 0
+                isGroupingUsed = false
             }
-        }
-    }
 
-    private fun fillDay(day: DayOfWeek) {
-        if (dayModes[day] == DayMode.AWAY) return
-        if (plan[day] != null) return
-        plan.putAll(
-            WeeklyPlanner.rerollDay(
-                day = day,
-                recipes = recipes,
-                pantry = pantry,
-                dayModes = dayModes,
-                weeklySandwichRecipeId = weeklySandwichRecipeId,
-                currentPlan = plan
-            )
-        )
-    }
-
-    private fun createTestData() {
-        ingredients.clear()
-        recipes.clear()
-        pantry.clear()
-
-        fun ingredient(
-            name: String,
-            type: QuantityType,
-            preferredUnit: MeasurementUnit = MeasurementUnit.defaultFor(type)
-        ): Ingredient {
-            val item = Ingredient(name = name, quantityType = type, preferredUnit = preferredUnit)
-            ingredients += item
-            return item
-        }
-
-        val hakketOkse = ingredient("Hakket oksekød", QuantityType.MASS, MeasurementUnit.GRAM)
-        val kylling = ingredient("Kyllingebryst", QuantityType.MASS, MeasurementUnit.GRAM)
-        val bacon = ingredient("Bacon", QuantityType.MASS, MeasurementUnit.GRAM)
-        val pasta = ingredient("Pasta", QuantityType.MASS, MeasurementUnit.GRAM)
-        val ris = ingredient("Ris", QuantityType.MASS, MeasurementUnit.GRAM)
-        val kartofler = ingredient("Kartofler", QuantityType.MASS, MeasurementUnit.GRAM)
-        val revetOst = ingredient("Revet ost", QuantityType.MASS, MeasurementUnit.GRAM)
-        val floede = ingredient("Fløde", QuantityType.VOLUME, MeasurementUnit.MILLILITRE)
-        val olie = ingredient("Olivenolie", QuantityType.VOLUME, MeasurementUnit.MILLILITRE)
-        val tomat = ingredient("Tomat", QuantityType.COUNT, MeasurementUnit.PIECE)
-        val loeg = ingredient("Løg", QuantityType.COUNT, MeasurementUnit.PIECE)
-        val hvidloeg = ingredient("Hvidløg", QuantityType.COUNT, MeasurementUnit.PIECE)
-        val peberfrugt = ingredient("Peberfrugt", QuantityType.COUNT, MeasurementUnit.PIECE)
-        val aeg = ingredient("Æg", QuantityType.COUNT, MeasurementUnit.PIECE)
-        val tortilla = ingredient("Tortilla", QuantityType.COUNT, MeasurementUnit.PIECE)
-        val burgerbolle = ingredient("Burgerbolle", QuantityType.COUNT, MeasurementUnit.PIECE)
-        val sandwichbroed = ingredient("Sandwichbrød", QuantityType.COUNT, MeasurementUnit.PIECE)
-        val hakketTomat = ingredient("Hakkede tomater", QuantityType.PACKAGE, MeasurementUnit.CAN)
-        val kokosmaelk = ingredient("Kokosmælk", QuantityType.PACKAGE, MeasurementUnit.CAN)
-        val kidneyboenner = ingredient("Kidneybønner", QuantityType.PACKAGE, MeasurementUnit.CAN)
-
-        fun req(item: Ingredient, amount: Double, unit: MeasurementUnit) =
-            RecipeIngredient(item.id, unit.toBase(amount))
-
-        val sandwich = Recipe(
-            name = "Sandwich med kylling og bacon",
-            proteinTag = "kylling",
-            categoryTag = "sandwich",
-            ingredients = listOf(
-                req(sandwichbroed, 4.0, MeasurementUnit.PIECE),
-                req(kylling, 300.0, MeasurementUnit.GRAM),
-                req(bacon, 100.0, MeasurementUnit.GRAM),
-                req(tomat, 2.0, MeasurementUnit.PIECE),
-                req(revetOst, 100.0, MeasurementUnit.GRAM)
-            )
-        )
-        recipes += sandwich
-
-        recipes += Recipe(
-            name = "Spaghetti bolognese", proteinTag = "oksekød", categoryTag = "pasta",
-            ingredients = listOf(
-                req(hakketOkse, 500.0, MeasurementUnit.GRAM),
-                req(pasta, 400.0, MeasurementUnit.GRAM),
-                req(hakketTomat, 2.0, MeasurementUnit.CAN),
-                req(loeg, 1.0, MeasurementUnit.PIECE),
-                req(hvidloeg, 2.0, MeasurementUnit.PIECE)
-            )
-        )
-
-        recipes += Recipe(
-            name = "Kylling i karry", proteinTag = "kylling", categoryTag = "karry",
-            ingredients = listOf(
-                req(kylling, 500.0, MeasurementUnit.GRAM),
-                req(ris, 350.0, MeasurementUnit.GRAM),
-                req(kokosmaelk, 1.0, MeasurementUnit.CAN),
-                req(loeg, 1.0, MeasurementUnit.PIECE)
-            )
-        )
-
-        recipes += Recipe(
-            name = "Tacos med oksekød", proteinTag = "oksekød", categoryTag = "tacos",
-            ingredients = listOf(
-                req(hakketOkse, 400.0, MeasurementUnit.GRAM),
-                req(tortilla, 8.0, MeasurementUnit.PIECE),
-                req(tomat, 3.0, MeasurementUnit.PIECE),
-                req(loeg, 1.0, MeasurementUnit.PIECE),
-                req(revetOst, 150.0, MeasurementUnit.GRAM)
-            )
-        )
-
-        recipes += Recipe(
-            name = "Pasta carbonara", proteinTag = "svinekød", categoryTag = "pasta",
-            ingredients = listOf(
-                req(pasta, 400.0, MeasurementUnit.GRAM),
-                req(bacon, 200.0, MeasurementUnit.GRAM),
-                req(aeg, 4.0, MeasurementUnit.PIECE),
-                req(revetOst, 100.0, MeasurementUnit.GRAM)
-            )
-        )
-
-        recipes += Recipe(
-            name = "Chili con carne", proteinTag = "oksekød", categoryTag = "gryderet",
-            ingredients = listOf(
-                req(hakketOkse, 500.0, MeasurementUnit.GRAM),
-                req(ris, 300.0, MeasurementUnit.GRAM),
-                req(hakketTomat, 2.0, MeasurementUnit.CAN),
-                req(kidneyboenner, 2.0, MeasurementUnit.CAN),
-                req(loeg, 1.0, MeasurementUnit.PIECE)
-            )
-        )
-
-        recipes += Recipe(
-            name = "Kyllingefajitas", proteinTag = "kylling", categoryTag = "tacos",
-            ingredients = listOf(
-                req(kylling, 500.0, MeasurementUnit.GRAM),
-                req(tortilla, 8.0, MeasurementUnit.PIECE),
-                req(peberfrugt, 3.0, MeasurementUnit.PIECE),
-                req(loeg, 1.0, MeasurementUnit.PIECE)
-            )
-        )
-
-        recipes += Recipe(
-            name = "Hjemmelavede burgere", proteinTag = "oksekød", categoryTag = "burger",
-            ingredients = listOf(
-                req(hakketOkse, 500.0, MeasurementUnit.GRAM),
-                req(burgerbolle, 4.0, MeasurementUnit.PIECE),
-                req(tomat, 2.0, MeasurementUnit.PIECE),
-                req(loeg, 1.0, MeasurementUnit.PIECE),
-                req(revetOst, 100.0, MeasurementUnit.GRAM)
-            )
-        )
-
-        recipes += Recipe(
-            name = "Kylling med ovnkartofler", proteinTag = "kylling", categoryTag = "ovnret",
-            ingredients = listOf(
-                req(kylling, 600.0, MeasurementUnit.GRAM),
-                req(kartofler, 1000.0, MeasurementUnit.GRAM),
-                req(olie, 30.0, MeasurementUnit.MILLILITRE),
-                req(hvidloeg, 2.0, MeasurementUnit.PIECE)
-            )
-        )
-
-        recipes += Recipe(
-            name = "Cremet tomatpasta", proteinTag = "vegetarisk", categoryTag = "pasta",
-            ingredients = listOf(
-                req(pasta, 400.0, MeasurementUnit.GRAM),
-                req(hakketTomat, 2.0, MeasurementUnit.CAN),
-                req(floede, 250.0, MeasurementUnit.MILLILITRE),
-                req(loeg, 1.0, MeasurementUnit.PIECE),
-                req(hvidloeg, 2.0, MeasurementUnit.PIECE)
-            )
-        )
-
-        pantry[ris.id] = MeasurementUnit.GRAM.toBase(700.0)
-        pantry[pasta.id] = MeasurementUnit.GRAM.toBase(500.0)
-        pantry[loeg.id] = MeasurementUnit.PIECE.toBase(4.0)
-        pantry[hakketTomat.id] = MeasurementUnit.CAN.toBase(2.0)
-
-        weeklySandwichRecipeId = sandwich.id
-        save()
-    }
-
-    private fun save() {
-        storage.save(
-            LocalStorage.Snapshot(
-                ingredients = ingredients.toList(),
-                recipes = recipes.toList(),
-                pantry = pantry.toMap(),
-                dayModes = dayModes.toMap(),
-                plan = plan.toMap(),
-                weeklySandwichRecipeId = weeklySandwichRecipeId,
-                shoppingChecked = shoppingChecked.toMap()
-            )
-        )
+        return formatter.format(value)
     }
 }
