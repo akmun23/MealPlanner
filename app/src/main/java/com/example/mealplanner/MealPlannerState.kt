@@ -5,6 +5,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.runtime.setValue
 import java.text.NumberFormat
 import java.time.DayOfWeek
@@ -19,6 +20,7 @@ class MealPlannerState(context: Context) {
     val pantry = mutableStateMapOf<String, Double>()
     val dayModes = mutableStateMapOf<DayOfWeek, DayMode>()
     val plan = mutableStateMapOf<DayOfWeek, String?>()
+    val lockedDays = mutableStateSetOf<DayOfWeek>()
     val shoppingChecked = mutableStateMapOf<String, Boolean>()
 
     var weeklySandwichRecipeId by mutableStateOf<String?>(null)
@@ -45,6 +47,25 @@ class MealPlannerState(context: Context) {
         }
 
         if (recipes.isEmpty()) createTestData()
+        save()
+    }
+
+    fun toggleLockDay(day: DayOfWeek) {
+        if (day in lockedDays) {
+            lockedDays.remove(day)
+        } else {
+            if (plan[day] != null && dayModes[day] != DayMode.AWAY) {
+                lockedDays.add(day)
+            }
+        }
+    }
+
+    fun setRecipeForDay(day: DayOfWeek, recipeId: String?) {
+        plan[day] = recipeId
+        if (recipeId != null) {
+            dayModes[day] = DayMode.AUTO
+        }
+        shoppingChecked.clear()
         save()
     }
 
@@ -186,6 +207,7 @@ class MealPlannerState(context: Context) {
 
         if (newMode == DayMode.AWAY) {
             plan[day] = null
+            lockedDays.remove(day)
             if (wasSandwichDay) repositionSandwichToPreferredDay(fillVacatedDay = false)
         } else {
             if (plan.values.any { it != null } && weeklySandwichRecipeId != null) {
@@ -211,7 +233,8 @@ class MealPlannerState(context: Context) {
                 pantry = pantry,
                 dayModes = dayModes,
                 weeklySandwichRecipeId = weeklySandwichRecipeId,
-                currentPlan = plan
+                currentPlan = plan,
+                lockedDays = lockedDays.toSet()
             )
         )
         shoppingChecked.clear()
@@ -219,6 +242,7 @@ class MealPlannerState(context: Context) {
     }
 
     fun reroll(day: DayOfWeek) {
+        if (day in lockedDays) return // Locked day is not rerolled
         plan.putAll(
             WeeklyPlanner.rerollDay(
                 day = day,

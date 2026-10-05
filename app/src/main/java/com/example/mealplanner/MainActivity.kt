@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -25,6 +26,20 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.DateRange
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LockOpen
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -32,6 +47,9 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
@@ -54,6 +72,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -85,18 +104,18 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme(colorScheme = AppColors) {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    MealPlannerApp()
+                    CloudGate()
                 }
             }
         }
     }
 }
 
-enum class AppTab(val label: String, val short: String) {
-    WEEK("Madplan", "U"),
-    RECIPES("Opskrifter", "O"),
-    PANTRY("Lager", "L"),
-    SHOPPING("Indkøb", "I")
+enum class AppTab(val label: String, val icon: ImageVector) {
+    WEEK("Madplan", Icons.Filled.DateRange),
+    RECIPES("Opskrifter", Icons.Filled.Restaurant),
+    PANTRY("Lager", Icons.Filled.Inventory2),
+    SHOPPING("Indkøb", Icons.Filled.ShoppingCart)
 }
 
 @Composable
@@ -108,19 +127,31 @@ fun MealPlannerApp() {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            Surface(shadowElevation = 1.dp) {
+            Surface(shadowElevation = 2.dp) {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 16.dp),
+                        .padding(horizontal = 20.dp, vertical = 14.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column(modifier = Modifier.weight(1f)) {
-                        Text("Madplan", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+                        Text("MealPlanner", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
                         Text(
-                            "En enkel uge, mindre planlægning",
+                            "Klog ugeplan, automatisk indkøb",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    Surface(
+                        shape = CircleShape,
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Text(
+                            "${state.recipes.size} retter",
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
                         )
                     }
                 }
@@ -132,15 +163,8 @@ fun MealPlannerApp() {
                     NavigationBarItem(
                         selected = item == tab,
                         onClick = { tab = item },
-                        icon = {
-                            Text(
-                                item.short,
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.titleMedium,
-                                color = if (item == tab) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        },
-                        label = { Text(item.label) }
+                        icon = { Icon(item.icon, contentDescription = item.label) },
+                        label = { Text(item.label, fontWeight = if (item == tab) FontWeight.Bold else FontWeight.Normal) }
                     )
                 }
             }
@@ -172,11 +196,12 @@ private fun ScreenColumn(content: @Composable ColumnScope.() -> Unit) {
 fun WeekScreen(state: MealPlannerState) {
     val sandwichDay = state.sandwichDay()
     val homeCount = orderedWeekDays.count { state.dayModes[it] != DayMode.AWAY }
+    val lockedCount = state.lockedDays.size
 
     ScreenColumn {
         Text("Ugens madplan", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text(
-            "Vælg hvilke dage I spiser hjemme. Sandwich placeres på fredag, hvis I er hjemme – ellers flyttes den automatisk.",
+            "Tilpas ugen her. Du kan låse retter, du vil beholde, eller vælge en ret direkte per dag.",
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
 
@@ -184,9 +209,10 @@ fun WeekScreen(state: MealPlannerState) {
 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             SummaryCard("Hjemme", "$homeCount dage", Modifier.weight(1f))
+            SummaryCard("Låst", "$lockedCount retter", Modifier.weight(1f))
             SummaryCard(
                 "Sandwich",
-                sandwichDay?.danishName() ?: "Ikke placeret",
+                sandwichDay?.shortDanishName() ?: "-",
                 Modifier.weight(1f),
                 highlighted = true
             )
@@ -204,7 +230,7 @@ fun WeekScreen(state: MealPlannerState) {
             Spacer(Modifier.height(10.dp))
         }
 
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(6.dp))
         Button(
             onClick = { state.generateWeek() },
             enabled = state.recipes.isNotEmpty() && state.weeklySandwichRecipeId != null && homeCount > 0,
@@ -213,7 +239,9 @@ fun WeekScreen(state: MealPlannerState) {
                 .height(54.dp),
             shape = RoundedCornerShape(16.dp)
         ) {
-            Text("Lav ny madplan", fontWeight = FontWeight.Bold)
+            Icon(Icons.Filled.Refresh, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("Generér ny madplan", fontWeight = FontWeight.Bold)
         }
         Spacer(Modifier.height(24.dp))
     }
@@ -229,9 +257,9 @@ private fun SummaryCard(title: String, value: String, modifier: Modifier, highli
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-        Column(Modifier.padding(14.dp)) {
-            Text(title, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(3.dp))
+        Column(Modifier.padding(12.dp)) {
+            Text(title, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(2.dp))
             Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
         }
     }
@@ -252,6 +280,9 @@ fun DayCard(day: DayOfWeek, state: MealPlannerState) {
     val away = state.dayModes[day] == DayMode.AWAY
     val recipe = state.recipeFor(day)
     val isSandwich = recipe?.id == state.weeklySandwichRecipeId
+    val isLocked = day in state.lockedDays
+
+    var showRecipePicker by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -267,34 +298,51 @@ fun DayCard(day: DayOfWeek, state: MealPlannerState) {
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (!away && !recipe?.imageUri.isNullOrEmpty()) {
-                    AsyncImage(
-                        model = recipe.imageUri,
-                        contentDescription = null,
-                        modifier = Modifier
-                            .size(52.dp)
-                            .clip(RoundedCornerShape(12.dp)),
-                        contentScale = ContentScale.Crop
+                // DAY BADGE PILL
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = if (away) MaterialTheme.colorScheme.outline.copy(alpha = 0.3f) else MaterialTheme.colorScheme.primary
+                ) {
+                    Text(
+                        day.shortDanishName(),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = if (away) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimary
                     )
-                    Spacer(Modifier.width(12.dp))
                 }
+
+                Spacer(Modifier.width(10.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
                     Text(day.danishName(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                    Spacer(Modifier.height(2.dp))
                     Text(
                         when {
                             away -> "Spiser ikke hjemme"
                             recipe != null -> recipe.name
-                            else -> "Ingen ret valgt endnu"
+                            else -> "Ingen ret valgt"
                         },
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = if (away) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (away) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
 
-                Column(horizontalAlignment = Alignment.End) {
-                    Text("Hjemme", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (!away && recipe != null) {
+                        IconButton(
+                            onClick = { state.toggleLockDay(day) },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
+                                contentDescription = "Lås ret",
+                                tint = if (isLocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    }
+
                     Switch(
                         checked = !away,
                         onCheckedChange = { state.toggleEatingAtHome(day) }
@@ -302,30 +350,85 @@ fun DayCard(day: DayOfWeek, state: MealPlannerState) {
                 }
             }
 
-            if (!away && recipe != null) {
-                Spacer(Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                    if (isSandwich) StatusPill("Ugens sandwich", true)
-                    if (recipe.proteinTag.isNotBlank()) StatusPill(recipe.proteinTag, false)
-                    if (recipe.categoryTag.isNotBlank() && !isSandwich) StatusPill(recipe.categoryTag, false)
+            if (!away) {
+                if (!recipe?.imageUri.isNullOrEmpty()) {
+                    Spacer(Modifier.height(10.dp))
+                    AsyncImage(
+                        model = recipe.imageUri,
+                        contentDescription = null,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(100.dp)
+                            .clip(RoundedCornerShape(12.dp)),
+                        contentScale = ContentScale.Crop
+                    )
                 }
 
                 Spacer(Modifier.height(10.dp))
-                if (isSandwich) {
-                    OutlinedButton(
-                        onClick = { state.moveSandwich() },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Text("Flyt sandwich til en anden dag")
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    if (isSandwich) StatusPill("Ugens sandwich", true)
+                    if (recipe?.proteinTag?.isNotBlank() == true) StatusPill(recipe.proteinTag, false)
+                    if (recipe?.categoryTag?.isNotBlank() == true && !isSandwich) StatusPill(recipe.categoryTag, false)
+                }
+
+                Spacer(Modifier.height(10.dp))
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        OutlinedButton(
+                            onClick = { showRecipePicker = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Skift ret", style = MaterialTheme.typography.labelMedium)
+                        }
+
+                        DropdownMenu(
+                            expanded = showRecipePicker,
+                            onDismissRequest = { showRecipePicker = false }
+                        ) {
+                            DropdownMenuItem(
+                                text = { Text("— Ingen ret —", fontStyle = androidx.compose.ui.text.font.FontStyle.Italic) },
+                                onClick = {
+                                    state.setRecipeForDay(day, null)
+                                    showRecipePicker = false
+                                }
+                            )
+                            state.recipes.forEach { candidate ->
+                                DropdownMenuItem(
+                                    text = { Text(candidate.name) },
+                                    onClick = {
+                                        state.setRecipeForDay(day, candidate.id)
+                                        showRecipePicker = false
+                                    }
+                                )
+                            }
+                        }
                     }
-                } else {
-                    OutlinedButton(
-                        onClick = { state.reroll(day) },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Text("Rul denne ret igen")
+
+                    if (isSandwich) {
+                        OutlinedButton(
+                            onClick = { state.moveSandwich() },
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Flyt sandwich", style = MaterialTheme.typography.labelMedium)
+                        }
+                    } else if (!isLocked) {
+                        IconButton(
+                            onClick = { state.reroll(day) },
+                            modifier = Modifier.size(40.dp)
+                        ) {
+                            Icon(Icons.Filled.Refresh, contentDescription = "Rul igen")
+                        }
                     }
                 }
             }
@@ -341,7 +444,7 @@ private fun StatusPill(text: String, accent: Boolean) {
     ) {
         Text(
             text,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
             style = MaterialTheme.typography.labelMedium,
             color = if (accent) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
         )
@@ -409,6 +512,10 @@ fun ImagePickerBox(
 
 @Composable
 fun RecipesScreen(state: MealPlannerState) {
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedCategoryFilter by remember { mutableStateOf("Alle") }
+    var showNewRecipeForm by remember { mutableStateOf(false) }
+
     var recipeName by remember { mutableStateOf("") }
     var proteinTag by remember { mutableStateOf("") }
     var categoryTag by remember { mutableStateOf("") }
@@ -430,145 +537,221 @@ fun RecipesScreen(state: MealPlannerState) {
         )
     }
 
+    // Filter recipes by search query and category
+    val categories = remember(state.recipes) {
+        listOf("Alle") + state.recipes.flatMap { listOf(it.proteinTag, it.categoryTag) }
+            .filter { it.isNotBlank() }
+            .distinct()
+    }
+
+    val filteredRecipes = remember(searchQuery, selectedCategoryFilter, state.recipes) {
+        state.recipes.filter { recipe ->
+            val matchesSearch = searchQuery.isBlank() ||
+                recipe.name.contains(searchQuery, ignoreCase = true) ||
+                recipe.proteinTag.contains(searchQuery, ignoreCase = true) ||
+                recipe.categoryTag.contains(searchQuery, ignoreCase = true)
+
+            val matchesCategory = selectedCategoryFilter == "Alle" ||
+                recipe.proteinTag.equals(selectedCategoryFilter, ignoreCase = true) ||
+                recipe.categoryTag.equals(selectedCategoryFilter, ignoreCase = true)
+
+            matchesSearch && matchesCategory
+        }
+    }
+
     ScreenColumn {
         Text("Opskrifter", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("Byg jeres samling af retter. Ingredienser oprettes og styres under fanen Lager.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(16.dp))
+        Text("Opret og administrér jeres opskrifter.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(14.dp))
 
-        SectionCard("Ny Opskrift") {
-            ImagePickerBox(
-                imageUri = recipeImageUri,
-                onImageSelected = { recipeImageUri = it },
-                modifier = Modifier.fillMaxWidth(),
-                height = 130.dp,
-                label = "Billede af retten"
-            )
-            Spacer(Modifier.height(10.dp))
+        Button(
+            onClick = { showNewRecipeForm = !showNewRecipeForm },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp)
+        ) {
+            Icon(if (showNewRecipeForm) Icons.Filled.Clear else Icons.Filled.Add, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(if (showNewRecipeForm) "Luk Opret Form" else "+ Opret Ny Opskrift", fontWeight = FontWeight.Bold)
+        }
 
-            OutlinedTextField(
-                value = recipeName,
-                onValueChange = { recipeName = it },
-                label = { Text("Navn på ret") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
-            Spacer(Modifier.height(6.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(
-                    value = proteinTag,
-                    onValueChange = { proteinTag = it },
-                    label = { Text("Protein (fx kylling)") },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true
-                )
-                OutlinedTextField(
-                    value = categoryTag,
-                    onValueChange = { categoryTag = it },
-                    label = { Text("Kategori (fx pasta)") },
-                    modifier = Modifier.weight(1f),
-                    singleLine = true
-                )
-            }
-            Spacer(Modifier.height(6.dp))
-            OutlinedTextField(
-                value = notes,
-                onValueChange = { notes = it },
-                label = { Text("Noter / tilberedning") },
-                modifier = Modifier.fillMaxWidth()
-            )
+        AnimatedVisibility(visible = showNewRecipeForm) {
+            Column {
+                Spacer(Modifier.height(12.dp))
+                SectionCard("Ny Opskrift") {
+                    ImagePickerBox(
+                        imageUri = recipeImageUri,
+                        onImageSelected = { recipeImageUri = it },
+                        modifier = Modifier.fillMaxWidth(),
+                        height = 130.dp,
+                        label = "Billede af retten"
+                    )
+                    Spacer(Modifier.height(10.dp))
 
-            Spacer(Modifier.height(12.dp))
-
-            if (state.ingredients.isEmpty()) {
-                Text("Opret mindst én ingrediens under fanen Lager først.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            } else {
-                val selectedIngredient = state.ingredients.find { it.id == selectedIngredientId } ?: state.ingredients.first()
-                if (selectedIngredientId == null) {
-                    selectedIngredientId = selectedIngredient.id
-                    selectedUnit = selectedIngredient.preferredUnit
-                }
-
-                Text("Tilføj ingrediens til opskrift", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
-                Spacer(Modifier.height(6.dp))
-                SimpleSelector(
-                    label = selectedIngredient.name,
-                    options = state.ingredients.toList(),
-                    optionText = { it.name },
-                    onSelected = { ingredient ->
-                        selectedIngredientId = ingredient.id
-                        selectedUnit = ingredient.preferredUnit
-                    }
-                )
-                Spacer(Modifier.height(6.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
                     OutlinedTextField(
-                        value = amountText,
-                        onValueChange = { amountText = it.replace(',', '.') },
-                        label = { Text("Mængde") },
-                        modifier = Modifier.weight(1f),
+                        value = recipeName,
+                        onValueChange = { recipeName = it },
+                        label = { Text("Navn på ret") },
+                        modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
-                    Spacer(Modifier.width(8.dp))
-                    SimpleSelector(
-                        label = selectedUnit.selectorLabel(),
-                        options = MeasurementUnit.compatibleWith(selectedIngredient.quantityType),
-                        optionText = { it.selectorLabel() },
-                        onSelected = { selectedUnit = it }
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedTextField(
+                            value = proteinTag,
+                            onValueChange = { proteinTag = it },
+                            label = { Text("Protein (fx kylling)") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                        OutlinedTextField(
+                            value = categoryTag,
+                            onValueChange = { categoryTag = it },
+                            label = { Text("Kategori (fx pasta)") },
+                            modifier = Modifier.weight(1f),
+                            singleLine = true
+                        )
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = notes,
+                        onValueChange = { notes = it },
+                        label = { Text("Noter / tilberedning") },
+                        modifier = Modifier.fillMaxWidth()
                     )
-                }
-                Spacer(Modifier.height(8.dp))
-                OutlinedButton(
-                    onClick = {
-                        val amount = amountText.toDoubleOrNull()
-                        if (amount != null && amount > 0.0) {
-                            draftRequirements += DraftRequirement(selectedIngredient.id, amount, selectedUnit)
-                            amountText = ""
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(12.dp)
-                ) { Text("Tilføj til opskriften") }
 
-                if (draftRequirements.isNotEmpty()) {
-                    Spacer(Modifier.height(10.dp))
-                    draftRequirements.forEachIndexed { index, draft ->
-                        val ingredient = state.ingredients.find { it.id == draft.ingredientId }
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                            Text(
-                                "• ${ingredient?.name ?: "Ukendt"}: ${state.formatEnteredAmount(draft.amount, draft.unit)}",
-                                modifier = Modifier.weight(1f)
-                            )
-                            TextButton(onClick = { draftRequirements.removeAt(index) }) { Text("Fjern") }
+                    Spacer(Modifier.height(12.dp))
+
+                    if (state.ingredients.isEmpty()) {
+                        Text("Opret mindst én ingrediens under fanen Lager først.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        val selectedIngredient = state.ingredients.find { it.id == selectedIngredientId } ?: state.ingredients.first()
+                        if (selectedIngredientId == null) {
+                            selectedIngredientId = selectedIngredient.id
+                            selectedUnit = selectedIngredient.preferredUnit
                         }
+
+                        Text("Tilføj ingrediens til opskrift", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
+                        Spacer(Modifier.height(6.dp))
+                        SimpleSelector(
+                            label = selectedIngredient.name,
+                            options = state.ingredients.toList(),
+                            optionText = { it.name },
+                            onSelected = { ingredient ->
+                                selectedIngredientId = ingredient.id
+                                selectedUnit = ingredient.preferredUnit
+                            }
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            OutlinedTextField(
+                                value = amountText,
+                                onValueChange = { amountText = it.replace(',', '.') },
+                                label = { Text("Mængde") },
+                                modifier = Modifier.weight(1f),
+                                singleLine = true
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            SimpleSelector(
+                                label = selectedUnit.selectorLabel(),
+                                options = MeasurementUnit.compatibleWith(selectedIngredient.quantityType),
+                                optionText = { it.selectorLabel() },
+                                onSelected = { selectedUnit = it }
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = {
+                                val amount = amountText.toDoubleOrNull()
+                                if (amount != null && amount > 0.0) {
+                                    draftRequirements += DraftRequirement(selectedIngredient.id, amount, selectedUnit)
+                                    amountText = ""
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) { Text("Tilføj til opskriften") }
+
+                        if (draftRequirements.isNotEmpty()) {
+                            Spacer(Modifier.height(10.dp))
+                            draftRequirements.forEachIndexed { index, draft ->
+                                val ingredient = state.ingredients.find { it.id == draft.ingredientId }
+                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
+                                    Text(
+                                        "• ${ingredient?.name ?: "Ukendt"}: ${state.formatEnteredAmount(draft.amount, draft.unit)}",
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    TextButton(onClick = { draftRequirements.removeAt(index) }) { Text("Fjern") }
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.height(10.dp))
+                        Button(
+                            onClick = {
+                                state.addRecipe(recipeName, proteinTag, categoryTag, notes, recipeImageUri, draftRequirements.toList())
+                                recipeName = ""
+                                proteinTag = ""
+                                categoryTag = ""
+                                notes = ""
+                                recipeImageUri = null
+                                draftRequirements.clear()
+                                showNewRecipeForm = false
+                            },
+                            enabled = recipeName.isNotBlank() && draftRequirements.isNotEmpty(),
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(14.dp)
+                        ) { Text("Gem Opskrift", fontWeight = FontWeight.Bold) }
                     }
                 }
-
-                Spacer(Modifier.height(10.dp))
-                Button(
-                    onClick = {
-                        state.addRecipe(recipeName, proteinTag, categoryTag, notes, recipeImageUri, draftRequirements.toList())
-                        recipeName = ""
-                        proteinTag = ""
-                        categoryTag = ""
-                        notes = ""
-                        recipeImageUri = null
-                        draftRequirements.clear()
-                    },
-                    enabled = recipeName.isNotBlank() && draftRequirements.isNotEmpty(),
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
-                ) { Text("Gem Opskrift", fontWeight = FontWeight.Bold) }
             }
         }
 
-        Spacer(Modifier.height(24.dp))
-        Text("Jeres Opskrifter (${state.recipes.size})", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(18.dp))
+
+        // SEARCH BAR
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            placeholder = { Text("Søg efter opskrift eller ingrediens...") },
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(onClick = { searchQuery = "" }) {
+                        Icon(Icons.Filled.Clear, contentDescription = "Ryd søgning")
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            singleLine = true
+        )
+
+        if (categories.size > 1) {
+            Spacer(Modifier.height(8.dp))
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+            ) {
+                categories.forEach { cat ->
+                    FilterChip(
+                        selected = cat == selectedCategoryFilter,
+                        onClick = { selectedCategoryFilter = cat },
+                        label = { Text(cat) }
+                    )
+                }
+            }
+        }
+
+        Spacer(Modifier.height(16.dp))
+        Text("Jeres Opskrifter (${filteredRecipes.size})", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
         Spacer(Modifier.height(10.dp))
 
-        if (state.recipes.isEmpty()) {
-            Text("Ingen opskrifter endnu. Opret den første ovenfor!", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        if (filteredRecipes.isEmpty()) {
+            Text("Ingen opskrifter matchede din søgning.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         } else {
-            state.recipes.forEach { recipe ->
+            filteredRecipes.forEach { recipe ->
                 RecipeCard(
                     recipe = recipe,
                     state = state,
@@ -695,9 +878,13 @@ fun RecipeCard(
                     OutlinedButton(
                         onClick = onEdit,
                         shape = RoundedCornerShape(12.dp)
-                    ) { Text("Redigér") }
-                    TextButton(onClick = { state.deleteRecipe(recipe.id) }) {
-                        Text("Slet", color = MaterialTheme.colorScheme.error)
+                    ) {
+                        Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(4.dp))
+                        Text("Redigér")
+                    }
+                    IconButton(onClick = { state.deleteRecipe(recipe.id) }) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Slet", tint = MaterialTheme.colorScheme.error)
                     }
                 }
             }
@@ -1016,6 +1203,7 @@ fun EditIngredientDialog(
 
 @Composable
 fun PantryScreen(state: MealPlannerState) {
+    var searchQuery by remember { mutableStateOf("") }
     var editingIngredient by remember { mutableStateOf<Ingredient?>(null) }
     var showAddIngredientDialog by remember { mutableStateOf(false) }
 
@@ -1034,6 +1222,12 @@ fun PantryScreen(state: MealPlannerState) {
         )
     }
 
+    val filteredIngredients = remember(searchQuery, state.ingredients) {
+        state.ingredients.filter {
+            searchQuery.isBlank() || it.name.contains(searchQuery, ignoreCase = true)
+        }
+    }
+
     ScreenColumn {
         Text("Lager & Råvarer", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text(
@@ -1047,18 +1241,39 @@ fun PantryScreen(state: MealPlannerState) {
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(14.dp)
         ) {
-            Text("+ Opret Ny Ingrediens", fontWeight = FontWeight.Bold)
+            Icon(Icons.Filled.Add, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("Opret Ny Ingrediens", fontWeight = FontWeight.Bold)
         }
 
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(14.dp))
 
-        if (state.ingredients.isEmpty()) {
-            NoticeCard("Ingen ingredienser oprettet endnu. Tryk på knappen ovenfor for at oprette den første!")
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = { searchQuery = it },
+            placeholder = { Text("Søg råvarer...") },
+            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(onClick = { searchQuery = "" }) {
+                        Icon(Icons.Filled.Clear, contentDescription = "Ryd")
+                    }
+                }
+            },
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            singleLine = true
+        )
+
+        Spacer(Modifier.height(16.dp))
+
+        if (filteredIngredients.isEmpty()) {
+            NoticeCard("Ingen ingredienser matchede.")
         } else {
-            Text("Ingredienser (${state.ingredients.size})", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+            Text("Ingredienser (${filteredIngredients.size})", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(10.dp))
 
-            state.ingredients
+            filteredIngredients
                 .sortedBy { it.name.lowercase() }
                 .forEach { ingredient ->
                     PantryIngredientItemCard(
@@ -1087,6 +1302,8 @@ fun PantryIngredientItemCard(
         mutableStateOf(if (currentBaseAmount > 0.0) formatDisplayNumber(currentVal) else "")
     }
     var selectedUnit by remember(currentUnit) { mutableStateOf(currentUnit) }
+
+    val isStocked = currentBaseAmount > 0.0
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -1133,12 +1350,31 @@ fun PantryIngredientItemCard(
                             modifier = Modifier.weight(1f, fill = false)
                         )
                         Spacer(Modifier.width(6.dp))
-                        Text("✏️", style = MaterialTheme.typography.labelSmall)
+                        Icon(
+                            Icons.Filled.Edit,
+                            contentDescription = "Redigér",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                     Text(
-                        "${ingredient.quantityType.danishName()} · Tryk for at redigere",
+                        "${ingredient.quantityType.danishName()} · Tryk for detaljer",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+
+                Spacer(Modifier.width(6.dp))
+
+                Surface(
+                    shape = CircleShape,
+                    color = if (isStocked) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
+                ) {
+                    Text(
+                        if (isStocked) "På lager" else "Tomt",
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isStocked) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
@@ -1156,7 +1392,7 @@ fun PantryIngredientItemCard(
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
                 ) {
                     Text(
-                        "På lager:",
+                        "Mængde:",
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1214,7 +1450,7 @@ fun ShoppingScreen(state: MealPlannerState) {
     ScreenColumn {
         Text("Indkøb", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text(
-            "Hele behovet vises. Lageret står kun som information, så intet bliver glemt.",
+            "Automatisk indkøbsliste baseret på din madplan.",
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         Spacer(Modifier.height(16.dp))
@@ -1225,8 +1461,17 @@ fun ShoppingScreen(state: MealPlannerState) {
                 shape = RoundedCornerShape(18.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
             ) {
-                Column(Modifier.padding(15.dp)) {
-                    Text("$checkedCount af ${items.size} varer klaret", fontWeight = FontWeight.Bold)
+                Column(Modifier.padding(16.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "$checkedCount af ${items.size} varer købt",
+                            fontWeight = FontWeight.Bold,
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f)
+                        )
+                        val progressPercent = if (items.isEmpty()) 0 else (checkedCount * 100 / items.size)
+                        Text("$progressPercent%", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+                    }
                     Spacer(Modifier.height(8.dp))
                     LinearProgressIndicator(
                         progress = { if (items.isEmpty()) 0f else checkedCount.toFloat() / items.size.toFloat() },
@@ -1234,62 +1479,89 @@ fun ShoppingScreen(state: MealPlannerState) {
                     )
                 }
             }
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(16.dp))
         }
 
         if (items.isEmpty()) {
-            NoticeCard("Lav først en madplan, så bliver indkøbslisten bygget automatisk.")
+            NoticeCard("Generér en madplan under fanen Madplan, så bygges indkøbslisten automatisk.")
         } else {
-            items.sortedBy { state.shoppingChecked[it.ingredient.id] == true }.forEach { item ->
-                val checked = state.shoppingChecked[item.ingredient.id] ?: false
-                Card(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 5.dp),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (checked) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
-                    )
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.padding(10.dp)
-                    ) {
-                        Checkbox(
-                            checked = checked,
-                            onCheckedChange = { state.setShoppingChecked(item.ingredient.id, it) }
-                        )
-                        if (!item.ingredient.imageUri.isNullOrEmpty()) {
-                            AsyncImage(
-                                model = item.ingredient.imageUri,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .size(36.dp)
-                                    .clip(CircleShape),
-                                contentScale = ContentScale.Crop
-                            )
-                            Spacer(Modifier.width(8.dp))
-                        }
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                item.ingredient.name,
-                                fontWeight = FontWeight.Bold,
-                                textDecoration = if (checked) TextDecoration.LineThrough else TextDecoration.None
-                            )
-                            Text("Behov: ${state.formatBaseAmount(item.ingredient, item.requiredBase)}")
-                            if (item.pantryBase > 0.0) {
-                                Text(
-                                    "Har hjemme: ${state.formatBaseAmount(item.ingredient, item.pantryBase)}",
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                    }
+            val uncheckedItems = items.filter { state.shoppingChecked[it.ingredient.id] != true }
+            val checkedItems = items.filter { state.shoppingChecked[it.ingredient.id] == true }
+
+            if (uncheckedItems.isNotEmpty()) {
+                Text("Mangler (${uncheckedItems.size})", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                uncheckedItems.forEach { item ->
+                    ShoppingItemCard(item = item, state = state, checked = false)
+                    Spacer(Modifier.height(8.dp))
+                }
+            }
+
+            if (checkedItems.isNotEmpty()) {
+                Spacer(Modifier.height(16.dp))
+                Text("Klaret (${checkedItems.size})", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.height(8.dp))
+                checkedItems.forEach { item ->
+                    ShoppingItemCard(item = item, state = state, checked = true)
+                    Spacer(Modifier.height(8.dp))
                 }
             }
         }
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+fun ShoppingItemCard(
+    item: ShoppingItem,
+    state: MealPlannerState,
+    checked: Boolean
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (checked) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(12.dp)
+        ) {
+            Checkbox(
+                checked = checked,
+                onCheckedChange = { state.setShoppingChecked(item.ingredient.id, it) }
+            )
+            if (!item.ingredient.imageUri.isNullOrEmpty()) {
+                AsyncImage(
+                    model = item.ingredient.imageUri,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(CircleShape),
+                    contentScale = ContentScale.Crop
+                )
+                Spacer(Modifier.width(10.dp))
+            }
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    item.ingredient.name,
+                    fontWeight = FontWeight.Bold,
+                    textDecoration = if (checked) TextDecoration.LineThrough else TextDecoration.None
+                )
+                Text(
+                    "Behov: ${state.formatBaseAmount(item.ingredient, item.requiredBase)}",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                if (item.pantryBase > 0.0) {
+                    Text(
+                        "Har på lager: ${state.formatBaseAmount(item.ingredient, item.pantryBase)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
     }
 }
 

@@ -6,8 +6,8 @@ import kotlin.random.Random
 
 object WeeklyPlanner {
 
-    private const val TRIALS = 700
-    private const val TOP_POOL = 10
+    private const val TRIALS = 500
+    private const val TOP_POOL = 8
 
     fun preferredSandwichDay(dayModes: Map<DayOfWeek, DayMode>): DayOfWeek? {
         val homeDays = orderedWeekDays.filter { dayModes[it] != DayMode.AWAY }
@@ -20,32 +20,41 @@ object WeeklyPlanner {
         dayModes: Map<DayOfWeek, DayMode>,
         weeklySandwichRecipeId: String?,
         currentPlan: Map<DayOfWeek, String?>,
+        lockedDays: Set<DayOfWeek> = emptySet(),
         random: Random = Random.Default
     ): Map<DayOfWeek, String?> {
         if (recipes.isEmpty()) return currentPlan
 
-        val sandwichRecipe = weeklySandwichRecipeId?.let { id -> recipes.find { it.id == id } }
-        val sandwichDay = preferredSandwichDay(dayModes)
+        val recipesById = recipes.associateBy { it.id }
         val homeDays = orderedWeekDays.filter { dayModes[it] != DayMode.AWAY }
 
         if (homeDays.isEmpty()) {
             return orderedWeekDays.associateWith { null }
         }
 
+        val sandwichRecipe = weeklySandwichRecipeId?.let { recipesById[it] }
+        val sandwichDay = preferredSandwichDay(dayModes)
+
         val candidates = mutableListOf<Pair<Double, Map<DayOfWeek, String?>>>()
 
         repeat(TRIALS) {
             val chosen = mutableMapOf<DayOfWeek, String?>().apply {
-                orderedWeekDays.forEach { this[it] = null }
+                orderedWeekDays.forEach { day ->
+                    this[day] = if (day in lockedDays) currentPlan[day] else null
+                }
             }
-            val usedIds = mutableSetOf<String>()
 
-            if (sandwichRecipe != null && sandwichDay != null) {
+            val usedIds = chosen.values.filterNotNull().toMutableSet()
+
+            // If sandwich day is home and not locked by another meal
+            if (sandwichRecipe != null && sandwichDay != null && sandwichDay !in lockedDays) {
                 chosen[sandwichDay] = sandwichRecipe.id
                 usedIds += sandwichRecipe.id
             }
 
-            val autoDays = homeDays.filter { it != sandwichDay }
+            val autoDays = homeDays.filter { day ->
+                day !in lockedDays && (sandwichRecipe == null || day != sandwichDay)
+            }
 
             autoDays.forEach { day ->
                 val available = recipes.filter {
@@ -61,15 +70,15 @@ object WeeklyPlanner {
                         val incremental = incrementalRecipeScore(
                             recipe = recipe,
                             chosenRecipeIds = chosen.values.filterNotNull(),
-                            allRecipes = recipes,
+                            recipesById = recipesById,
                             pantry = pantry
                         )
-                        val jitter = random.nextDouble(0.0, 16.0)
+                        val jitter = random.nextDouble(0.0, 12.0)
                         recipe to (incremental + jitter)
                     }
                     .sortedByDescending { it.second }
 
-                val choicePool = ranked.take(max(1, minOf(5, ranked.size)))
+                val choicePool = ranked.take(max(1, minOf(4, ranked.size)))
                 val chosenRecipe = weightedPick(choicePool, random)
                 chosen[day] = chosenRecipe.id
                 usedIds += chosenRecipe.id
@@ -77,7 +86,7 @@ object WeeklyPlanner {
 
             val totalScore = scoreWholeWeek(
                 plan = chosen,
-                recipes = recipes,
+                recipesById = recipesById,
                 pantry = pantry,
                 previousPlan = currentPlan
             )
@@ -100,6 +109,7 @@ object WeeklyPlanner {
         if (dayModes[day] == DayMode.AWAY) return currentPlan
         if (currentPlan[day] == weeklySandwichRecipeId) return currentPlan
 
+        val recipesById = recipes.associateBy { it.id }
         val oldId = currentPlan[day]
         val idsUsedElsewhere = currentPlan
             .filterKeys { it != day }
@@ -120,13 +130,13 @@ object WeeklyPlanner {
         val ranked = alternatives.map { recipe ->
             val candidate = currentPlan.toMutableMap()
             candidate[day] = recipe.id
-            val score = scoreWholeWeek(candidate, recipes, pantry, currentPlan) +
+            val score = scoreWholeWeek(candidate, recipesById, pantry, currentPlan) +
                 random.nextDouble(0.0, 8.0)
             score to recipe
         }.sortedByDescending { it.first }
 
         val choice = weightedPick(
-            ranked.take(minOf(5, ranked.size)).map { it.second to it.first },
+            ranked.take(minOf(4, ranked.size)).map { it.second to it.first },
             random
         )
 
@@ -136,17 +146,26 @@ object WeeklyPlanner {
     private fun incrementalRecipeScore(
         recipe: Recipe,
         chosenRecipeIds: List<String>,
-        allRecipes: List<Recipe>,
+        recipesById: Map<String, Recipe>,
         pantry: Map<String, Double>
     ): Double {
-        val chosenRecipes = chosenRecipeIds.mapNotNull { id -> allRecipes.find { it.id == id } }
+        val chosenRecipes = chosenRecipeIds.mapNotNull { recipesById[it] }
         var score = 0.0
 
+        // Pantry coverage reward
+        var totalReqs = 0
+        var coveredReqs = 0
         recipe.ingredients.forEach { req ->
             val available = pantry[req.ingredientId] ?: 0.0
             if (req.amountBase > 0.0) {
-                score += minOf(available / req.amountBase, 1.0) * 24.0
+                totalReqs++
+                val coverage = minOf(available / req.amountBase, 1.0)
+                score += coverage * 25.0
+                if (coverage >= 0.99) coveredReqs++
             }
+        }
+        if (totalReqs > 0 && coveredReqs == totalReqs) {
+            score += 30.0 // Full pantry coverage bonus!
         }
 
         val ingredientsAlreadyNeeded = chosenRecipes
@@ -155,21 +174,21 @@ object WeeklyPlanner {
             .toSet()
 
         recipe.ingredients.forEach {
-            if (it.ingredientId in ingredientsAlreadyNeeded) score += 8.0
+            if (it.ingredientId in ingredientsAlreadyNeeded) score += 10.0
         }
 
         if (recipe.proteinTag.isNotBlank()) {
             val sameProtein = chosenRecipes.count {
                 it.proteinTag.equals(recipe.proteinTag, ignoreCase = true)
             }
-            score -= sameProtein * 15.0
+            score -= sameProtein * 18.0
         }
 
         if (recipe.categoryTag.isNotBlank()) {
             val sameCategory = chosenRecipes.count {
                 it.categoryTag.equals(recipe.categoryTag, ignoreCase = true)
             }
-            score -= sameCategory * 10.0
+            score -= sameCategory * 12.0
         }
 
         return score
@@ -177,30 +196,49 @@ object WeeklyPlanner {
 
     private fun scoreWholeWeek(
         plan: Map<DayOfWeek, String?>,
-        recipes: List<Recipe>,
+        recipesById: Map<String, Recipe>,
         pantry: Map<String, Double>,
         previousPlan: Map<DayOfWeek, String?>
     ): Double {
-        val selected = plan.values.filterNotNull().mapNotNull { id -> recipes.find { it.id == id } }
-        if (selected.isEmpty()) return 0.0
+        val dayList = orderedWeekDays.mapNotNull { day ->
+            plan[day]?.let { id -> day to recipesById[id] }
+        }
+
+        if (dayList.isEmpty()) return 0.0
+        val selected = dayList.mapNotNull { it.second }
 
         var score = 0.0
 
+        // Pantry coverage
         selected.forEach { recipe ->
             recipe.ingredients.forEach { req ->
                 val available = pantry[req.ingredientId] ?: 0.0
                 if (req.amountBase > 0.0) {
-                    score += minOf(available / req.amountBase, 1.0) * 18.0
+                    score += minOf(available / req.amountBase, 1.0) * 20.0
                 }
             }
         }
 
+        // Shared ingredients across days
         val ingredientFrequency = selected
             .flatMap { it.ingredients }
             .groupingBy { it.ingredientId }
             .eachCount()
         ingredientFrequency.values.forEach { count ->
-            if (count > 1) score += (count - 1) * 11.0
+            if (count > 1) score += (count - 1) * 12.0
+        }
+
+        // Protein diversity & consecutive protein penalty
+        for (i in 0 until dayList.size) {
+            val p1 = dayList[i].second?.proteinTag
+            if (p1.isNullOrBlank()) continue
+
+            if (i > 0) {
+                val p0 = dayList[i - 1].second?.proteinTag
+                if (!p0.isNullOrBlank() && p0.equals(p1, ignoreCase = true)) {
+                    score -= 25.0 // Consecutive protein penalty!
+                }
+            }
         }
 
         val proteinCounts = selected
@@ -208,7 +246,7 @@ object WeeklyPlanner {
             .groupingBy { it.proteinTag.lowercase() }
             .eachCount()
         proteinCounts.values.forEach { count ->
-            if (count > 1) score -= (count - 1) * 13.0
+            if (count > 1) score -= (count - 1) * 14.0
         }
 
         val categoryCounts = selected
@@ -216,7 +254,7 @@ object WeeklyPlanner {
             .groupingBy { it.categoryTag.lowercase() }
             .eachCount()
         categoryCounts.values.forEach { count ->
-            if (count > 1) score -= (count - 1) * 9.0
+            if (count > 1) score -= (count - 1) * 10.0
         }
 
         orderedWeekDays.forEach { day ->
@@ -224,7 +262,7 @@ object WeeklyPlanner {
         }
 
         val duplicateCount = selected.size - selected.map { it.id }.distinct().size
-        score -= duplicateCount * 80.0
+        score -= duplicateCount * 100.0
         return score
     }
 
