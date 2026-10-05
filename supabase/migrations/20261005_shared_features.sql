@@ -272,3 +272,10 @@ begin
     end if;
 end
 $$;
+
+
+create unique index if not exists uq_ingredients_household_normalized_name
+    on public.ingredients (household_id, lower(btrim(name)));
+
+create unique index if not exists uq_recipes_household_normalized_name
+    on public.recipes (household_id, lower(btrim(name)));
