@@ -712,3 +712,78 @@ begin
     end if;
 end
 $$;
+
+
+-- Shopping buy/no-buy choice is independent from purchased status.
+create table if not exists public.shopping_inclusions (
+    household_id uuid not null,
+    weekly_plan_id uuid not null,
+    ingredient_id uuid not null,
+    included boolean not null default true,
+    primary key (weekly_plan_id, ingredient_id),
+    foreign key (weekly_plan_id, household_id)
+        references public.weekly_plans(id, household_id)
+        on delete cascade,
+    foreign key (ingredient_id, household_id)
+        references public.ingredients(id, household_id)
+        on delete cascade
+);
+
+create index if not exists idx_shopping_inclusions_household
+    on public.shopping_inclusions(household_id);
+
+create index if not exists idx_shopping_inclusions_plan_household
+    on public.shopping_inclusions(weekly_plan_id, household_id);
+
+create index if not exists idx_shopping_inclusions_ingredient_household
+    on public.shopping_inclusions(ingredient_id, household_id);
+
+alter table public.shopping_inclusions enable row level security;
+
+drop policy if exists shopping_inclusions_member_all
+on public.shopping_inclusions;
+
+create policy shopping_inclusions_member_all
+on public.shopping_inclusions
+for all
+to authenticated
+using (private.is_household_member(household_id))
+with check (private.is_household_member(household_id));
+
+grant select, insert, update, delete
+on public.shopping_inclusions
+to authenticated;
+
+do $$
+begin
+    if not exists (
+        select 1 from pg_publication_tables
+        where pubname = 'supabase_realtime'
+          and schemaname = 'public'
+          and tablename = 'shopping_inclusions'
+    ) then
+        alter publication supabase_realtime
+            add table public.shopping_inclusions;
+    end if;
+end
+$$;
+
+-- Allow every unit exposed by the Android app.
+alter table public.ingredients
+    drop constraint if exists ingredients_preferred_unit_check;
+
+alter table public.ingredients
+    add constraint ingredients_preferred_unit_check
+    check (
+        preferred_unit in (
+            'GRAM',
+            'KILOGRAM',
+            'MILLILITRE',
+            'TEASPOON',
+            'TABLESPOON',
+            'LITRE',
+            'PIECE',
+            'PACK',
+            'CAN'
+        )
+    );
