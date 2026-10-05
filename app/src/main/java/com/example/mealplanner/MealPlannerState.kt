@@ -42,6 +42,7 @@ class MealPlannerState(
     val plan = mutableStateMapOf<DayOfWeek, String?>()
     val lockedDays = mutableStateSetOf<DayOfWeek>()
     val shoppingChecked = mutableStateMapOf<String, Boolean>()
+    val shoppingIncluded = mutableStateMapOf<String, Boolean>()
     val selectedLunchRecipeIds = mutableStateListOf<String>()
     val history = mutableStateListOf<MealHistoryEntry>()
 
@@ -152,6 +153,9 @@ class MealPlannerState(
         shoppingChecked.clear()
         shoppingChecked.putAll(snapshot.shoppingChecked)
 
+        shoppingIncluded.clear()
+        shoppingIncluded.putAll(snapshot.shoppingIncluded)
+
         selectedLunchRecipeIds.clear()
         selectedLunchRecipeIds.addAll(snapshot.selectedLunchRecipeIds)
 
@@ -184,6 +188,7 @@ class MealPlannerState(
 
         runMutation {
             if (clearChecks) {
+                shoppingIncluded.clear()
                 repository.clearShoppingChecks(id)
             }
             repository.saveWeekState(
@@ -1097,10 +1102,40 @@ class MealPlannerState(
         }
     }
 
+    fun isShoppingIncluded(ingredientId: String): Boolean =
+        shoppingIncluded[ingredientId] ?: true
+
+    fun setShoppingIncluded(
+        ingredientId: String,
+        included: Boolean
+    ) {
+        shoppingIncluded[ingredientId] = included
+        if (!included) {
+            shoppingChecked[ingredientId] = false
+        }
+
+        val id = weeklyPlanId ?: return
+        runMutation {
+            repository.setShoppingIncluded(
+                weeklyPlanId = id,
+                ingredientId = ingredientId,
+                included = included
+            )
+            if (!included) {
+                repository.setShoppingChecked(
+                    weeklyPlanId = id,
+                    ingredientId = ingredientId,
+                    checked = false
+                )
+            }
+        }
+    }
+
     fun setShoppingChecked(
         ingredientId: String,
         checked: Boolean
     ) {
+        if (!isShoppingIncluded(ingredientId) && checked) return
         shoppingChecked[ingredientId] = checked
         val id = weeklyPlanId ?: return
 
