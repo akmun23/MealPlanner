@@ -753,7 +753,7 @@ private fun RecipeListCard(
                 val meta = buildList {
                     if (recipe.categoryTag.isNotBlank()) add(recipe.categoryTag)
                     if (recipe.proteinTag.isNotBlank()) add(recipe.proteinTag)
-                    add("\${recipe.ingredients.size} ingredienser")
+                    add("${recipe.ingredients.size} ingredienser")
                 }
 
                 Text(
@@ -1285,7 +1285,7 @@ private fun IngredientListCard(
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    "\${ingredient.quantityType.danishName()} · \${ingredient.preferredUnit.selectorLabel()}",
+                    "${ingredient.quantityType.danishName()} · ${ingredient.preferredUnit.selectorLabel()}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1645,7 +1645,7 @@ fun ShoppingScreen(state: MealPlannerState) {
                 ) {
                     Column(Modifier.padding(14.dp)) {
                         Text(
-                            "$checkedCount af \${shoppingItems.size}",
+                            "$checkedCount af ${shoppingItems.size}",
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(Modifier.height(6.dp))
