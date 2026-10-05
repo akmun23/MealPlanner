@@ -60,6 +60,21 @@ private data class IngredientCategoryRow(
 )
 
 @Serializable
+private data class RecipeCategoryOptionRow(
+    val id: String,
+    @SerialName("household_id") val householdId: String,
+    val name: String,
+    val position: Int = 0
+)
+
+@Serializable
+private data class RecipeCategoryAssignmentRow(
+    @SerialName("household_id") val householdId: String,
+    @SerialName("recipe_id") val recipeId: String,
+    @SerialName("category_id") val categoryId: String
+)
+
+@Serializable
 private data class RecipeRow(
     val id: String,
     @SerialName("household_id") val householdId: String,
@@ -170,6 +185,7 @@ private data class FeedbackRow(
 data class CloudSnapshot(
     val ingredients: List<Ingredient>,
     val ingredientCategories: List<IngredientCategory>,
+    val recipeCategories: List<RecipeCategoryOption>,
     val recipes: List<Recipe>,
     val pantry: Map<String, Double>,
     val dayModes: Map<DayOfWeek, DayMode>,
@@ -219,6 +235,16 @@ class CloudMealRepository(
                     filter { eq("household_id", householdId) }
                 }.decodeList<IngredientCategoryRow>()
             }
+            val recipeCategoriesDeferred = async {
+                supabase.from("recipe_categories").select {
+                    filter { eq("household_id", householdId) }
+                }.decodeList<RecipeCategoryOptionRow>()
+            }
+            val recipeAssignmentsDeferred = async {
+                supabase.from("recipe_category_assignments").select {
+                    filter { eq("household_id", householdId) }
+                }.decodeList<RecipeCategoryAssignmentRow>()
+            }
             val recipesDeferred = async {
                 supabase.from("recipes").select {
                     filter { eq("household_id", householdId) }
@@ -262,6 +288,9 @@ class CloudMealRepository(
             val proteinSettings = proteinSettingsDeferred.await()
                 .associateBy { it.ingredientId }
             val categoryRows = categoriesDeferred.await()
+            val recipeCategoryRows = recipeCategoriesDeferred.await()
+            val recipeAssignments = recipeAssignmentsDeferred.await()
+                .associateBy { it.recipeId }
             val recipeRows = recipesDeferred.await()
             val rotationRows = rotationDeferred.await()
             val recipeTimeRows = recipeTimeDeferred.await()
@@ -364,6 +393,7 @@ class CloudMealRepository(
                             ingredientsById[ingredientId]?.isProtein == true
                         }
                         .toSet(),
+                    categoryId = recipeAssignments[row.id]?.categoryId,
                     categoryTag = row.categoryTag,
                     notes = row.notes,
                     imageUri = row.imagePath?.let(urls::get),
@@ -394,6 +424,18 @@ class CloudMealRepository(
                     .sortedWith(compareBy<IngredientCategoryRow> { it.position }.thenBy { it.name.lowercase() })
                     .map {
                         IngredientCategory(
+                            id = it.id,
+                            name = it.name,
+                            position = it.position
+                        )
+                    },
+                recipeCategories = recipeCategoryRows
+                    .sortedWith(
+                        compareBy<RecipeCategoryOptionRow> { it.position }
+                            .thenBy { it.name.lowercase() }
+                    )
+                    .map {
+                        RecipeCategoryOption(
                             id = it.id,
                             name = it.name,
                             position = it.position
@@ -560,6 +602,44 @@ class CloudMealRepository(
         )
     }
 
+    suspend fun createRecipeCategory(
+        name: String,
+        position: Int
+    ): RecipeCategoryOption = withContext(Dispatchers.IO) {
+        val row = RecipeCategoryOptionRow(
+            id = UUID.randomUUID().toString(),
+            householdId = householdId,
+            name = name.trim(),
+            position = position
+        )
+
+        val saved = supabase.from("recipe_categories").insert(row) {
+            select()
+        }.decodeList<RecipeCategoryOptionRow>().firstOrNull() ?: row
+
+        RecipeCategoryOption(
+            id = saved.id,
+            name = saved.name,
+            position = saved.position
+        )
+    }
+
+    suspend fun renameRecipeCategory(
+        categoryId: String,
+        name: String
+    ) = withContext(Dispatchers.IO) {
+        supabase.from("recipe_categories").update(
+            {
+                set("name", name.trim())
+            }
+        ) {
+            filter {
+                eq("household_id", householdId)
+                eq("id", categoryId)
+            }
+        }
+    }
+
     suspend fun createIngredientCategory(
         name: String,
         position: Int
@@ -629,6 +709,25 @@ class CloudMealRepository(
             )
         ) {
             onConflict = "id"
+        }
+
+        if (recipe.categoryId != null) {
+            supabase.from("recipe_category_assignments").upsert(
+                RecipeCategoryAssignmentRow(
+                    householdId = householdId,
+                    recipeId = recipe.id,
+                    categoryId = recipe.categoryId
+                )
+            ) {
+                onConflict = "household_id,recipe_id"
+            }
+        } else {
+            supabase.from("recipe_category_assignments").delete {
+                filter {
+                    eq("household_id", householdId)
+                    eq("recipe_id", recipe.id)
+                }
+            }
         }
 
         supabase.from("recipe_rotation_settings").upsert(
@@ -844,6 +943,8 @@ class CloudMealRepository(
             "ingredients",
             "ingredient_protein_settings",
             "shopping_categories",
+            "recipe_categories",
+            "recipe_category_assignments",
             "recipes",
             "recipe_rotation_settings",
             "recipe_time_settings",
