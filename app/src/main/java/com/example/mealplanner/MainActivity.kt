@@ -151,6 +151,7 @@ enum class AppTab(val label: String, val icon: ImageVector) {
 private sealed interface AppPage {
     data object Settings : AppPage
     data object IngredientCategories : AppPage
+    data object RecipeCategories : AppPage
     data class IngredientEditor(val ingredientId: String?) : AppPage
     data class RecipeDetail(val recipeId: String) : AppPage
     data class RecipeEditor(
@@ -190,6 +191,7 @@ fun MealPlannerApp(
         page = when (val current = page) {
             AppPage.Settings -> null
             AppPage.IngredientCategories -> AppPage.Settings
+            AppPage.RecipeCategories -> AppPage.Settings
             is AppPage.IngredientEditor -> null
             is AppPage.RecipeDetail -> null
             is AppPage.RecipeEditor ->
@@ -221,11 +223,17 @@ fun MealPlannerApp(
             state = state,
             onBack = { navigateBack() },
             onRenameHousehold = onRenameHousehold,
-            onCategories = { page = AppPage.IngredientCategories },
+            onIngredientCategories = { page = AppPage.IngredientCategories },
+            onRecipeCategories = { page = AppPage.RecipeCategories },
             onLogout = onLogout
         )
 
         AppPage.IngredientCategories -> IngredientCategoriesScreen(
+            state = state,
+            onBack = { navigateBack() }
+        )
+
+        AppPage.RecipeCategories -> RecipeCategoriesScreen(
             state = state,
             onBack = { navigateBack() }
         )
@@ -933,17 +941,17 @@ fun RecipesScreen(
     val mealOptions = listOf("Alle måltider") +
         MealType.entries.map { it.danishName() }
     val categoryOptions = listOf("Alle kategorier") +
-        RecipeCategory.entries.map { it.danishName() }
+        state.recipeCategories.map { it.name }
 
     val filteredRecipes by remember {
         derivedStateOf {
             state.recipes.filter { recipe ->
-                val category = recipe.categoryTag.toRecipeCategory()
+                val categoryName = state.recipeCategoryName(recipe)
 
                 val matchesSearch =
                     searchQuery.isBlank() ||
                         recipe.name.contains(searchQuery, ignoreCase = true) ||
-                        category.danishName().contains(searchQuery, ignoreCase = true) ||
+                        categoryName.contains(searchQuery, ignoreCase = true) ||
                         state.recipeProteinNames(recipe).any {
                             it.contains(searchQuery, ignoreCase = true)
                         }
@@ -954,7 +962,7 @@ fun RecipesScreen(
 
                 val matchesCategory =
                     categoryFilter == "Alle kategorier" ||
-                        category.danishName() == categoryFilter
+                        categoryName == categoryFilter
 
                 val matchesPantry =
                     !canMakeOnly || state.canMake(recipe)
@@ -1043,6 +1051,7 @@ fun RecipesScreen(
                 key = { it.id }
             ) { recipe ->
                 RecipeListCard(
+                    state = state,
                     recipe = recipe,
                     isSandwich = state.weeklySandwichRecipeId == recipe.id,
                     onClick = { onOpenRecipe(recipe.id) }
@@ -1056,6 +1065,7 @@ fun RecipesScreen(
 
 @Composable
 private fun RecipeListCard(
+    state: MealPlannerState,
     recipe: Recipe,
     isSandwich: Boolean,
     onClick: () -> Unit
@@ -1092,7 +1102,7 @@ private fun RecipeListCard(
 
                 val meta = buildList {
                     add(recipe.mealType.danishName())
-                    add(recipe.categoryTag.toRecipeCategory().danishName())
+                    add(state.recipeCategoryName(recipe))
                     if (
                         recipe.mealType == MealType.DINNER &&
                         !recipe.autoRotationEnabled
@@ -1175,7 +1185,7 @@ private fun RecipeDetailScreen(
                 Text(
                     buildList {
                         add(recipe.mealType.danishName())
-                        add(recipe.categoryTag.toRecipeCategory().danishName())
+                        add(state.recipeCategoryName(recipe))
                         if (
                             recipe.mealType == MealType.DINNER &&
                             !recipe.autoRotationEnabled
@@ -1314,10 +1324,10 @@ private fun RecipeEditorScreen(
         ?.takeIf { it in 1..1440 }
     val prepTimeValid =
         prepMinutesText.isBlank() || prepMinutes != null
-    var category by remember(recipeId) {
+    var categoryId by remember(recipeId) {
         mutableStateOf(
-            existing?.categoryTag?.toRecipeCategory()
-                ?: RecipeCategory.OTHER
+            existing?.categoryId
+                ?: state.recipeCategories.firstOrNull()?.id
         )
     }
     var notes by remember(recipeId) { mutableStateOf(existing?.notes ?: "") }
@@ -1422,12 +1432,22 @@ private fun RecipeEditorScreen(
                             style = MaterialTheme.typography.labelMedium
                         )
                         Spacer(Modifier.height(4.dp))
-                        SimpleSelector(
-                            label = category.danishName(),
-                            options = RecipeCategory.entries,
-                            optionText = { it.danishName() },
-                            onSelected = { category = it }
-                        )
+                        if (state.recipeCategories.isEmpty()) {
+                            Text(
+                                "Andet",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            SimpleSelector(
+                                label = state.recipeCategories
+                                    .find { it.id == categoryId }
+                                    ?.name
+                                    ?: "Andet",
+                                options = state.recipeCategories.toList(),
+                                optionText = { it.name },
+                                onSelected = { categoryId = it.id }
+                            )
+                        }
                     }
                 }
             }
@@ -1544,7 +1564,7 @@ private fun RecipeEditorScreen(
                                 mealType = mealType,
                                 autoRotationEnabled = autoRotationEnabled,
                                 prepMinutes = prepMinutes,
-                                category = category,
+                                categoryId = categoryId,
                                 notes = notes,
                                 imageUri = imageUri,
                                 requirements = drafts.toList()
@@ -1560,7 +1580,7 @@ private fun RecipeEditorScreen(
                                 mealType = mealType,
                                 autoRotationEnabled = autoRotationEnabled,
                                 prepMinutes = prepMinutes,
-                                category = category,
+                                categoryId = categoryId,
                                 notes = notes,
                                 imageUri = imageUri,
                                 requirements = drafts.toList()
@@ -2510,7 +2530,8 @@ private fun SettingsScreen(
     state: MealPlannerState,
     onBack: () -> Unit,
     onRenameHousehold: suspend (String) -> Boolean,
-    onCategories: () -> Unit,
+    onIngredientCategories: () -> Unit,
+    onRecipeCategories: () -> Unit,
     onLogout: () -> Unit
 ) {
     val context = LocalContext.current
@@ -2648,11 +2669,21 @@ private fun SettingsScreen(
 
             item {
                 OutlinedButton(
-                    onClick = onCategories,
+                    onClick = onIngredientCategories,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Text("Indkøbskategorier")
+                }
+            }
+
+            item {
+                OutlinedButton(
+                    onClick = onRecipeCategories,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("Opskriftskategorier")
                 }
             }
 
