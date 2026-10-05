@@ -146,7 +146,11 @@ enum class AppTab(val label: String, val icon: ImageVector) {
 private sealed interface AppPage {
     data object Settings : AppPage
     data object IngredientLibrary : AppPage
-    data class IngredientEditor(val ingredientId: String?) : AppPage
+    data class IngredientEditor(
+        val ingredientId: String?,
+        val returnToRecipeEditor: Boolean = false,
+        val recipeId: String? = null
+    ) : AppPage
     data class RecipeDetail(val recipeId: String) : AppPage
     data class RecipeEditor(val recipeId: String?) : AppPage
 }
@@ -208,8 +212,20 @@ fun MealPlannerApp(
         is AppPage.IngredientEditor -> IngredientEditorScreen(
             state = state,
             ingredientId = current.ingredientId,
-            onBack = { page = AppPage.IngredientLibrary },
-            onSaved = { page = AppPage.IngredientLibrary }
+            onBack = {
+                page = if (current.returnToRecipeEditor) {
+                    AppPage.RecipeEditor(current.recipeId)
+                } else {
+                    AppPage.IngredientLibrary
+                }
+            },
+            onSaved = {
+                page = if (current.returnToRecipeEditor) {
+                    AppPage.RecipeEditor(current.recipeId)
+                } else {
+                    AppPage.IngredientLibrary
+                }
+            }
         )
 
         is AppPage.RecipeDetail -> RecipeDetailScreen(
@@ -224,6 +240,13 @@ fun MealPlannerApp(
             recipeId = current.recipeId,
             onBack = {
                 page = current.recipeId?.let { AppPage.RecipeDetail(it) }
+            },
+            onNewIngredient = {
+                page = AppPage.IngredientEditor(
+                    ingredientId = null,
+                    returnToRecipeEditor = true,
+                    recipeId = current.recipeId
+                )
             },
             onSaved = { savedId ->
                 page = savedId?.let { AppPage.RecipeDetail(it) }
@@ -982,6 +1005,7 @@ private fun RecipeEditorScreen(
     state: MealPlannerState,
     recipeId: String?,
     onBack: () -> Unit,
+    onNewIngredient: () -> Unit,
     onSaved: (String?) -> Unit
 ) {
     val existing = recipeId?.let { id ->
@@ -1108,6 +1132,23 @@ private fun RecipeEditorScreen(
                     onValueChange = { ingredientSearch = it },
                     placeholder = "Tilføj ingrediens"
                 )
+            }
+
+            if (
+                ingredientSearch.isNotBlank() &&
+                matches.isEmpty()
+            ) {
+                item {
+                    OutlinedButton(
+                        onClick = onNewIngredient,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Icon(Icons.Filled.Add, contentDescription = null)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Ny ingrediens")
+                    }
+                }
             }
 
             items(matches, key = { it.id }) { ingredient ->
