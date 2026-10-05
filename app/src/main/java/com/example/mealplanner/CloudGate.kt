@@ -126,6 +126,26 @@ class CloudAccountRepository {
             .firstOrNull()
     }
 
+    suspend fun renameHousehold(
+        householdId: String,
+        name: String
+    ): HouseholdDto? {
+        val clean = name.trim()
+        require(clean.isNotBlank()) { "Navnet må ikke være tomt." }
+
+        supabase.from("households").update(
+            {
+                set("name", clean)
+            }
+        ) {
+            filter {
+                eq("id", householdId)
+            }
+        }
+
+        return currentHousehold()
+    }
+
     suspend fun createHousehold(
         name: String
     ): HouseholdDto? {
@@ -374,6 +394,23 @@ fun CloudGate() {
         is CloudScreen.Ready -> {
             MealPlannerApp(
                 household = current.household,
+                onRenameHousehold = { newName ->
+                    try {
+                        val updated = repository.renameHousehold(
+                            householdId = current.household.id,
+                            name = newName
+                        )
+
+                        if (updated != null) {
+                            screen = CloudScreen.Ready(updated)
+                            true
+                        } else {
+                            false
+                        }
+                    } catch (_: Exception) {
+                        false
+                    }
+                },
                 onLogout = {
                     scope.launch {
                         repository.signOut()

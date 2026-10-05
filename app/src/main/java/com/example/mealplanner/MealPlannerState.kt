@@ -33,6 +33,7 @@ class MealPlannerState(
     private val reloadMutex = Mutex()
 
     val ingredients = mutableStateListOf<Ingredient>()
+    val ingredientCategories = mutableStateListOf<IngredientCategory>()
     val recipes = mutableStateListOf<Recipe>()
     val pantry = mutableStateMapOf<String, Double>()
     val dayModes = mutableStateMapOf<DayOfWeek, DayMode>()
@@ -114,6 +115,9 @@ class MealPlannerState(
     private fun applySnapshot(snapshot: CloudSnapshot) {
         ingredients.clear()
         ingredients.addAll(snapshot.ingredients)
+
+        ingredientCategories.clear()
+        ingredientCategories.addAll(snapshot.ingredientCategories)
 
         recipes.clear()
         recipes.addAll(snapshot.recipes)
@@ -218,7 +222,7 @@ class MealPlannerState(
     fun addIngredient(
         name: String,
         type: QuantityType,
-        shoppingCategory: ShoppingCategory,
+        shoppingCategoryId: String?,
         imageUri: String? = null,
         preferredUnit: MeasurementUnit = MeasurementUnit.defaultFor(type)
     ): Boolean {
@@ -234,7 +238,7 @@ class MealPlannerState(
             name = clean,
             quantityType = type,
             preferredUnit = preferredUnit,
-            shoppingCategory = shoppingCategory,
+            shoppingCategoryId = shoppingCategoryId,
             imageUri = imageUri
         )
 
@@ -252,7 +256,7 @@ class MealPlannerState(
         id: String,
         name: String,
         type: QuantityType,
-        shoppingCategory: ShoppingCategory,
+        shoppingCategoryId: String?,
         preferredUnit: MeasurementUnit,
         imageUri: String? = null
     ): Boolean {
@@ -272,7 +276,7 @@ class MealPlannerState(
             name = name.trim(),
             quantityType = type,
             preferredUnit = preferredUnit,
-            shoppingCategory = shoppingCategory,
+            shoppingCategoryId = shoppingCategoryId,
             imageUri = imageUri
         )
         ingredients[index] = updated
@@ -284,6 +288,74 @@ class MealPlannerState(
         }
         return true
     }
+
+    fun isIngredientCategoryNameAvailable(
+        name: String,
+        excludingId: String? = null
+    ): Boolean {
+        val clean = name.trim()
+        return clean.isNotBlank() && ingredientCategories.none {
+            it.id != excludingId &&
+                it.name.trim().equals(clean, ignoreCase = true)
+        }
+    }
+
+    fun addIngredientCategory(name: String): Boolean {
+        val clean = name.trim()
+        if (!isIngredientCategoryNameAvailable(clean)) {
+            lastError = "Kategorien findes allerede."
+            return false
+        }
+
+        val nextPosition =
+            (ingredientCategories.maxOfOrNull { it.position } ?: -1) + 1
+
+        runMutation {
+            val saved = repository.createIngredientCategory(
+                name = clean,
+                position = nextPosition
+            )
+            if (ingredientCategories.none { it.id == saved.id }) {
+                ingredientCategories += saved
+                ingredientCategories.sortWith(
+                    compareBy<IngredientCategory> { it.position }
+                        .thenBy { it.name.lowercase() }
+                )
+            }
+        }
+        return true
+    }
+
+    fun renameIngredientCategory(
+        categoryId: String,
+        name: String
+    ): Boolean {
+        val clean = name.trim()
+        if (!isIngredientCategoryNameAvailable(clean, excludingId = categoryId)) {
+            lastError = "Kategorien findes allerede."
+            return false
+        }
+
+        val index = ingredientCategories.indexOfFirst { it.id == categoryId }
+        if (index < 0) return false
+
+        ingredientCategories[index] =
+            ingredientCategories[index].copy(name = clean)
+
+        runMutation {
+            repository.renameIngredientCategory(
+                categoryId = categoryId,
+                name = clean
+            )
+        }
+        return true
+    }
+
+    fun ingredientCategoryName(categoryId: String?): String =
+        ingredientCategories
+            .find { it.id == categoryId }
+            ?.name
+            ?: "Andet"
 
     fun deleteIngredient(ingredientId: String) {
         if (recipes.any { recipe ->
@@ -778,6 +850,7 @@ class MealPlannerState(
         }
 
         val ingredientsById = ingredients.associateBy { it.id }
+        val categoriesById = ingredientCategories.associateBy { it.id }
 
         return totals.mapNotNull { (ingredientId, requiredBase) ->
             val ingredient = ingredientsById[ingredientId]
@@ -790,7 +863,17 @@ class MealPlannerState(
             )
         }.sortedWith(
             compareBy<ShoppingItem>(
-                { it.ingredient.shoppingCategory.ordinal },
+                {
+                    categoriesById[it.ingredient.shoppingCategoryId]
+                        ?.position
+                        ?: Int.MAX_VALUE
+                },
+                {
+                    categoriesById[it.ingredient.shoppingCategoryId]
+                        ?.name
+                        ?.lowercase()
+                        ?: "andet"
+                },
                 { it.ingredient.name.lowercase() }
             )
         )

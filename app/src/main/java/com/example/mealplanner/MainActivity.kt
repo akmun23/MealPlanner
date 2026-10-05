@@ -88,6 +88,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -149,6 +150,7 @@ enum class AppTab(val label: String, val icon: ImageVector) {
 
 private sealed interface AppPage {
     data object Settings : AppPage
+    data object IngredientCategories : AppPage
     data class IngredientEditor(val ingredientId: String?) : AppPage
     data class RecipeDetail(val recipeId: String) : AppPage
     data class RecipeEditor(
@@ -160,6 +162,7 @@ private sealed interface AppPage {
 @Composable
 fun MealPlannerApp(
     household: HouseholdDto,
+    onRenameHousehold: suspend (String) -> Boolean,
     onLogout: () -> Unit
 ) {
     val context = LocalContext.current
@@ -186,6 +189,7 @@ fun MealPlannerApp(
     fun navigateBack() {
         page = when (val current = page) {
             AppPage.Settings -> null
+            AppPage.IngredientCategories -> AppPage.Settings
             is AppPage.IngredientEditor -> null
             is AppPage.RecipeDetail -> null
             is AppPage.RecipeEditor ->
@@ -216,7 +220,14 @@ fun MealPlannerApp(
             household = household,
             state = state,
             onBack = { navigateBack() },
+            onRenameHousehold = onRenameHousehold,
+            onCategories = { page = AppPage.IngredientCategories },
             onLogout = onLogout
+        )
+
+        AppPage.IngredientCategories -> IngredientCategoriesScreen(
+            state = state,
+            onBack = { navigateBack() }
         )
 
         is AppPage.IngredientEditor -> IngredientEditorScreen(
@@ -1657,9 +1668,13 @@ private fun IngredientEditorScreen(
         mutableStateOf(existing?.preferredUnit ?: MeasurementUnit.GRAM)
     }
 
-    var shoppingCategory by remember(ingredientId) {
+    var shoppingCategoryId by remember(ingredientId) {
         mutableStateOf(
-            existing?.shoppingCategory ?: ShoppingCategory.OTHER
+            existing?.shoppingCategoryId
+                ?: state.ingredientCategories
+                    .firstOrNull { it.name.equals("Andet", ignoreCase = true) }
+                    ?.id
+                ?: state.ingredientCategories.firstOrNull()?.id
         )
     }
 
@@ -1748,12 +1763,20 @@ private fun IngredientEditorScreen(
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(Modifier.height(6.dp))
-                SimpleSelector(
-                    label = shoppingCategory.danishName(),
-                    options = ShoppingCategory.entries,
-                    optionText = { it.danishName() },
-                    onSelected = { shoppingCategory = it }
-                )
+
+                if (state.ingredientCategories.isEmpty()) {
+                    Text(
+                        "Andet",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    SimpleSelector(
+                        label = state.ingredientCategoryName(shoppingCategoryId),
+                        options = state.ingredientCategories.toList(),
+                        optionText = { it.name },
+                        onSelected = { shoppingCategoryId = it.id }
+                    )
+                }
             }
 
             item {
@@ -1763,7 +1786,7 @@ private fun IngredientEditorScreen(
                             state.addIngredient(
                                 name = name,
                                 type = type,
-                                shoppingCategory = shoppingCategory,
+                                shoppingCategoryId = shoppingCategoryId,
                                 imageUri = imageUri,
                                 preferredUnit = preferredUnit
                             )
@@ -1772,7 +1795,7 @@ private fun IngredientEditorScreen(
                                 id = existing.id,
                                 name = name,
                                 type = type,
-                                shoppingCategory = shoppingCategory,
+                                shoppingCategoryId = shoppingCategoryId,
                                 preferredUnit = preferredUnit,
                                 imageUri = imageUri
                             )
@@ -2067,15 +2090,18 @@ fun ShoppingScreen(state: MealPlannerState) {
             }
         } else {
             if (missing.isNotEmpty()) {
-                ShoppingCategory.entries.forEach { category ->
+                val categories = state.ingredientCategories.toList()
+                val knownIds = categories.map { it.id }.toSet()
+
+                categories.forEach { category ->
                     val categoryItems = missing.filter {
-                        it.ingredient.shoppingCategory == category
+                        it.ingredient.shoppingCategoryId == category.id
                     }
 
                     if (categoryItems.isNotEmpty()) {
-                        item(key = "category-${category.name}") {
+                        item(key = "category-${category.id}") {
                             Text(
-                                category.danishName(),
+                                category.name,
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(top = 6.dp)
@@ -2092,6 +2118,32 @@ fun ShoppingScreen(state: MealPlannerState) {
                                 checked = false
                             )
                         }
+                    }
+                }
+
+                val uncategorized = missing.filter {
+                    it.ingredient.shoppingCategoryId !in knownIds
+                }
+
+                if (uncategorized.isNotEmpty()) {
+                    item(key = "category-other") {
+                        Text(
+                            "Andet",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(top = 6.dp)
+                        )
+                    }
+
+                    items(
+                        items = uncategorized,
+                        key = { "missing-${it.ingredient.id}" }
+                    ) { item ->
+                        ShoppingItemCard(
+                            item = item,
+                            state = state,
+                            checked = false
+                        )
                     }
                 }
             }
@@ -2189,15 +2241,197 @@ private fun ShoppingItemCard(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
+private fun IngredientCategoriesScreen(
+    state: MealPlannerState,
+    onBack: () -> Unit
+) {
+    var showAdd by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<IngredientCategory?>(null) }
+    var categoryName by remember { mutableStateOf("") }
+
+    val activeDialog = showAdd || editing != null
+    if (activeDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                showAdd = false
+                editing = null
+            },
+            title = {
+                Text(
+                    if (editing == null) {
+                        "Ny kategori"
+                    } else {
+                        "Omdøb kategori"
+                    }
+                )
+            },
+            text = {
+                OutlinedTextField(
+                    value = categoryName,
+                    onValueChange = { categoryName = it },
+                    label = { Text("Navn") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val saved = editing?.let {
+                            state.renameIngredientCategory(
+                                categoryId = it.id,
+                                name = categoryName
+                            )
+                        } ?: state.addIngredientCategory(categoryName)
+
+                        if (saved) {
+                            showAdd = false
+                            editing = null
+                            categoryName = ""
+                        }
+                    },
+                    enabled = categoryName.trim().isNotBlank()
+                ) {
+                    Text("Gem")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showAdd = false
+                        editing = null
+                    }
+                ) {
+                    Text("Annuller")
+                }
+            }
+        )
+    }
+
+    SubpageScaffold(
+        title = "Indkøbskategorier",
+        onBack = onBack,
+        action = {
+            IconButton(
+                onClick = {
+                    editing = null
+                    categoryName = ""
+                    showAdd = true
+                }
+            ) {
+                Icon(
+                    Icons.Filled.Add,
+                    contentDescription = "Ny kategori"
+                )
+            }
+        }
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(
+                items = state.ingredientCategories,
+                key = { it.id }
+            ) { category ->
+                OutlinedCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(
+                            horizontal = 14.dp,
+                            vertical = 8.dp
+                        ),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            category.name,
+                            modifier = Modifier.weight(1f),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        IconButton(
+                            onClick = {
+                                editing = category
+                                categoryName = category.name
+                            }
+                        ) {
+                            Icon(
+                                Icons.Filled.Edit,
+                                contentDescription = "Omdøb kategori"
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun SettingsScreen(
     household: HouseholdDto,
     state: MealPlannerState,
     onBack: () -> Unit,
+    onRenameHousehold: suspend (String) -> Boolean,
+    onCategories: () -> Unit,
     onLogout: () -> Unit
 ) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     var showFeedback by remember { mutableStateOf(false) }
     var feedback by remember { mutableStateOf("") }
+    var showRenameHome by remember { mutableStateOf(false) }
+    var homeName by remember(household.name) {
+        mutableStateOf(household.name)
+    }
+
+    if (showRenameHome) {
+        AlertDialog(
+            onDismissRequest = { showRenameHome = false },
+            title = { Text("Omdøb hjem") },
+            text = {
+                OutlinedTextField(
+                    value = homeName,
+                    onValueChange = { homeName = it },
+                    label = { Text("Navn") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        scope.launch {
+                            val renamed = onRenameHousehold(homeName.trim())
+                            if (renamed) {
+                                showRenameHome = false
+                            } else {
+                                Toast.makeText(
+                                    context,
+                                    "Kunne ikke ændre navnet",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        }
+                    },
+                    enabled = homeName.trim().isNotBlank() &&
+                        homeName.trim() != household.name
+                ) {
+                    Text("Gem")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showRenameHome = false }) {
+                    Text("Annuller")
+                }
+            }
+        )
+    }
 
     if (showFeedback) {
         AlertDialog(
@@ -2253,12 +2487,40 @@ private fun SettingsScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             item {
-                SectionCard("Hjem") {
-                    Text(
-                        household.name,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold
-                    )
+                SectionCard("Husstand") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            household.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        IconButton(
+                            onClick = {
+                                homeName = household.name
+                                showRenameHome = true
+                            }
+                        ) {
+                            Icon(
+                                Icons.Filled.Edit,
+                                contentDescription = "Omdøb hjem"
+                            )
+                        }
+                    }
+                }
+            }
+
+            item {
+                OutlinedButton(
+                    onClick = onCategories,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("Indkøbskategorier")
                 }
             }
 
