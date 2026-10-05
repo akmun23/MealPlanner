@@ -167,6 +167,14 @@ private data class ShoppingCheckRow(
 )
 
 @Serializable
+private data class ShoppingInclusionRow(
+    @SerialName("household_id") val householdId: String,
+    @SerialName("weekly_plan_id") val weeklyPlanId: String,
+    @SerialName("ingredient_id") val ingredientId: String,
+    val included: Boolean
+)
+
+@Serializable
 private data class MealHistoryRow(
     val id: String = UUID.randomUUID().toString(),
     @SerialName("household_id") val householdId: String,
@@ -193,6 +201,7 @@ data class CloudSnapshot(
     val plan: Map<DayOfWeek, String?>,
     val lockedDays: Set<DayOfWeek>,
     val shoppingChecked: Map<String, Boolean>,
+    val shoppingIncluded: Map<String, Boolean>,
     val selectedLunchRecipeIds: List<String>,
     val weeklyPlanId: String,
     val weeklySandwichRecipeId: String?,
@@ -318,6 +327,14 @@ class CloudMealRepository(
                     }
                 }.decodeList<ShoppingCheckRow>()
             }
+            val shoppingInclusionDeferred = async {
+                supabase.from("shopping_inclusions").select {
+                    filter {
+                        eq("household_id", householdId)
+                        eq("weekly_plan_id", weeklyPlan.id)
+                    }
+                }.decodeList<ShoppingInclusionRow>()
+            }
             val lunchDeferred = async {
                 supabase.from("weekly_lunch_recipes").select {
                     filter {
@@ -337,6 +354,7 @@ class CloudMealRepository(
 
             val mealRows = mealsDeferred.await()
             val shoppingRows = shoppingDeferred.await()
+            val shoppingInclusionRows = shoppingInclusionDeferred.await()
             val lunchRows = lunchDeferred.await()
             val constraintRows = constraintsDeferred.await()
 
@@ -442,6 +460,9 @@ class CloudMealRepository(
                 plan = plan,
                 lockedDays = locked,
                 shoppingChecked = shoppingRows.associate { it.ingredientId to it.checked },
+                shoppingIncluded = shoppingInclusionRows.associate {
+                    it.ingredientId to it.included
+                },
                 selectedLunchRecipeIds = lunchRows
                     .sortedBy { it.position }
                     .map { it.recipeId },
@@ -899,6 +920,23 @@ class CloudMealRepository(
         }
     }
 
+    suspend fun setShoppingIncluded(
+        weeklyPlanId: String,
+        ingredientId: String,
+        included: Boolean
+    ) = withContext(Dispatchers.IO) {
+        supabase.from("shopping_inclusions").upsert(
+            ShoppingInclusionRow(
+                householdId = householdId,
+                weeklyPlanId = weeklyPlanId,
+                ingredientId = ingredientId,
+                included = included
+            )
+        ) {
+            onConflict = "weekly_plan_id,ingredient_id"
+        }
+    }
+
     suspend fun setShoppingChecked(
         weeklyPlanId: String,
         ingredientId: String,
@@ -918,6 +956,12 @@ class CloudMealRepository(
 
     suspend fun clearShoppingChecks(weeklyPlanId: String) = withContext(Dispatchers.IO) {
         supabase.from("shopping_checks").delete {
+            filter {
+                eq("household_id", householdId)
+                eq("weekly_plan_id", weeklyPlanId)
+            }
+        }
+        supabase.from("shopping_inclusions").delete {
             filter {
                 eq("household_id", householdId)
                 eq("weekly_plan_id", weeklyPlanId)
@@ -964,6 +1008,7 @@ class CloudMealRepository(
             "weekly_day_constraints",
             "weekly_lunch_recipes",
             "shopping_checks",
+            "shopping_inclusions",
             "meal_history"
         )
 
