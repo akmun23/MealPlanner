@@ -110,9 +110,28 @@ fun RecipeCategory.danishName(): String = when (this) {
     RecipeCategory.OTHER -> "Andet"
 }
 
-fun String.toRecipeCategory(): RecipeCategory =
-    runCatching { RecipeCategory.valueOf(this) }
-        .getOrDefault(RecipeCategory.OTHER)
+fun String.toRecipeCategory(): RecipeCategory {
+    val normalized = trim().uppercase()
+
+    return runCatching {
+        RecipeCategory.valueOf(normalized)
+    }.getOrElse {
+        when (trim().lowercase()) {
+            "pasta" -> RecipeCategory.PASTA
+            "karry" -> RecipeCategory.CURRY
+            "gryderet" -> RecipeCategory.STEW
+            "ovnret" -> RecipeCategory.OVEN
+            "burger" -> RecipeCategory.BURGER
+            "tacos" -> RecipeCategory.TACOS
+            "sandwich", "sandwich/wrap", "wrap" -> RecipeCategory.SANDWICH_WRAP
+            "ris", "risret" -> RecipeCategory.RICE
+            "suppe" -> RecipeCategory.SOUP
+            "salat", "bowl", "salat/bowl" -> RecipeCategory.SALAD_BOWL
+            "pizza", "tærte", "pizza/tærte" -> RecipeCategory.PIZZA_PIE
+            else -> RecipeCategory.OTHER
+        }
+    }
+}
 
 data class Recipe(
     val id: String = UUID.randomUUID().toString(),
