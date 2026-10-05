@@ -174,6 +174,51 @@ class WeeklyPlannerTest {
     }
 
     @Test
+    fun teaspoonAndTablespoonUseMillilitreBaseUnits() {
+        assertEquals(
+            5.0,
+            MeasurementUnit.TEASPOON.toBase(1.0),
+            0.0001
+        )
+        assertEquals(
+            15.0,
+            MeasurementUnit.TABLESPOON.toBase(1.0),
+            0.0001
+        )
+        assertEquals(
+            3.0,
+            MeasurementUnit.TABLESPOON.fromBase(45.0),
+            0.0001
+        )
+    }
+
+    @Test
+    fun weekCanGenerateWithoutSandwich() {
+        val dinner = Recipe(
+            id = "dinner",
+            name = "Dinner",
+            mealType = MealType.DINNER,
+            ingredients = emptyList()
+        )
+        val modes = orderedWeekDays.associateWith {
+            if (it == DayOfWeek.MONDAY) DayMode.AUTO else DayMode.AWAY
+        }
+
+        val result = WeeklyPlanner.generate(
+            recipes = listOf(dinner),
+            pantry = emptyMap(),
+            dayModes = modes,
+            weeklySandwichRecipeId = null,
+            currentPlan = orderedWeekDays.associateWith { null },
+            currentSandwichDay = null,
+            random = Random(1)
+        )
+
+        assertEquals(null, result.sandwichDay)
+        assertEquals(dinner.id, result.plan[DayOfWeek.MONDAY])
+    }
+
+    @Test
     fun recentlyEatenRecipeIsStronglyDisfavoured() {
         val recent = recipe("recent")
         val fresh = recipe("fresh")
