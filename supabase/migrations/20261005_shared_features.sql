@@ -411,3 +411,93 @@ begin
     end if;
 end
 $;
+
+
+-- Recipe preparation time and per-day planning limits live in side tables so
+-- older installed APKs can keep decoding recipes/planned_meals unchanged.
+create table if not exists public.recipe_time_settings (
+    household_id uuid not null,
+    recipe_id uuid not null,
+    prep_minutes smallint,
+    primary key (household_id, recipe_id),
+    foreign key (recipe_id, household_id)
+        references public.recipes(id, household_id)
+        on delete cascade,
+    check (prep_minutes is null or prep_minutes between 1 and 1440)
+);
+
+create index if not exists idx_recipe_time_recipe_household
+    on public.recipe_time_settings(recipe_id, household_id);
+
+alter table public.recipe_time_settings enable row level security;
+
+drop policy if exists recipe_time_settings_member_all
+on public.recipe_time_settings;
+
+create policy recipe_time_settings_member_all
+on public.recipe_time_settings
+for all
+to authenticated
+using (private.is_household_member(household_id))
+with check (private.is_household_member(household_id));
+
+grant select, insert, update, delete
+on public.recipe_time_settings
+to authenticated;
+
+create table if not exists public.weekly_day_constraints (
+    household_id uuid not null,
+    weekly_plan_id uuid not null,
+    day_of_week smallint not null check (day_of_week between 1 and 7),
+    max_prep_minutes smallint not null check (max_prep_minutes between 1 and 1440),
+    primary key (weekly_plan_id, day_of_week),
+    foreign key (weekly_plan_id, household_id)
+        references public.weekly_plans(id, household_id)
+        on delete cascade
+);
+
+create index if not exists idx_weekly_day_constraints_household
+    on public.weekly_day_constraints(household_id);
+
+create index if not exists idx_weekly_day_constraints_plan_household
+    on public.weekly_day_constraints(weekly_plan_id, household_id);
+
+alter table public.weekly_day_constraints enable row level security;
+
+drop policy if exists weekly_day_constraints_member_all
+on public.weekly_day_constraints;
+
+create policy weekly_day_constraints_member_all
+on public.weekly_day_constraints
+for all
+to authenticated
+using (private.is_household_member(household_id))
+with check (private.is_household_member(household_id));
+
+grant select, insert, update, delete
+on public.weekly_day_constraints
+to authenticated;
+
+do $$
+begin
+    if not exists (
+        select 1 from pg_publication_tables
+        where pubname = 'supabase_realtime'
+          and schemaname = 'public'
+          and tablename = 'recipe_time_settings'
+    ) then
+        alter publication supabase_realtime
+            add table public.recipe_time_settings;
+    end if;
+
+    if not exists (
+        select 1 from pg_publication_tables
+        where pubname = 'supabase_realtime'
+          and schemaname = 'public'
+          and tablename = 'weekly_day_constraints'
+    ) then
+        alter publication supabase_realtime
+            add table public.weekly_day_constraints;
+    end if;
+end
+$$;
