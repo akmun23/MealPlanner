@@ -72,7 +72,8 @@ private data class PantryRow(
 private data class SettingsRow(
     @SerialName("household_id") val householdId: String,
     @SerialName("sandwich_recipe_id") val sandwichRecipeId: String? = null,
-    @SerialName("preferred_sandwich_day") val preferredSandwichDay: Int = 5
+    @SerialName("preferred_sandwich_day") val preferredSandwichDay: Int = 5,
+    @SerialName("local_import_completed") val localImportCompleted: Boolean = false
 )
 
 @Serializable
@@ -292,22 +293,26 @@ class CloudMealRepository(
         }
     }
 
-    suspend fun isCloudEmpty(): Boolean = withContext(Dispatchers.IO) {
-        val ingredients = supabase.from("ingredients").select {
+    suspend fun needsLocalImport(): Boolean = withContext(Dispatchers.IO) {
+        val settings = supabase.from("household_settings").select {
             filter { eq("household_id", householdId) }
             limit(1)
-        }.decodeList<IngredientRow>()
+        }.decodeList<SettingsRow>().firstOrNull()
 
-        val recipes = supabase.from("recipes").select {
+        settings?.localImportCompleted != true
+    }
+
+    suspend fun markLocalImportCompleted() = withContext(Dispatchers.IO) {
+        supabase.from("household_settings").update(
+            {
+                set("local_import_completed", true)
+            }
+        ) {
             filter { eq("household_id", householdId) }
-            limit(1)
-        }.decodeList<RecipeRow>()
-
-        ingredients.isEmpty() && recipes.isEmpty()
+        }
     }
 
     suspend fun importLocal(snapshot: LocalStorage.Snapshot) = withContext(Dispatchers.IO) {
-        if (!isCloudEmpty()) return@withContext
 
         snapshot.ingredients.forEach { ingredient ->
             upsertIngredient(ingredient)
@@ -330,7 +335,8 @@ class CloudMealRepository(
         supabase.from("household_settings").upsert(
             SettingsRow(
                 householdId = householdId,
-                sandwichRecipeId = snapshot.weeklySandwichRecipeId
+                sandwichRecipeId = snapshot.weeklySandwichRecipeId,
+                localImportCompleted = false
             )
         ) {
             onConflict = "household_id"
@@ -379,6 +385,8 @@ class CloudMealRepository(
                 onConflict = "weekly_plan_id,ingredient_id"
             }
         }
+
+        markLocalImportCompleted()
     }
 
     suspend fun upsertIngredient(ingredient: Ingredient): Ingredient = withContext(Dispatchers.IO) {
@@ -489,13 +497,12 @@ class CloudMealRepository(
     }
 
     suspend fun setHouseholdSandwich(recipeId: String?) = withContext(Dispatchers.IO) {
-        supabase.from("household_settings").upsert(
-            SettingsRow(
-                householdId = householdId,
-                sandwichRecipeId = recipeId
-            )
+        supabase.from("household_settings").update(
+            {
+                set("sandwich_recipe_id", recipeId)
+            }
         ) {
-            onConflict = "household_id"
+            filter { eq("household_id", householdId) }
         }
     }
 
