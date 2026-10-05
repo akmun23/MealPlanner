@@ -193,6 +193,22 @@ class WeeklyPlannerTest {
     }
 
     @Test
+    fun packageTypeSupportsPackAndCan() {
+        val compatible = MeasurementUnit.compatibleWith(
+            QuantityType.PACKAGE
+        )
+
+        assertTrue(MeasurementUnit.PACK in compatible)
+        assertTrue(MeasurementUnit.CAN in compatible)
+        assertEquals(
+            MeasurementUnit.PACK,
+            MeasurementUnit.defaultFor(QuantityType.PACKAGE)
+        )
+        assertEquals("pakke", MeasurementUnit.PACK.labelFor(1.0))
+        assertEquals("pakker", MeasurementUnit.PACK.labelFor(2.0))
+    }
+
+    @Test
     fun weekCanGenerateWithoutSandwich() {
         val dinner = Recipe(
             id = "dinner",
