@@ -501,3 +501,292 @@ begin
     end if;
 end
 $$;
+
+
+-- Ingredient protein flags and household-managed recipe categories.
+-- These live in side tables so older installed APKs can keep reading
+-- ingredients/recipes without new columns appearing in their DTOs.
+
+create table if not exists public.ingredient_protein_flags (
+    household_id uuid not null,
+    ingredient_id uuid not null,
+    is_protein boolean not null default false,
+    primary key (household_id, ingredient_id),
+    foreign key (ingredient_id, household_id)
+        references public.ingredients(id, household_id)
+        on delete cascade
+);
+
+create index if not exists idx_ingredient_protein_ingredient_household
+    on public.ingredient_protein_flags(ingredient_id, household_id);
+
+alter table public.ingredient_protein_flags enable row level security;
+
+drop policy if exists ingredient_protein_flags_member_all
+on public.ingredient_protein_flags;
+
+create policy ingredient_protein_flags_member_all
+on public.ingredient_protein_flags
+for all
+to authenticated
+using (private.is_household_member(household_id))
+with check (private.is_household_member(household_id));
+
+grant select, insert, update, delete
+on public.ingredient_protein_flags
+to authenticated;
+
+create table if not exists public.recipe_categories (
+    id uuid primary key default gen_random_uuid(),
+    household_id uuid not null references public.households(id) on delete cascade,
+    name text not null check (length(btrim(name)) between 1 and 60),
+    position smallint not null default 0 check (position >= 0),
+    created_at timestamptz not null default now(),
+    unique (id, household_id)
+);
+
+create unique index if not exists uq_recipe_categories_household_name
+    on public.recipe_categories(household_id, lower(btrim(name)));
+
+alter table public.recipe_categories enable row level security;
+
+drop policy if exists recipe_categories_member_all
+on public.recipe_categories;
+
+create policy recipe_categories_member_all
+on public.recipe_categories
+for all
+to authenticated
+using (private.is_household_member(household_id))
+with check (private.is_household_member(household_id));
+
+grant select, insert, update, delete
+on public.recipe_categories
+to authenticated;
+
+create table if not exists public.recipe_category_assignments (
+    household_id uuid not null,
+    recipe_id uuid not null,
+    category_id uuid not null,
+    primary key (household_id, recipe_id),
+    foreign key (recipe_id, household_id)
+        references public.recipes(id, household_id)
+        on delete cascade,
+    foreign key (category_id, household_id)
+        references public.recipe_categories(id, household_id)
+        on delete restrict
+);
+
+create index if not exists idx_recipe_category_assignment_category_household
+    on public.recipe_category_assignments(category_id, household_id);
+
+create index if not exists idx_recipe_category_assignment_recipe_household
+    on public.recipe_category_assignments(recipe_id, household_id);
+
+alter table public.recipe_category_assignments enable row level security;
+
+drop policy if exists recipe_category_assignments_member_all
+on public.recipe_category_assignments;
+
+create policy recipe_category_assignments_member_all
+on public.recipe_category_assignments
+for all
+to authenticated
+using (private.is_household_member(household_id))
+with check (private.is_household_member(household_id));
+
+grant select, insert, update, delete
+on public.recipe_category_assignments
+to authenticated;
+
+insert into public.recipe_categories(household_id, name, position)
+select
+    h.id,
+    defaults.name,
+    defaults.position
+from public.households h
+cross join (
+    values
+        ('Pasta', 0),
+        ('Karry', 1),
+        ('Gryderet', 2),
+        ('Ovnret', 3),
+        ('Burger', 4),
+        ('Tacos', 5),
+        ('Sandwich/wrap', 6),
+        ('Risret', 7),
+        ('Suppe', 8),
+        ('Salat/bowl', 9),
+        ('Pizza/tærte', 10),
+        ('Andet', 11)
+) as defaults(name, position)
+where not exists (
+    select 1
+    from public.recipe_categories existing
+    where existing.household_id = h.id
+      and lower(btrim(existing.name)) = lower(btrim(defaults.name))
+);
+
+insert into public.recipe_category_assignments(
+    household_id,
+    recipe_id,
+    category_id
+)
+select
+    recipe.household_id,
+    recipe.id,
+    category.id
+from public.recipes recipe
+join public.recipe_categories category
+  on category.household_id = recipe.household_id
+ and lower(category.name) = lower(
+     case lower(btrim(recipe.category_tag))
+         when 'pasta' then 'Pasta'
+         when 'curry' then 'Karry'
+         when 'karry' then 'Karry'
+         when 'stew' then 'Gryderet'
+         when 'gryderet' then 'Gryderet'
+         when 'oven' then 'Ovnret'
+         when 'ovnret' then 'Ovnret'
+         when 'burger' then 'Burger'
+         when 'tacos' then 'Tacos'
+         when 'sandwich_wrap' then 'Sandwich/wrap'
+         when 'sandwich' then 'Sandwich/wrap'
+         when 'sandwich/wrap' then 'Sandwich/wrap'
+         when 'wrap' then 'Sandwich/wrap'
+         when 'rice' then 'Risret'
+         when 'ris' then 'Risret'
+         when 'risret' then 'Risret'
+         when 'soup' then 'Suppe'
+         when 'suppe' then 'Suppe'
+         when 'salad_bowl' then 'Salat/bowl'
+         when 'salat' then 'Salat/bowl'
+         when 'salat/bowl' then 'Salat/bowl'
+         when 'pizza_pie' then 'Pizza/tærte'
+         when 'pizza' then 'Pizza/tærte'
+         when 'pizza/tærte' then 'Pizza/tærte'
+         else 'Andet'
+     end
+ )
+on conflict (household_id, recipe_id) do nothing;
+
+insert into public.ingredient_protein_flags(
+    household_id,
+    ingredient_id,
+    is_protein
+)
+select
+    household_id,
+    id,
+    false
+from public.ingredients
+on conflict (household_id, ingredient_id) do nothing;
+
+do $$
+begin
+    if not exists (
+        select 1 from pg_publication_tables
+        where pubname = 'supabase_realtime'
+          and schemaname = 'public'
+          and tablename = 'ingredient_protein_flags'
+    ) then
+        alter publication supabase_realtime
+            add table public.ingredient_protein_flags;
+    end if;
+
+    if not exists (
+        select 1 from pg_publication_tables
+        where pubname = 'supabase_realtime'
+          and schemaname = 'public'
+          and tablename = 'recipe_categories'
+    ) then
+        alter publication supabase_realtime
+            add table public.recipe_categories;
+    end if;
+
+    if not exists (
+        select 1 from pg_publication_tables
+        where pubname = 'supabase_realtime'
+          and schemaname = 'public'
+          and tablename = 'recipe_category_assignments'
+    ) then
+        alter publication supabase_realtime
+            add table public.recipe_category_assignments;
+    end if;
+end
+$$;
+
+
+-- Shopping buy/no-buy choice is independent from purchased status.
+create table if not exists public.shopping_inclusions (
+    household_id uuid not null,
+    weekly_plan_id uuid not null,
+    ingredient_id uuid not null,
+    included boolean not null default true,
+    primary key (weekly_plan_id, ingredient_id),
+    foreign key (weekly_plan_id, household_id)
+        references public.weekly_plans(id, household_id)
+        on delete cascade,
+    foreign key (ingredient_id, household_id)
+        references public.ingredients(id, household_id)
+        on delete cascade
+);
+
+create index if not exists idx_shopping_inclusions_household
+    on public.shopping_inclusions(household_id);
+
+create index if not exists idx_shopping_inclusions_plan_household
+    on public.shopping_inclusions(weekly_plan_id, household_id);
+
+create index if not exists idx_shopping_inclusions_ingredient_household
+    on public.shopping_inclusions(ingredient_id, household_id);
+
+alter table public.shopping_inclusions enable row level security;
+
+drop policy if exists shopping_inclusions_member_all
+on public.shopping_inclusions;
+
+create policy shopping_inclusions_member_all
+on public.shopping_inclusions
+for all
+to authenticated
+using (private.is_household_member(household_id))
+with check (private.is_household_member(household_id));
+
+grant select, insert, update, delete
+on public.shopping_inclusions
+to authenticated;
+
+do $$
+begin
+    if not exists (
+        select 1 from pg_publication_tables
+        where pubname = 'supabase_realtime'
+          and schemaname = 'public'
+          and tablename = 'shopping_inclusions'
+    ) then
+        alter publication supabase_realtime
+            add table public.shopping_inclusions;
+    end if;
+end
+$$;
+
+-- Allow every unit exposed by the Android app.
+alter table public.ingredients
+    drop constraint if exists ingredients_preferred_unit_check;
+
+alter table public.ingredients
+    add constraint ingredients_preferred_unit_check
+    check (
+        preferred_unit in (
+            'GRAM',
+            'KILOGRAM',
+            'MILLILITRE',
+            'TEASPOON',
+            'TABLESPOON',
+            'LITRE',
+            'PIECE',
+            'PACK',
+            'CAN'
+        )
+    );

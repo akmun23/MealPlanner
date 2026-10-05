@@ -151,6 +151,7 @@ enum class AppTab(val label: String, val icon: ImageVector) {
 private sealed interface AppPage {
     data object Settings : AppPage
     data object IngredientCategories : AppPage
+    data object RecipeCategories : AppPage
     data class IngredientEditor(val ingredientId: String?) : AppPage
     data class RecipeDetail(val recipeId: String) : AppPage
     data class RecipeEditor(
@@ -190,6 +191,7 @@ fun MealPlannerApp(
         page = when (val current = page) {
             AppPage.Settings -> null
             AppPage.IngredientCategories -> AppPage.Settings
+            AppPage.RecipeCategories -> AppPage.Settings
             is AppPage.IngredientEditor -> null
             is AppPage.RecipeDetail -> null
             is AppPage.RecipeEditor ->
@@ -221,11 +223,17 @@ fun MealPlannerApp(
             state = state,
             onBack = { navigateBack() },
             onRenameHousehold = onRenameHousehold,
-            onCategories = { page = AppPage.IngredientCategories },
+            onIngredientCategories = { page = AppPage.IngredientCategories },
+            onRecipeCategories = { page = AppPage.RecipeCategories },
             onLogout = onLogout
         )
 
         AppPage.IngredientCategories -> IngredientCategoriesScreen(
+            state = state,
+            onBack = { navigateBack() }
+        )
+
+        AppPage.RecipeCategories -> RecipeCategoriesScreen(
             state = state,
             onBack = { navigateBack() }
         )
@@ -298,6 +306,9 @@ fun MealPlannerApp(
                     when (tab) {
                         AppTab.WEEK -> WeekScreen(
                             state = state,
+                            onOpenRecipe = {
+                                page = AppPage.RecipeDetail(it)
+                            },
                             onNewLunchRecipe = {
                                 page = AppPage.RecipeEditor(
                                     recipeId = null,
@@ -370,6 +381,7 @@ private fun ScreenColumn(
 @Composable
 fun WeekScreen(
     state: MealPlannerState,
+    onOpenRecipe: (String) -> Unit,
     onNewLunchRecipe: () -> Unit
 ) {
     val sandwichDay = state.sandwichDay()
@@ -571,7 +583,11 @@ fun WeekScreen(
         Spacer(Modifier.height(14.dp))
 
         orderedWeekDays.forEach { day ->
-            DayCard(day, state)
+            DayCard(
+                day = day,
+                state = state,
+                onOpenRecipe = onOpenRecipe
+            )
             Spacer(Modifier.height(10.dp))
         }
 
@@ -655,7 +671,8 @@ private fun NoticeCard(text: String) {
 @Composable
 fun DayCard(
     day: DayOfWeek,
-    state: MealPlannerState
+    state: MealPlannerState,
+    onOpenRecipe: (String) -> Unit
 ) {
     val away = state.dayModes[day] == DayMode.AWAY
     val recipe = state.recipeFor(day)
@@ -715,6 +732,13 @@ fun DayCard(
                             recipe != null -> recipe.name
                             else -> "Ingen ret"
                         },
+                        modifier = if (!away && recipe != null) {
+                            Modifier.clickable {
+                                onOpenRecipe(recipe.id)
+                            }
+                        } else {
+                            Modifier
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -766,12 +790,10 @@ fun DayCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         if (isSandwich) StatusPill("Ugens sandwich", true)
-                        if (recipe.categoryTag.isNotBlank()) {
-                            StatusPill(
-                                recipe.categoryTag.toRecipeCategory().danishName(),
-                                false
-                            )
-                        }
+                        StatusPill(
+                            state.recipeCategoryName(recipe),
+                            false
+                        )
                         recipe.prepMinutes?.let {
                             StatusPill("${it} min", false)
                         }
@@ -785,10 +807,7 @@ fun DayCard(
                         selected = maxPrepMinutes != null,
                         onClick = { showTimePicker = true },
                         label = {
-                            Text(
-                                maxPrepMinutes?.let { "≤ ${it} min" }
-                                    ?: "Tid"
-                            )
+                            Text(prepLimitLabel(maxPrepMinutes))
                         }
                     )
 
@@ -799,10 +818,7 @@ fun DayCard(
                         listOf<Int?>(null, 20, 30, 45, 60).forEach { minutes ->
                             DropdownMenuItem(
                                 text = {
-                                    Text(
-                                        minutes?.let { "Maks. ${it} min" }
-                                            ?: "Ingen tidsgrænse"
-                                    )
+                                    Text(prepLimitOptionLabel(minutes))
                                 },
                                 onClick = {
                                     state.setDayMaxPrepMinutes(day, minutes)
@@ -933,18 +949,21 @@ fun RecipesScreen(
     val mealOptions = listOf("Alle måltider") +
         MealType.entries.map { it.danishName() }
     val categoryOptions = listOf("Alle kategorier") +
-        RecipeCategory.entries.map { it.danishName() }
+        state.recipeCategories.map { it.name }
 
     val filteredRecipes by remember {
         derivedStateOf {
             state.recipes.filter { recipe ->
-                val category = recipe.categoryTag.toRecipeCategory()
+                val categoryName = state.recipeCategoryName(recipe)
+                val proteinNames = state.recipeProteinNames(recipe)
 
                 val matchesSearch =
                     searchQuery.isBlank() ||
                         recipe.name.contains(searchQuery, ignoreCase = true) ||
-                        category.danishName().contains(searchQuery, ignoreCase = true) ||
-                        recipe.proteinTag.contains(searchQuery, ignoreCase = true)
+                        categoryName.contains(searchQuery, ignoreCase = true) ||
+                        proteinNames.any {
+                            it.contains(searchQuery, ignoreCase = true)
+                        }
 
                 val matchesMeal =
                     mealFilter == "Alle måltider" ||
@@ -952,7 +971,7 @@ fun RecipesScreen(
 
                 val matchesCategory =
                     categoryFilter == "Alle kategorier" ||
-                        category.danishName() == categoryFilter
+                        categoryName == categoryFilter
 
                 val matchesPantry =
                     !canMakeOnly || state.canMake(recipe)
@@ -1042,6 +1061,8 @@ fun RecipesScreen(
             ) { recipe ->
                 RecipeListCard(
                     recipe = recipe,
+                    categoryName = state.recipeCategoryName(recipe),
+                    proteinNames = state.recipeProteinNames(recipe),
                     isSandwich = state.weeklySandwichRecipeId == recipe.id,
                     onClick = { onOpenRecipe(recipe.id) }
                 )
@@ -1055,6 +1076,8 @@ fun RecipesScreen(
 @Composable
 private fun RecipeListCard(
     recipe: Recipe,
+    categoryName: String,
+    proteinNames: List<String>,
     isSandwich: Boolean,
     onClick: () -> Unit
 ) {
@@ -1090,7 +1113,7 @@ private fun RecipeListCard(
 
                 val meta = buildList {
                     add(recipe.mealType.danishName())
-                    add(recipe.categoryTag.toRecipeCategory().danishName())
+                    add(categoryName)
                     if (
                         recipe.mealType == MealType.DINNER &&
                         !recipe.autoRotationEnabled
@@ -1098,7 +1121,9 @@ private fun RecipeListCard(
                         add("Kun manuelt")
                     }
                     recipe.prepMinutes?.let { add("${it} min") }
-                    if (recipe.proteinTag.isNotBlank()) add(recipe.proteinTag)
+                    if (proteinNames.isNotEmpty()) {
+                        add(proteinNames.joinToString(" + "))
+                    }
                 }
 
                 Text(
@@ -1138,10 +1163,40 @@ private fun RecipeDetailScreen(
     onEdit: () -> Unit
 ) {
     val recipe = state.recipes.find { it.id == recipeId }
+    var showConsumeConfirm by remember(recipeId) {
+        mutableStateOf(false)
+    }
 
     if (recipe == null) {
         onBack()
         return
+    }
+
+    if (showConsumeConfirm) {
+        AlertDialog(
+            onDismissRequest = { showConsumeConfirm = false },
+            title = { Text("Brug ingredienser") },
+            text = {
+                Text("Træk opskriftens mængder fra lageret?")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        state.consumeRecipeIngredients(recipe.id)
+                        showConsumeConfirm = false
+                    }
+                ) {
+                    Text("Brug")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showConsumeConfirm = false }
+                ) {
+                    Text("Annuller")
+                }
+            }
+        )
     }
 
     SubpageScaffold(
@@ -1171,7 +1226,7 @@ private fun RecipeDetailScreen(
                 Text(
                     buildList {
                         add(recipe.mealType.danishName())
-                        add(recipe.categoryTag.toRecipeCategory().danishName())
+                        add(state.recipeCategoryName(recipe))
                         if (
                             recipe.mealType == MealType.DINNER &&
                             !recipe.autoRotationEnabled
@@ -1179,7 +1234,10 @@ private fun RecipeDetailScreen(
                             add("Kun manuelt")
                         }
                         recipe.prepMinutes?.let { add("${it} min") }
-                        if (recipe.proteinTag.isNotBlank()) add(recipe.proteinTag)
+                        val proteinNames = state.recipeProteinNames(recipe)
+                        if (proteinNames.isNotEmpty()) {
+                            add(proteinNames.joinToString(" + "))
+                        }
                     }.joinToString(" · "),
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1247,6 +1305,16 @@ private fun RecipeDetailScreen(
                 }
             }
 
+            item {
+                OutlinedButton(
+                    onClick = { showConsumeConfirm = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("Brug fra lager")
+                }
+            }
+
             if (recipe.notes.isNotBlank()) {
                 item {
                     SectionCard("Noter") {
@@ -1308,11 +1376,22 @@ private fun RecipeEditorScreen(
         ?.takeIf { it in 1..1440 }
     val prepTimeValid =
         prepMinutesText.isBlank() || prepMinutes != null
-    var protein by remember(recipeId) { mutableStateOf(existing?.proteinTag ?: "") }
-    var category by remember(recipeId) {
+    var categoryId by remember(recipeId) {
         mutableStateOf(
-            existing?.categoryTag?.toRecipeCategory()
-                ?: RecipeCategory.OTHER
+            existing?.categoryId
+                ?: state.recipeCategories
+                    .firstOrNull {
+                        it.name.equals(
+                            existing?.categoryTag?.toRecipeCategory()?.danishName()
+                                ?: "Andet",
+                            ignoreCase = true
+                        )
+                    }
+                    ?.id
+                ?: state.recipeCategories
+                    .firstOrNull { it.name.equals("Andet", ignoreCase = true) }
+                    ?.id
+                ?: state.recipeCategories.firstOrNull()?.id
         )
     }
     var notes by remember(recipeId) { mutableStateOf(existing?.notes ?: "") }
@@ -1417,12 +1496,22 @@ private fun RecipeEditorScreen(
                             style = MaterialTheme.typography.labelMedium
                         )
                         Spacer(Modifier.height(4.dp))
-                        SimpleSelector(
-                            label = category.danishName(),
-                            options = RecipeCategory.entries,
-                            optionText = { it.danishName() },
-                            onSelected = { category = it }
-                        )
+                        if (state.recipeCategories.isEmpty()) {
+                            Text(
+                                "Andet",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        } else {
+                            SimpleSelector(
+                                label = state.recipeCategories
+                                    .find { it.id == categoryId }
+                                    ?.name
+                                    ?: "Andet",
+                                options = state.recipeCategories.toList(),
+                                optionText = { it.name },
+                                onSelected = { categoryId = it.id }
+                            )
+                        }
                     }
                 }
             }
@@ -1455,16 +1544,6 @@ private fun RecipeEditorScreen(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true,
                     isError = !prepTimeValid
-                )
-            }
-
-            item {
-                OutlinedTextField(
-                    value = protein,
-                    onValueChange = { protein = it },
-                    label = { Text("Protein") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
                 )
             }
 
@@ -1549,8 +1628,7 @@ private fun RecipeEditorScreen(
                                 mealType = mealType,
                                 autoRotationEnabled = autoRotationEnabled,
                                 prepMinutes = prepMinutes,
-                                protein = protein,
-                                category = category,
+                                categoryId = categoryId,
                                 notes = notes,
                                 imageUri = imageUri,
                                 requirements = drafts.toList()
@@ -1566,8 +1644,7 @@ private fun RecipeEditorScreen(
                                 mealType = mealType,
                                 autoRotationEnabled = autoRotationEnabled,
                                 prepMinutes = prepMinutes,
-                                protein = protein,
-                                category = category,
+                                categoryId = categoryId,
                                 notes = notes,
                                 imageUri = imageUri,
                                 requirements = drafts.toList()
@@ -1631,9 +1708,7 @@ private fun RequirementEditor(
                         amountText = value
                             .filter { it.isDigit() || it == ',' || it == '.' }
 
-                        amountText
-                            .replace(',', '.')
-                            .toDoubleOrNull()
+                        parseDanishDecimal(amountText)
                             ?.takeIf { it > 0.0 }
                             ?.let { amount ->
                                 onChange(draft.copy(amount = amount))
@@ -1745,7 +1820,11 @@ private fun IngredientListCard(
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    "${ingredient.quantityType.danishName()} · ${ingredient.preferredUnit.selectorLabel()}",
+                    buildList {
+                        add(ingredient.quantityType.danishName())
+                        add(ingredient.preferredUnit.selectorLabel())
+                        if (ingredient.isProtein) add("Protein")
+                    }.joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -1778,6 +1857,10 @@ private fun IngredientEditorScreen(
 
     var preferredUnit by remember(ingredientId) {
         mutableStateOf(existing?.preferredUnit ?: MeasurementUnit.GRAM)
+    }
+
+    var isProtein by remember(ingredientId) {
+        mutableStateOf(existing?.isProtein ?: false)
     }
 
     var shoppingCategoryId by remember(ingredientId) {
@@ -1856,6 +1939,23 @@ private fun IngredientEditorScreen(
             }
 
             item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Protein",
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    Switch(
+                        checked = isProtein,
+                        onCheckedChange = { isProtein = it }
+                    )
+                }
+            }
+
+            item {
                 Text(
                     "Foretrukken enhed",
                     fontWeight = FontWeight.Bold
@@ -1899,6 +1999,7 @@ private fun IngredientEditorScreen(
                                 name = name,
                                 type = type,
                                 shoppingCategoryId = shoppingCategoryId,
+                                isProtein = isProtein,
                                 imageUri = imageUri,
                                 preferredUnit = preferredUnit
                             )
@@ -1908,6 +2009,7 @@ private fun IngredientEditorScreen(
                                 name = name,
                                 type = type,
                                 shoppingCategoryId = shoppingCategoryId,
+                                isProtein = isProtein,
                                 preferredUnit = preferredUnit,
                                 imageUri = imageUri
                             )
@@ -2115,10 +2217,7 @@ private fun PantryAmountDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    val amount = amountText
-                        .replace(',', '.')
-                        .toDoubleOrNull()
-                        ?: 0.0
+                    val amount = parseDanishDecimal(amountText) ?: 0.0
 
                     state.setPantry(
                         ingredientId = ingredient.id,
@@ -2141,19 +2240,38 @@ private fun PantryAmountDialog(
 
 @Composable
 fun ShoppingScreen(state: MealPlannerState) {
+    var addToPantryItem by remember {
+        mutableStateOf<ShoppingItem?>(null)
+    }
+
+    addToPantryItem?.let { item ->
+        AddPurchasedToPantryDialog(
+            item = item,
+            state = state,
+            onDismiss = { addToPantryItem = null }
+        )
+    }
+
     val shoppingItems by remember {
         derivedStateOf { state.shoppingItems() }
     }
-    val checkedCount = shoppingItems.count {
+    val included = shoppingItems.filter {
+        state.isShoppingIncluded(it.ingredient.id)
+    }
+    val checkedCount = included.count {
         state.shoppingChecked[it.ingredient.id] == true
     }
 
-    val missing = shoppingItems.filter {
+    val missing = included.filter {
         state.shoppingChecked[it.ingredient.id] != true
     }
 
-    val bought = shoppingItems.filter {
+    val bought = included.filter {
         state.shoppingChecked[it.ingredient.id] == true
+    }
+
+    val excluded = shoppingItems.filter {
+        !state.isShoppingIncluded(it.ingredient.id)
     }
 
     LazyColumn(
@@ -2180,14 +2298,18 @@ fun ShoppingScreen(state: MealPlannerState) {
                 ) {
                     Column(Modifier.padding(14.dp)) {
                         Text(
-                            "$checkedCount af ${shoppingItems.size}",
+                            "$checkedCount af ${included.size} købt",
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(Modifier.height(6.dp))
                         LinearProgressIndicator(
                             progress = {
-                                checkedCount.toFloat() /
-                                    shoppingItems.size.toFloat()
+                                if (included.isEmpty()) {
+                                    0f
+                                } else {
+                                    checkedCount.toFloat() /
+                                        included.size.toFloat()
+                                }
                             },
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -2227,6 +2349,7 @@ fun ShoppingScreen(state: MealPlannerState) {
                             ShoppingItemCard(
                                 item = item,
                                 state = state,
+                                included = true,
                                 checked = false
                             )
                         }
@@ -2254,6 +2377,7 @@ fun ShoppingScreen(state: MealPlannerState) {
                         ShoppingItemCard(
                             item = item,
                             state = state,
+                            included = true,
                             checked = false
                         )
                     }
@@ -2274,7 +2398,34 @@ fun ShoppingScreen(state: MealPlannerState) {
                     ShoppingItemCard(
                         item = item,
                         state = state,
-                        checked = true
+                        included = true,
+                        checked = true,
+                        onAddToPantry = {
+                            addToPantryItem = item
+                        }
+                    )
+                }
+            }
+
+            if (excluded.isNotEmpty()) {
+                item {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Købes ikke",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                items(
+                    items = excluded,
+                    key = { "excluded-${it.ingredient.id}" }
+                ) { item ->
+                    ShoppingItemCard(
+                        item = item,
+                        state = state,
+                        included = false,
+                        checked = false
                     )
                 }
             }
@@ -2288,7 +2439,9 @@ fun ShoppingScreen(state: MealPlannerState) {
 private fun ShoppingItemCard(
     item: ShoppingItem,
     state: MealPlannerState,
-    checked: Boolean
+    included: Boolean,
+    checked: Boolean,
+    onAddToPantry: (() -> Unit)? = null
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -2307,6 +2460,7 @@ private fun ShoppingItemCard(
         ) {
             Checkbox(
                 checked = checked,
+                enabled = included,
                 onCheckedChange = {
                     state.setShoppingChecked(
                         item.ingredient.id,
@@ -2345,6 +2499,249 @@ private fun ShoppingItemCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+
+                FilterChip(
+                    selected = included,
+                    onClick = {
+                        state.setShoppingIncluded(
+                            ingredientId = item.ingredient.id,
+                            included = !included
+                        )
+                    },
+                    label = { Text("Køb") }
+                )
+
+                if (checked && onAddToPantry != null) {
+                    TextButton(
+                        onClick = onAddToPantry,
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text("Til lager")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AddPurchasedToPantryDialog(
+    item: ShoppingItem,
+    state: MealPlannerState,
+    onDismiss: () -> Unit
+) {
+    val ingredient = item.ingredient
+    var unit by remember(ingredient.id) {
+        mutableStateOf(ingredient.preferredUnit)
+    }
+
+    val suggestedBase =
+        (item.requiredBase - item.pantryBase)
+            .takeIf { it > 0.0 }
+            ?: item.requiredBase
+
+    var amountText by remember(ingredient.id, item.pantryBase) {
+        mutableStateOf(
+            formatDisplayNumber(
+                unit.fromBase(suggestedBase)
+            )
+        )
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Til lager") },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    ingredient.name,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                OutlinedTextField(
+                    value = amountText,
+                    onValueChange = { value ->
+                        amountText = value.filter {
+                            it.isDigit() || it == ',' || it == '.'
+                        }
+                    },
+                    label = { Text("Købt mængde") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                SimpleSelector(
+                    label = unit.selectorLabel(),
+                    options = MeasurementUnit.compatibleWith(
+                        ingredient.quantityType
+                    ),
+                    optionText = { it.selectorLabel() },
+                    onSelected = { selected ->
+                        val current = parseDanishDecimal(amountText)
+                        val base = current?.let(unit::toBase)
+                        unit = selected
+                        if (base != null) {
+                            amountText = formatDisplayNumber(
+                                selected.fromBase(base)
+                            )
+                        }
+                    }
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val amount = parseDanishDecimal(amountText)
+                    if (amount != null && amount > 0.0) {
+                        state.addPantryAmount(
+                            ingredientId = ingredient.id,
+                            amount = amount,
+                            unit = unit
+                        )
+                        onDismiss()
+                    }
+                }
+            ) {
+                Text("Tilføj")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Annuller")
+            }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RecipeCategoriesScreen(
+    state: MealPlannerState,
+    onBack: () -> Unit
+) {
+    var showAdd by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<RecipeCategoryOption?>(null) }
+    var categoryName by remember { mutableStateOf("") }
+
+    if (showAdd || editing != null) {
+        AlertDialog(
+            onDismissRequest = {
+                showAdd = false
+                editing = null
+            },
+            title = {
+                Text(
+                    if (editing == null) {
+                        "Ny kategori"
+                    } else {
+                        "Omdøb kategori"
+                    }
+                )
+            },
+            text = {
+                OutlinedTextField(
+                    value = categoryName,
+                    onValueChange = { categoryName = it },
+                    label = { Text("Navn") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val saved = editing?.let {
+                            state.renameRecipeCategory(
+                                categoryId = it.id,
+                                name = categoryName
+                            )
+                        } ?: state.addRecipeCategory(categoryName)
+
+                        if (saved) {
+                            showAdd = false
+                            editing = null
+                            categoryName = ""
+                        }
+                    },
+                    enabled = categoryName.trim().isNotBlank()
+                ) {
+                    Text("Gem")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showAdd = false
+                        editing = null
+                    }
+                ) {
+                    Text("Annuller")
+                }
+            }
+        )
+    }
+
+    SubpageScaffold(
+        title = "Opskriftskategorier",
+        onBack = onBack,
+        action = {
+            IconButton(
+                onClick = {
+                    editing = null
+                    categoryName = ""
+                    showAdd = true
+                }
+            ) {
+                Icon(
+                    Icons.Filled.Add,
+                    contentDescription = "Ny kategori"
+                )
+            }
+        }
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(
+                items = state.recipeCategories,
+                key = { it.id }
+            ) { category ->
+                OutlinedCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(
+                            horizontal = 14.dp,
+                            vertical = 8.dp
+                        ),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            category.name,
+                            modifier = Modifier.weight(1f),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        IconButton(
+                            onClick = {
+                                editing = category
+                                categoryName = category.name
+                            }
+                        ) {
+                            Icon(
+                                Icons.Filled.Edit,
+                                contentDescription = "Omdøb kategori"
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -2490,7 +2887,8 @@ private fun SettingsScreen(
     state: MealPlannerState,
     onBack: () -> Unit,
     onRenameHousehold: suspend (String) -> Boolean,
-    onCategories: () -> Unit,
+    onIngredientCategories: () -> Unit,
+    onRecipeCategories: () -> Unit,
     onLogout: () -> Unit
 ) {
     val context = LocalContext.current
@@ -2628,11 +3026,21 @@ private fun SettingsScreen(
 
             item {
                 OutlinedButton(
-                    onClick = onCategories,
+                    onClick = onIngredientCategories,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Text("Indkøbskategorier")
+                }
+            }
+
+            item {
+                OutlinedButton(
+                    onClick = onRecipeCategories,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("Opskriftskategorier")
                 }
             }
 

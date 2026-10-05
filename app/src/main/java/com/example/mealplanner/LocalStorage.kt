@@ -33,6 +33,7 @@ class LocalStorage(context: Context) {
                         "shoppingCategoryId",
                         ingredient.shoppingCategoryId ?: JSONObject.NULL
                     )
+                    put("isProtein", ingredient.isProtein)
                     put("imageUri", ingredient.imageUri ?: JSONObject.NULL)
                 })
             }
@@ -48,6 +49,7 @@ class LocalStorage(context: Context) {
                     put("prepMinutes", recipe.prepMinutes ?: JSONObject.NULL)
                     put("proteinTag", recipe.proteinTag)
                     put("categoryTag", recipe.categoryTag)
+                    put("categoryId", recipe.categoryId ?: JSONObject.NULL)
                     put("notes", recipe.notes)
                     put("imageUri", recipe.imageUri ?: JSONObject.NULL)
                     put("ingredients", JSONArray().apply {
@@ -105,6 +107,7 @@ class LocalStorage(context: Context) {
                             quantityType = QuantityType.valueOf(obj.getString("quantityType")),
                             preferredUnit = MeasurementUnit.valueOf(obj.getString("preferredUnit")),
                             shoppingCategoryId = obj.nullableString("shoppingCategoryId"),
+                            isProtein = obj.optBoolean("isProtein", false),
                             imageUri = obj.nullableString("imageUri")
                         )
                     )
@@ -148,10 +151,11 @@ class LocalStorage(context: Context) {
                                 obj.optInt("prepMinutes").takeIf { it > 0 }
                             },
                             proteinTag = obj.optString("proteinTag", ""),
-                            categoryTag = obj
-                                .optString("categoryTag", RecipeCategory.OTHER.name)
-                                .toRecipeCategory()
-                                .name,
+                            categoryTag = obj.optString(
+                                "categoryTag",
+                                RecipeCategory.OTHER.name
+                            ),
+                            categoryId = obj.nullableString("categoryId"),
                             notes = obj.optString("notes", ""),
                             imageUri = obj.nullableString("imageUri"),
                             ingredients = requirements

@@ -3,6 +3,7 @@ package com.example.mealplanner
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.util.UUID
+import java.util.Locale
 import kotlin.math.abs
 
 enum class QuantityType {
@@ -67,12 +68,31 @@ data class IngredientCategory(
     val position: Int = 0
 )
 
+data class RecipeCategoryOption(
+    val id: String,
+    val name: String,
+    val position: Int = 0
+)
+
+fun String.normalizedDisplayName(): String {
+    val clean = trim()
+    if (clean.isBlank()) return clean
+    val locale = Locale.forLanguageTag("da-DK")
+    return clean.substring(0, 1).uppercase(locale) + clean.substring(1)
+}
+
+fun parseDanishDecimal(value: String): Double? =
+    value.trim()
+        .replace(',', '.')
+        .toDoubleOrNull()
+
 data class Ingredient(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
     val quantityType: QuantityType,
     val preferredUnit: MeasurementUnit,
     val shoppingCategoryId: String? = null,
+    val isProtein: Boolean = false,
     val imageUri: String? = null,
     val imagePath: String? = null
 )
@@ -153,6 +173,7 @@ data class Recipe(
     val prepMinutes: Int? = null,
     val proteinTag: String = "",
     val categoryTag: String = RecipeCategory.OTHER.name,
+    val categoryId: String? = null,
     val notes: String = "",
     val imageUri: String? = null,
     val imagePath: String? = null,
@@ -221,6 +242,24 @@ val sandwichDayPreference = listOf(
     DayOfWeek.TUESDAY,
     DayOfWeek.MONDAY
 )
+
+fun prepLimitLabel(minutes: Int?): String = when (minutes) {
+    null -> "Tid"
+    20 -> "Meget hurtig"
+    30 -> "Hurtig"
+    45 -> "Normal"
+    60 -> "God tid"
+    else -> "≤ $minutes min"
+}
+
+fun prepLimitOptionLabel(minutes: Int?): String = when (minutes) {
+    null -> "Ingen tidsgrænse"
+    20 -> "Meget hurtig · 20 min"
+    30 -> "Hurtig · 30 min"
+    45 -> "Normal · 45 min"
+    60 -> "God tid · 60 min"
+    else -> "Maks. $minutes min"
+}
 
 fun DayOfWeek.danishName(): String = when (this) {
     DayOfWeek.MONDAY -> "Mandag"

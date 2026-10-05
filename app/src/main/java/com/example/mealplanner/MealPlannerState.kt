@@ -34,6 +34,7 @@ class MealPlannerState(
 
     val ingredients = mutableStateListOf<Ingredient>()
     val ingredientCategories = mutableStateListOf<IngredientCategory>()
+    val recipeCategories = mutableStateListOf<RecipeCategoryOption>()
     val recipes = mutableStateListOf<Recipe>()
     val pantry = mutableStateMapOf<String, Double>()
     val dayModes = mutableStateMapOf<DayOfWeek, DayMode>()
@@ -41,6 +42,7 @@ class MealPlannerState(
     val plan = mutableStateMapOf<DayOfWeek, String?>()
     val lockedDays = mutableStateSetOf<DayOfWeek>()
     val shoppingChecked = mutableStateMapOf<String, Boolean>()
+    val shoppingIncluded = mutableStateMapOf<String, Boolean>()
     val selectedLunchRecipeIds = mutableStateListOf<String>()
     val history = mutableStateListOf<MealHistoryEntry>()
 
@@ -121,6 +123,9 @@ class MealPlannerState(
         ingredientCategories.clear()
         ingredientCategories.addAll(snapshot.ingredientCategories)
 
+        recipeCategories.clear()
+        recipeCategories.addAll(snapshot.recipeCategories)
+
         recipes.clear()
         recipes.addAll(snapshot.recipes)
 
@@ -147,6 +152,9 @@ class MealPlannerState(
 
         shoppingChecked.clear()
         shoppingChecked.putAll(snapshot.shoppingChecked)
+
+        shoppingIncluded.clear()
+        shoppingIncluded.putAll(snapshot.shoppingIncluded)
 
         selectedLunchRecipeIds.clear()
         selectedLunchRecipeIds.addAll(snapshot.selectedLunchRecipeIds)
@@ -180,6 +188,7 @@ class MealPlannerState(
 
         runMutation {
             if (clearChecks) {
+                shoppingIncluded.clear()
                 repository.clearShoppingChecks(id)
             }
             repository.saveWeekState(
@@ -212,6 +221,7 @@ class MealPlannerState(
             dayModes[day] = DayMode.AUTO
         }
         shoppingChecked.clear()
+        shoppingIncluded.clear()
         persistWeek(clearChecks = true)
     }
 
@@ -230,10 +240,11 @@ class MealPlannerState(
         name: String,
         type: QuantityType,
         shoppingCategoryId: String?,
+        isProtein: Boolean,
         imageUri: String? = null,
         preferredUnit: MeasurementUnit = MeasurementUnit.defaultFor(type)
     ): Boolean {
-        val clean = name.trim()
+        val clean = name.normalizedDisplayName()
         if (clean.isBlank() || preferredUnit.quantityType != type) return false
         if (!isIngredientNameAvailable(clean)) {
             lastError = "Ingrediensen findes allerede."
@@ -246,6 +257,7 @@ class MealPlannerState(
             quantityType = type,
             preferredUnit = preferredUnit,
             shoppingCategoryId = shoppingCategoryId,
+            isProtein = isProtein,
             imageUri = imageUri
         )
 
@@ -264,6 +276,7 @@ class MealPlannerState(
         name: String,
         type: QuantityType,
         shoppingCategoryId: String?,
+        isProtein: Boolean,
         preferredUnit: MeasurementUnit,
         imageUri: String? = null
     ): Boolean {
@@ -280,10 +293,11 @@ class MealPlannerState(
         }
 
         val updated = ingredients[index].copy(
-            name = name.trim(),
+            name = name.normalizedDisplayName(),
             quantityType = type,
             preferredUnit = preferredUnit,
             shoppingCategoryId = shoppingCategoryId,
+            isProtein = isProtein,
             imageUri = imageUri
         )
         ingredients[index] = updated
@@ -308,7 +322,7 @@ class MealPlannerState(
     }
 
     fun addIngredientCategory(name: String): Boolean {
-        val clean = name.trim()
+        val clean = name.normalizedDisplayName()
         if (!isIngredientCategoryNameAvailable(clean)) {
             lastError = "Kategorien findes allerede."
             return false
@@ -337,7 +351,7 @@ class MealPlannerState(
         categoryId: String,
         name: String
     ): Boolean {
-        val clean = name.trim()
+        val clean = name.normalizedDisplayName()
         if (!isIngredientCategoryNameAvailable(clean, excludingId = categoryId)) {
             lastError = "Kategorien findes allerede."
             return false
@@ -363,6 +377,86 @@ class MealPlannerState(
             .find { it.id == categoryId }
             ?.name
             ?: "Andet"
+
+    fun isRecipeCategoryNameAvailable(
+        name: String,
+        excludingId: String? = null
+    ): Boolean {
+        val clean = name.normalizedDisplayName()
+        return clean.isNotBlank() && recipeCategories.none {
+            it.id != excludingId &&
+                it.name.equals(clean, ignoreCase = true)
+        }
+    }
+
+    fun addRecipeCategory(name: String): Boolean {
+        val clean = name.normalizedDisplayName()
+        if (!isRecipeCategoryNameAvailable(clean)) {
+            lastError = "Kategorien findes allerede."
+            return false
+        }
+
+        val nextPosition =
+            (recipeCategories.maxOfOrNull { it.position } ?: -1) + 1
+
+        runMutation {
+            val saved = repository.createRecipeCategory(
+                name = clean,
+                position = nextPosition
+            )
+            if (recipeCategories.none { it.id == saved.id }) {
+                recipeCategories += saved
+                recipeCategories.sortWith(
+                    compareBy<RecipeCategoryOption> { it.position }
+                        .thenBy { it.name.lowercase() }
+                )
+            }
+        }
+        return true
+    }
+
+    fun renameRecipeCategory(
+        categoryId: String,
+        name: String
+    ): Boolean {
+        val clean = name.normalizedDisplayName()
+        if (!isRecipeCategoryNameAvailable(clean, excludingId = categoryId)) {
+            lastError = "Kategorien findes allerede."
+            return false
+        }
+
+        val index = recipeCategories.indexOfFirst { it.id == categoryId }
+        if (index < 0) return false
+
+        recipeCategories[index] =
+            recipeCategories[index].copy(name = clean)
+
+        runMutation {
+            repository.renameRecipeCategory(
+                categoryId = categoryId,
+                name = clean
+            )
+        }
+        return true
+    }
+
+    fun recipeCategoryName(recipe: Recipe): String =
+        recipeCategories
+            .find { it.id == recipe.categoryId }
+            ?.name
+            ?: recipe.categoryTag
+                .toRecipeCategory()
+                .danishName()
+
+    fun recipeProteinNames(recipe: Recipe): List<String> {
+        val ingredientsById = ingredients.associateBy { it.id }
+        return recipe.ingredients
+            .mapNotNull { ingredientsById[it.ingredientId] }
+            .filter { it.isProtein }
+            .map { it.name }
+            .distinct()
+            .sortedBy { it.lowercase() }
+    }
 
     fun deleteIngredient(ingredientId: String) {
         if (recipes.any { recipe ->
@@ -402,8 +496,7 @@ class MealPlannerState(
         mealType: MealType,
         autoRotationEnabled: Boolean,
         prepMinutes: Int?,
-        protein: String,
-        category: RecipeCategory,
+        categoryId: String?,
         notes: String = "",
         imageUri: String? = null,
         requirements: List<DraftRequirement>
@@ -419,8 +512,7 @@ class MealPlannerState(
             mealType = mealType,
             autoRotationEnabled = autoRotationEnabled,
             prepMinutes = prepMinutes,
-            protein = protein,
-            category = category,
+            categoryId = categoryId,
             notes = notes,
             imageUri = imageUri,
             imagePath = null,
@@ -443,8 +535,7 @@ class MealPlannerState(
         mealType: MealType,
         autoRotationEnabled: Boolean,
         prepMinutes: Int?,
-        protein: String,
-        category: RecipeCategory,
+        categoryId: String?,
         notes: String = "",
         imageUri: String? = null,
         requirements: List<DraftRequirement>
@@ -464,8 +555,7 @@ class MealPlannerState(
             mealType = mealType,
             autoRotationEnabled = autoRotationEnabled,
             prepMinutes = prepMinutes,
-            protein = protein,
-            category = category,
+            categoryId = categoryId,
             notes = notes,
             imageUri = imageUri,
             imagePath = existing.imagePath,
@@ -498,6 +588,7 @@ class MealPlannerState(
 
         if (weekChanged) {
             shoppingChecked.clear()
+        shoppingIncluded.clear()
         }
 
         runMutation {
@@ -535,15 +626,15 @@ class MealPlannerState(
         mealType: MealType,
         autoRotationEnabled: Boolean,
         prepMinutes: Int?,
-        protein: String,
-        category: RecipeCategory,
+        categoryId: String?,
         notes: String,
         imageUri: String?,
         imagePath: String?,
         requirements: List<DraftRequirement>
     ): Recipe? {
-        val clean = name.trim()
+        val clean = name.normalizedDisplayName()
         val cleanPrepMinutes = prepMinutes?.takeIf { it in 1..1440 }
+        val selectedCategory = recipeCategories.find { it.id == categoryId }
         if (clean.isBlank() || requirements.isEmpty()) return null
 
         val converted = requirements.mapNotNull { draft ->
@@ -569,8 +660,9 @@ class MealPlannerState(
             mealType = mealType,
             autoRotationEnabled = autoRotationEnabled,
             prepMinutes = cleanPrepMinutes,
-            proteinTag = protein.trim(),
-            categoryTag = category.name,
+            proteinTag = "",
+            categoryTag = selectedCategory?.name ?: "Andet",
+            categoryId = selectedCategory?.id,
             notes = notes.trim(),
             imageUri = imageUri,
             imagePath = imagePath,
@@ -593,6 +685,7 @@ class MealPlannerState(
         }
 
         shoppingChecked.clear()
+        shoppingIncluded.clear()
 
         runMutation {
             repository.deleteRecipe(
@@ -620,6 +713,7 @@ class MealPlannerState(
         weeklySandwichRecipeId = null
         sandwichDay = null
         shoppingChecked.clear()
+        shoppingIncluded.clear()
 
         val id = weeklyPlanId ?: return
         runMutation {
@@ -647,6 +741,7 @@ class MealPlannerState(
         }
 
         shoppingChecked.clear()
+        shoppingIncluded.clear()
 
         runMutation {
             repository.setHouseholdSandwich(recipeId)
@@ -681,6 +776,7 @@ class MealPlannerState(
         }
 
         shoppingChecked.clear()
+        shoppingIncluded.clear()
         persistWeek(clearChecks = true)
     }
 
@@ -717,6 +813,40 @@ class MealPlannerState(
         }
     }
 
+    fun addPantryAmount(
+        ingredientId: String,
+        amount: Double,
+        unit: MeasurementUnit
+    ) {
+        val ingredient = ingredients.find { it.id == ingredientId } ?: return
+        if (unit.quantityType != ingredient.quantityType || amount <= 0.0) return
+
+        val addedBase = unit.toBase(amount)
+        val next = (pantry[ingredientId] ?: 0.0) + addedBase
+        pantry[ingredientId] = next
+
+        runMutation {
+            repository.setPantry(ingredientId, next)
+        }
+    }
+
+    fun consumeRecipeIngredients(recipeId: String) {
+        val recipe = recipes.find { it.id == recipeId } ?: return
+        val updates = recipe.ingredients.associate { requirement ->
+            val current = pantry[requirement.ingredientId] ?: 0.0
+            requirement.ingredientId to
+                (current - requirement.amountBase).coerceAtLeast(0.0)
+        }
+
+        updates.forEach { (ingredientId, amountBase) ->
+            pantry[ingredientId] = amountBase
+        }
+
+        runMutation {
+            repository.setPantryBatch(updates)
+        }
+    }
+
     fun generateWeek() {
         if (isPlanning || weeklyPlanId == null) return
 
@@ -727,6 +857,11 @@ class MealPlannerState(
         val planSnapshot = plan.toMap()
         val lockSnapshot = lockedDays.toSet()
         val historySnapshot = history.toList()
+        val proteinIngredientIds = ingredients
+            .asSequence()
+            .filter { it.isProtein }
+            .map { it.id }
+            .toSet()
         val sandwichRecipe = weeklySandwichRecipeId
         val currentSandwichDay = sandwichDay
 
@@ -744,6 +879,7 @@ class MealPlannerState(
                         currentSandwichDay = currentSandwichDay,
                         lockedDays = lockSnapshot,
                         history = historySnapshot,
+                        proteinIngredientIds = proteinIngredientIds,
                         weekStart = currentWeekStart()
                     )
                 }
@@ -751,6 +887,7 @@ class MealPlannerState(
                 plan.putAll(result.plan)
                 sandwichDay = result.sandwichDay
                 shoppingChecked.clear()
+        shoppingIncluded.clear()
 
                 val id = weeklyPlanId ?: return@launch
                 repository.clearShoppingChecks(id)
@@ -783,6 +920,11 @@ class MealPlannerState(
         val maxPrepSnapshot = dayMaxPrepMinutes.toMap()
         val planSnapshot = plan.toMap()
         val historySnapshot = history.toList()
+        val proteinIngredientIds = ingredients
+            .asSequence()
+            .filter { it.isProtein }
+            .map { it.id }
+            .toSet()
 
         scope.launch {
             try {
@@ -797,12 +939,14 @@ class MealPlannerState(
                         sandwichDay = sandwichDay,
                         currentPlan = planSnapshot,
                         history = historySnapshot,
+                        proteinIngredientIds = proteinIngredientIds,
                         weekStart = currentWeekStart()
                     )
                 }
 
                 plan.putAll(updated)
                 shoppingChecked.clear()
+        shoppingIncluded.clear()
                 val id = weeklyPlanId ?: return@launch
                 repository.clearShoppingChecks(id)
                 repository.saveWeekState(
@@ -828,6 +972,7 @@ class MealPlannerState(
         )
 
         shoppingChecked.clear()
+        shoppingIncluded.clear()
         persistWeek(clearChecks = true)
     }
 
@@ -937,6 +1082,7 @@ class MealPlannerState(
 
         selectedLunchRecipeIds += recipe.id
         shoppingChecked.clear()
+        shoppingIncluded.clear()
 
         val planId = weeklyPlanId ?: return
         val position = selectedLunchRecipeIds.indexOf(recipe.id)
@@ -955,6 +1101,7 @@ class MealPlannerState(
         if (!selectedLunchRecipeIds.remove(recipeId)) return
 
         shoppingChecked.clear()
+        shoppingIncluded.clear()
         val planId = weeklyPlanId ?: return
 
         runMutation {
@@ -966,10 +1113,40 @@ class MealPlannerState(
         }
     }
 
+    fun isShoppingIncluded(ingredientId: String): Boolean =
+        shoppingIncluded[ingredientId] ?: true
+
+    fun setShoppingIncluded(
+        ingredientId: String,
+        included: Boolean
+    ) {
+        shoppingIncluded[ingredientId] = included
+        if (!included) {
+            shoppingChecked[ingredientId] = false
+        }
+
+        val id = weeklyPlanId ?: return
+        runMutation {
+            repository.setShoppingIncluded(
+                weeklyPlanId = id,
+                ingredientId = ingredientId,
+                included = included
+            )
+            if (!included) {
+                repository.setShoppingChecked(
+                    weeklyPlanId = id,
+                    ingredientId = ingredientId,
+                    checked = false
+                )
+            }
+        }
+    }
+
     fun setShoppingChecked(
         ingredientId: String,
         checked: Boolean
     ) {
+        if (!isShoppingIncluded(ingredientId) && checked) return
         shoppingChecked[ingredientId] = checked
         val id = weeklyPlanId ?: return
 
