@@ -40,7 +40,16 @@ private data class IngredientRow(
     @SerialName("quantity_type") val quantityType: String,
     @SerialName("preferred_unit") val preferredUnit: String,
     @SerialName("shopping_category") val shoppingCategory: String = "OTHER",
+    @SerialName("shopping_category_id") val shoppingCategoryId: String? = null,
     @SerialName("image_path") val imagePath: String? = null
+)
+
+@Serializable
+private data class IngredientCategoryRow(
+    val id: String,
+    @SerialName("household_id") val householdId: String,
+    val name: String,
+    val position: Int = 0
 )
 
 @Serializable
@@ -131,6 +140,7 @@ private data class FeedbackRow(
 
 data class CloudSnapshot(
     val ingredients: List<Ingredient>,
+    val ingredientCategories: List<IngredientCategory>,
     val recipes: List<Recipe>,
     val pantry: Map<String, Double>,
     val dayModes: Map<DayOfWeek, DayMode>,
@@ -169,6 +179,11 @@ class CloudMealRepository(
                     filter { eq("household_id", householdId) }
                 }.decodeList<IngredientRow>()
             }
+            val categoriesDeferred = async {
+                supabase.from("shopping_categories").select {
+                    filter { eq("household_id", householdId) }
+                }.decodeList<IngredientCategoryRow>()
+            }
             val recipesDeferred = async {
                 supabase.from("recipes").select {
                     filter { eq("household_id", householdId) }
@@ -199,6 +214,7 @@ class CloudMealRepository(
             }
 
             val ingredientRows = ingredientsDeferred.await()
+            val categoryRows = categoriesDeferred.await()
             val recipeRows = recipesDeferred.await()
             val recipeIngredientRows = recipeIngredientsDeferred.await()
             val pantryRows = pantryDeferred.await()
@@ -261,9 +277,7 @@ class CloudMealRepository(
                     name = row.name,
                     quantityType = type,
                     preferredUnit = unit,
-                    shoppingCategory = runCatching {
-                        ShoppingCategory.valueOf(row.shoppingCategory)
-                    }.getOrDefault(ShoppingCategory.OTHER),
+                    shoppingCategoryId = row.shoppingCategoryId,
                     imageUri = row.imagePath?.let(urls::get),
                     imagePath = row.imagePath
                 )
@@ -304,6 +318,15 @@ class CloudMealRepository(
 
             CloudSnapshot(
                 ingredients = ingredients,
+                ingredientCategories = categoryRows
+                    .sortedWith(compareBy<IngredientCategoryRow> { it.position }.thenBy { it.name.lowercase() })
+                    .map {
+                        IngredientCategory(
+                            id = it.id,
+                            name = it.name,
+                            position = it.position
+                        )
+                    },
                 recipes = recipes,
                 pantry = pantryRows.associate { it.ingredientId to it.amountBase },
                 dayModes = modes,
@@ -437,7 +460,7 @@ class CloudMealRepository(
                 name = ingredient.name,
                 quantityType = ingredient.quantityType.name,
                 preferredUnit = ingredient.preferredUnit.name,
-                shoppingCategory = ingredient.shoppingCategory.name,
+                shoppingCategoryId = ingredient.shoppingCategoryId,
                 imagePath = finalImage.first
             )
         ) {
@@ -448,6 +471,44 @@ class CloudMealRepository(
             imagePath = finalImage.first,
             imageUri = finalImage.second
         )
+    }
+
+    suspend fun createIngredientCategory(
+        name: String,
+        position: Int
+    ): IngredientCategory = withContext(Dispatchers.IO) {
+        val row = IngredientCategoryRow(
+            id = UUID.randomUUID().toString(),
+            householdId = householdId,
+            name = name.trim(),
+            position = position
+        )
+
+        val saved = supabase.from("shopping_categories").insert(row) {
+            select()
+        }.decodeList<IngredientCategoryRow>().firstOrNull() ?: row
+
+        IngredientCategory(
+            id = saved.id,
+            name = saved.name,
+            position = saved.position
+        )
+    }
+
+    suspend fun renameIngredientCategory(
+        categoryId: String,
+        name: String
+    ) = withContext(Dispatchers.IO) {
+        supabase.from("shopping_categories").update(
+            {
+                set("name", name.trim())
+            }
+        ) {
+            filter {
+                eq("household_id", householdId)
+                eq("id", categoryId)
+            }
+        }
     }
 
     suspend fun deleteIngredient(id: String, imagePath: String?) = withContext(Dispatchers.IO) {
@@ -647,6 +708,7 @@ class CloudMealRepository(
 
         val watchedTables = listOf(
             "ingredients",
+            "shopping_categories",
             "recipes",
             "recipe_ingredients",
             "pantry_items",
