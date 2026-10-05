@@ -306,7 +306,7 @@ class CloudMealRepository(
                     .sortedBy { it.position }
                     .map { it.recipeId },
                 weeklyPlanId = weeklyPlan.id,
-                weeklySandwichRecipeId = weeklyPlan.sandwichRecipeId ?: settings?.sandwichRecipeId,
+                weeklySandwichRecipeId = weeklyPlan.sandwichRecipeId,
                 sandwichDay = weeklyPlan.sandwichDay?.let(DayOfWeek::of),
                 history = historyRows.map {
                     MealHistoryEntry(
