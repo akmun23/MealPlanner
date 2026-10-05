@@ -298,7 +298,7 @@ fun CloudGate() {
 
                             message =
                                 e.message
-                                    ?: "Kunne ikke oprette bruger."
+                                    ?: "Kunne ikke oprette konto."
                         }
                     }
                 }
@@ -621,7 +621,7 @@ private fun HouseholdSetupScreen(
         )
 
         Text(
-            text = "Tilmeld hjem",
+            text = "Tilmeld dig et hjem",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold
         )
