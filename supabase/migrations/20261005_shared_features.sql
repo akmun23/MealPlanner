@@ -148,3 +148,127 @@ begin
     end if;
 end
 $$;
+
+
+-- Structured meal types/categories and manually selected weekly lunches.
+alter table public.recipes
+    add column if not exists meal_type text not null default 'DINNER';
+
+alter table public.recipes
+    drop constraint if exists recipes_meal_type_check;
+
+alter table public.recipes
+    add constraint recipes_meal_type_check
+    check (meal_type in ('DINNER', 'LUNCH'));
+
+update public.recipes
+set category_tag = case lower(trim(category_tag))
+    when 'pasta' then 'PASTA'
+    when 'karry' then 'CURRY'
+    when 'gryderet' then 'STEW'
+    when 'ovnret' then 'OVEN'
+    when 'burger' then 'BURGER'
+    when 'tacos' then 'TACOS'
+    when 'sandwich' then 'SANDWICH_WRAP'
+    when 'sandwich/wrap' then 'SANDWICH_WRAP'
+    when 'wrap' then 'SANDWICH_WRAP'
+    when 'risret' then 'RICE'
+    when 'ris' then 'RICE'
+    when 'suppe' then 'SOUP'
+    when 'salat' then 'SALAD_BOWL'
+    when 'bowl' then 'SALAD_BOWL'
+    when 'pizza' then 'PIZZA_PIE'
+    when 'tærte' then 'PIZZA_PIE'
+    else case
+        when category_tag in (
+            'PASTA',
+            'CURRY',
+            'STEW',
+            'OVEN',
+            'BURGER',
+            'TACOS',
+            'SANDWICH_WRAP',
+            'RICE',
+            'SOUP',
+            'SALAD_BOWL',
+            'PIZZA_PIE',
+            'OTHER'
+        ) then category_tag
+        else 'OTHER'
+    end
+end;
+
+alter table public.recipes
+    drop constraint if exists recipes_category_tag_check;
+
+alter table public.recipes
+    add constraint recipes_category_tag_check
+    check (
+        category_tag in (
+            'PASTA',
+            'CURRY',
+            'STEW',
+            'OVEN',
+            'BURGER',
+            'TACOS',
+            'SANDWICH_WRAP',
+            'RICE',
+            'SOUP',
+            'SALAD_BOWL',
+            'PIZZA_PIE',
+            'OTHER'
+        )
+    );
+
+create table if not exists public.weekly_lunch_recipes (
+    household_id uuid not null,
+    weekly_plan_id uuid not null,
+    recipe_id uuid not null,
+    position smallint not null default 0,
+    created_at timestamptz not null default now(),
+    primary key (weekly_plan_id, recipe_id),
+    foreign key (weekly_plan_id, household_id)
+        references public.weekly_plans(id, household_id)
+        on delete cascade,
+    foreign key (recipe_id, household_id)
+        references public.recipes(id, household_id)
+        on delete cascade,
+    check (position >= 0)
+);
+
+create index if not exists idx_weekly_lunch_recipes_household
+    on public.weekly_lunch_recipes(household_id);
+
+create index if not exists idx_weekly_lunch_recipes_recipe_household
+    on public.weekly_lunch_recipes(recipe_id, household_id);
+
+alter table public.weekly_lunch_recipes enable row level security;
+
+drop policy if exists weekly_lunch_recipes_member_all
+on public.weekly_lunch_recipes;
+
+create policy weekly_lunch_recipes_member_all
+on public.weekly_lunch_recipes
+for all
+to authenticated
+using (private.is_household_member(household_id))
+with check (private.is_household_member(household_id));
+
+grant select, insert, update, delete
+on public.weekly_lunch_recipes
+to authenticated;
+
+do $$
+begin
+    if not exists (
+        select 1
+        from pg_publication_tables
+        where pubname = 'supabase_realtime'
+          and schemaname = 'public'
+          and tablename = 'weekly_lunch_recipes'
+    ) then
+        alter publication supabase_realtime
+            add table public.weekly_lunch_recipes;
+    end if;
+end
+$$;
