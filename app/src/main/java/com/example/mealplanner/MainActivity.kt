@@ -32,7 +32,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
@@ -486,7 +486,7 @@ fun DayCard(
                 if (!recipe?.imageUri.isNullOrEmpty()) {
                     Spacer(Modifier.height(10.dp))
                     AsyncImage(
-                        model = recipe?.imageUri,
+                        model = recipe.imageUri,
                         contentDescription = null,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -1849,7 +1849,7 @@ private fun SubpageScaffold(
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(
-                            Icons.Filled.ArrowBack,
+                            Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Tilbage"
                         )
                     }
@@ -2137,7 +2137,7 @@ private fun formatDisplayNumber(value: Double): String {
     }
 
     return String.format(
-        Locale("da", "DK"),
+        Locale.forLanguageTag("da-DK"),
         "%.2f",
         value
     ).trimEnd('0').trimEnd(',')
