@@ -330,9 +330,11 @@ object WeeklyPlanner {
             if (it.ingredientId in alreadyNeeded) score += weights.ingredientReuse
         }
 
-        if (recipe.proteinTag.isNotBlank()) {
-            val sameProtein = chosenRecipes.count {
-                it.proteinTag.equals(recipe.proteinTag, ignoreCase = true)
+        if (recipe.proteinIngredientIds.isNotEmpty()) {
+            val sameProtein = chosenRecipes.count { chosen ->
+                chosen.proteinIngredientIds
+                    .intersect(recipe.proteinIngredientIds)
+                    .isNotEmpty()
             }
             score -= sameProtein * weights.repeatedProtein
         }
@@ -409,8 +411,9 @@ object WeeklyPlanner {
                 if (
                     isAdjacentCalendarDay &&
                     previous != null &&
-                    recipe.proteinTag.isNotBlank() &&
-                    previous.proteinTag.equals(recipe.proteinTag, ignoreCase = true)
+                    recipe.proteinIngredientIds
+                        .intersect(previous.proteinIngredientIds)
+                        .isNotEmpty()
                 ) {
                     score -= weights.adjacentProtein
                 }
@@ -426,8 +429,8 @@ object WeeklyPlanner {
         }
 
         selected
-            .filter { it.proteinTag.isNotBlank() }
-            .groupingBy { it.proteinTag.lowercase() }
+            .flatMap { it.proteinIngredientIds }
+            .groupingBy { it }
             .eachCount()
             .values
             .forEach { count ->
