@@ -774,12 +774,10 @@ fun DayCard(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         if (isSandwich) StatusPill("Ugens sandwich", true)
-                        if (recipe.categoryTag.isNotBlank()) {
-                            StatusPill(
-                                recipe.categoryTag.toRecipeCategory().danishName(),
-                                false
-                            )
-                        }
+                        StatusPill(
+                            state.recipeCategoryName(recipe),
+                            false
+                        )
                         recipe.prepMinutes?.let {
                             StatusPill("${it} min", false)
                         }
@@ -2396,6 +2394,137 @@ private fun ShoppingItemCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RecipeCategoriesScreen(
+    state: MealPlannerState,
+    onBack: () -> Unit
+) {
+    var showAdd by remember { mutableStateOf(false) }
+    var editing by remember { mutableStateOf<RecipeCategoryOption?>(null) }
+    var categoryName by remember { mutableStateOf("") }
+
+    if (showAdd || editing != null) {
+        AlertDialog(
+            onDismissRequest = {
+                showAdd = false
+                editing = null
+            },
+            title = {
+                Text(
+                    if (editing == null) {
+                        "Ny kategori"
+                    } else {
+                        "Omdøb kategori"
+                    }
+                )
+            },
+            text = {
+                OutlinedTextField(
+                    value = categoryName,
+                    onValueChange = { categoryName = it },
+                    label = { Text("Navn") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val saved = editing?.let {
+                            state.renameRecipeCategory(
+                                categoryId = it.id,
+                                name = categoryName
+                            )
+                        } ?: state.addRecipeCategory(categoryName)
+
+                        if (saved) {
+                            showAdd = false
+                            editing = null
+                            categoryName = ""
+                        }
+                    },
+                    enabled = categoryName.trim().isNotBlank()
+                ) {
+                    Text("Gem")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showAdd = false
+                        editing = null
+                    }
+                ) {
+                    Text("Annuller")
+                }
+            }
+        )
+    }
+
+    SubpageScaffold(
+        title = "Opskriftskategorier",
+        onBack = onBack,
+        action = {
+            IconButton(
+                onClick = {
+                    editing = null
+                    categoryName = ""
+                    showAdd = true
+                }
+            ) {
+                Icon(
+                    Icons.Filled.Add,
+                    contentDescription = "Ny kategori"
+                )
+            }
+        }
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            items(
+                items = state.recipeCategories,
+                key = { it.id }
+            ) { category ->
+                OutlinedCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(
+                            horizontal = 14.dp,
+                            vertical = 8.dp
+                        ),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            category.name,
+                            modifier = Modifier.weight(1f),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        IconButton(
+                            onClick = {
+                                editing = category
+                                categoryName = category.name
+                            }
+                        ) {
+                            Icon(
+                                Icons.Filled.Edit,
+                                contentDescription = "Omdøb kategori"
+                            )
+                        }
+                    }
                 }
             }
         }
