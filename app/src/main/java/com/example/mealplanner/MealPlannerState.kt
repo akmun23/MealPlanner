@@ -37,6 +37,7 @@ class MealPlannerState(
     val recipes = mutableStateListOf<Recipe>()
     val pantry = mutableStateMapOf<String, Double>()
     val dayModes = mutableStateMapOf<DayOfWeek, DayMode>()
+    val dayMaxPrepMinutes = mutableStateMapOf<DayOfWeek, Int?>()
     val plan = mutableStateMapOf<DayOfWeek, String?>()
     val lockedDays = mutableStateSetOf<DayOfWeek>()
     val shoppingChecked = mutableStateMapOf<String, Boolean>()
@@ -64,6 +65,7 @@ class MealPlannerState(
     init {
         orderedWeekDays.forEach { day ->
             dayModes[day] = DayMode.AUTO
+            dayMaxPrepMinutes[day] = null
             plan[day] = null
         }
 
@@ -128,6 +130,11 @@ class MealPlannerState(
         dayModes.clear()
         orderedWeekDays.forEach { day ->
             dayModes[day] = snapshot.dayModes[day] ?: DayMode.AUTO
+        }
+
+        dayMaxPrepMinutes.clear()
+        orderedWeekDays.forEach { day ->
+            dayMaxPrepMinutes[day] = snapshot.dayMaxPrepMinutes[day]
         }
 
         plan.clear()
@@ -394,6 +401,7 @@ class MealPlannerState(
         name: String,
         mealType: MealType,
         autoRotationEnabled: Boolean,
+        prepMinutes: Int?,
         protein: String,
         category: RecipeCategory,
         notes: String = "",
@@ -410,6 +418,7 @@ class MealPlannerState(
             name = name,
             mealType = mealType,
             autoRotationEnabled = autoRotationEnabled,
+            prepMinutes = prepMinutes,
             protein = protein,
             category = category,
             notes = notes,
@@ -433,6 +442,7 @@ class MealPlannerState(
         name: String,
         mealType: MealType,
         autoRotationEnabled: Boolean,
+        prepMinutes: Int?,
         protein: String,
         category: RecipeCategory,
         notes: String = "",
@@ -453,6 +463,7 @@ class MealPlannerState(
             name = name,
             mealType = mealType,
             autoRotationEnabled = autoRotationEnabled,
+            prepMinutes = prepMinutes,
             protein = protein,
             category = category,
             notes = notes,
@@ -523,6 +534,7 @@ class MealPlannerState(
         name: String,
         mealType: MealType,
         autoRotationEnabled: Boolean,
+        prepMinutes: Int?,
         protein: String,
         category: RecipeCategory,
         notes: String,
@@ -531,6 +543,7 @@ class MealPlannerState(
         requirements: List<DraftRequirement>
     ): Recipe? {
         val clean = name.trim()
+        val cleanPrepMinutes = prepMinutes?.takeIf { it in 1..1440 }
         if (clean.isBlank() || requirements.isEmpty()) return null
 
         val converted = requirements.mapNotNull { draft ->
@@ -555,6 +568,7 @@ class MealPlannerState(
             name = clean,
             mealType = mealType,
             autoRotationEnabled = autoRotationEnabled,
+            prepMinutes = cleanPrepMinutes,
             proteinTag = protein.trim(),
             categoryTag = category.name,
             notes = notes.trim(),
@@ -670,6 +684,23 @@ class MealPlannerState(
         persistWeek(clearChecks = true)
     }
 
+    fun setDayMaxPrepMinutes(
+        day: DayOfWeek,
+        maxPrepMinutes: Int?
+    ) {
+        val normalized = maxPrepMinutes?.takeIf { it in 1..1440 }
+        dayMaxPrepMinutes[day] = normalized
+
+        val planId = weeklyPlanId ?: return
+        runMutation {
+            repository.setDayPrepLimit(
+                weeklyPlanId = planId,
+                day = day,
+                maxPrepMinutes = normalized
+            )
+        }
+    }
+
     fun setPantry(
         ingredientId: String,
         amount: Double,
@@ -692,6 +723,7 @@ class MealPlannerState(
         val recipesSnapshot = recipes.toList()
         val pantrySnapshot = pantry.toMap()
         val modeSnapshot = dayModes.toMap()
+        val maxPrepSnapshot = dayMaxPrepMinutes.toMap()
         val planSnapshot = plan.toMap()
         val lockSnapshot = lockedDays.toSet()
         val historySnapshot = history.toList()
@@ -706,6 +738,7 @@ class MealPlannerState(
                         recipes = recipesSnapshot,
                         pantry = pantrySnapshot,
                         dayModes = modeSnapshot,
+                        maxPrepMinutesByDay = maxPrepSnapshot,
                         weeklySandwichRecipeId = sandwichRecipe,
                         currentPlan = planSnapshot,
                         currentSandwichDay = currentSandwichDay,
@@ -747,6 +780,7 @@ class MealPlannerState(
         val recipesSnapshot = recipes.toList()
         val pantrySnapshot = pantry.toMap()
         val modeSnapshot = dayModes.toMap()
+        val maxPrepSnapshot = dayMaxPrepMinutes.toMap()
         val planSnapshot = plan.toMap()
         val historySnapshot = history.toList()
 
@@ -758,6 +792,7 @@ class MealPlannerState(
                         recipes = recipesSnapshot,
                         pantry = pantrySnapshot,
                         dayModes = modeSnapshot,
+                        maxPrepMinutesByDay = maxPrepSnapshot,
                         weeklySandwichRecipeId = weeklySandwichRecipeId,
                         sandwichDay = sandwichDay,
                         currentPlan = planSnapshot,
