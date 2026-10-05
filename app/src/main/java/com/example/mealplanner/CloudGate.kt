@@ -291,10 +291,7 @@ fun CloudGate() {
 
                             } else {
 
-                                message =
-                                    "Kontoen er oprettet. " +
-                                            "Tjek din e-mail og bekræft kontoen. " +
-                                            "Gå derefter tilbage til appen og log ind."
+                                message = "Tjek din mail for at bekræfte kontoen."
                             }
 
                         } catch (e: Exception) {
@@ -332,9 +329,7 @@ fun CloudGate() {
 
                             } else {
 
-                                message =
-                                    "Hjemmet blev oprettet, " +
-                                            "men kunne ikke indlæses."
+                                message = "Kunne ikke indlæse hjemmet."
                             }
 
                         } catch (e: Exception) {
@@ -372,7 +367,7 @@ fun CloudGate() {
 
                             message =
                                 e.message
-                                    ?: "Kunne ikke tilmelde hjem."
+                                    ?: "Kunne ikke tilmelde dig hjemmet."
                         }
                     }
                 },
@@ -578,14 +573,8 @@ private fun HouseholdSetupScreen(
             modifier = Modifier.height(8.dp)
         )
 
-        Text(
-            text =
-                "Opret et nyt hjem, eller tilmeld dig " +
-                        "et hjem der allerede findes."
-        )
-
         Spacer(
-            modifier = Modifier.height(28.dp)
+            modifier = Modifier.height(22.dp)
         )
 
         Text(
