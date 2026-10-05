@@ -850,6 +850,7 @@ class MealPlannerState(
         }
 
         val ingredientsById = ingredients.associateBy { it.id }
+        val categoriesById = ingredientCategories.associateBy { it.id }
 
         return totals.mapNotNull { (ingredientId, requiredBase) ->
             val ingredient = ingredientsById[ingredientId]
@@ -863,18 +864,12 @@ class MealPlannerState(
         }.sortedWith(
             compareBy<ShoppingItem>(
                 {
-                    ingredientCategories
-                        .find { category ->
-                            category.id == it.ingredient.shoppingCategoryId
-                        }
+                    categoriesById[it.ingredient.shoppingCategoryId]
                         ?.position
                         ?: Int.MAX_VALUE
                 },
                 {
-                    ingredientCategories
-                        .find { category ->
-                            category.id == it.ingredient.shoppingCategoryId
-                        }
+                    categoriesById[it.ingredient.shoppingCategoryId]
                         ?.name
                         ?.lowercase()
                         ?: "andet"
