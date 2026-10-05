@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -148,7 +149,10 @@ private sealed interface AppPage {
     data object IngredientLibrary : AppPage
     data class IngredientEditor(val ingredientId: String?) : AppPage
     data class RecipeDetail(val recipeId: String) : AppPage
-    data class RecipeEditor(val recipeId: String?) : AppPage
+    data class RecipeEditor(
+        val recipeId: String?,
+        val initialMealType: MealType = MealType.DINNER
+    ) : AppPage
 }
 
 @Composable
@@ -222,6 +226,7 @@ fun MealPlannerApp(
         is AppPage.RecipeEditor -> RecipeEditorScreen(
             state = state,
             recipeId = current.recipeId,
+            initialMealType = current.initialMealType,
             onBack = {
                 page = current.recipeId?.let { AppPage.RecipeDetail(it) }
             },
@@ -272,7 +277,15 @@ fun MealPlannerApp(
                         )
                     } else {
                     when (tab) {
-                        AppTab.WEEK -> WeekScreen(state)
+                        AppTab.WEEK -> WeekScreen(
+                            state = state,
+                            onNewLunchRecipe = {
+                                page = AppPage.RecipeEditor(
+                                    recipeId = null,
+                                    initialMealType = MealType.LUNCH
+                                )
+                            }
+                        )
                         AppTab.RECIPES -> RecipesScreen(
                             state = state,
                             onAddRecipe = { page = AppPage.RecipeEditor(null) },
