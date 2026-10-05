@@ -72,6 +72,21 @@ private data class RecipeRotationRow(
 )
 
 @Serializable
+private data class RecipeTimeRow(
+    @SerialName("household_id") val householdId: String,
+    @SerialName("recipe_id") val recipeId: String,
+    @SerialName("prep_minutes") val prepMinutes: Int? = null
+)
+
+@Serializable
+private data class DayConstraintRow(
+    @SerialName("household_id") val householdId: String,
+    @SerialName("weekly_plan_id") val weeklyPlanId: String,
+    @SerialName("day_of_week") val dayOfWeek: Int,
+    @SerialName("max_prep_minutes") val maxPrepMinutes: Int
+)
+
+@Serializable
 private data class RecipeIngredientRow(
     @SerialName("household_id") val householdId: String,
     @SerialName("recipe_id") val recipeId: String,
@@ -151,6 +166,7 @@ data class CloudSnapshot(
     val recipes: List<Recipe>,
     val pantry: Map<String, Double>,
     val dayModes: Map<DayOfWeek, DayMode>,
+    val dayMaxPrepMinutes: Map<DayOfWeek, Int?>,
     val plan: Map<DayOfWeek, String?>,
     val lockedDays: Set<DayOfWeek>,
     val shoppingChecked: Map<String, Boolean>,
@@ -201,6 +217,11 @@ class CloudMealRepository(
                     filter { eq("household_id", householdId) }
                 }.decodeList<RecipeRotationRow>()
             }
+            val recipeTimeDeferred = async {
+                supabase.from("recipe_time_settings").select {
+                    filter { eq("household_id", householdId) }
+                }.decodeList<RecipeTimeRow>()
+            }
             val recipeIngredientsDeferred = async {
                 supabase.from("recipe_ingredients").select {
                     filter { eq("household_id", householdId) }
@@ -229,6 +250,7 @@ class CloudMealRepository(
             val categoryRows = categoriesDeferred.await()
             val recipeRows = recipesDeferred.await()
             val rotationRows = rotationDeferred.await()
+            val recipeTimeRows = recipeTimeDeferred.await()
             val recipeIngredientRows = recipeIngredientsDeferred.await()
             val pantryRows = pantryDeferred.await()
             val settings = settingsDeferred.await()
@@ -263,10 +285,19 @@ class CloudMealRepository(
                     }
                 }.decodeList<WeeklyLunchRecipeRow>()
             }
+            val constraintsDeferred = async {
+                supabase.from("weekly_day_constraints").select {
+                    filter {
+                        eq("household_id", householdId)
+                        eq("weekly_plan_id", weeklyPlan.id)
+                    }
+                }.decodeList<DayConstraintRow>()
+            }
 
             val mealRows = mealsDeferred.await()
             val shoppingRows = shoppingDeferred.await()
             val lunchRows = lunchDeferred.await()
+            val constraintRows = constraintsDeferred.await()
 
             val imagePaths = buildSet {
                 ingredientRows.mapNotNullTo(this) { it.imagePath }
@@ -298,6 +329,7 @@ class CloudMealRepository(
 
             val requirements = recipeIngredientRows.groupBy { it.recipeId }
             val rotationByRecipe = rotationRows.associateBy { it.recipeId }
+            val timeByRecipe = recipeTimeRows.associateBy { it.recipeId }
             val recipes = recipeRows.map { row ->
                 Recipe(
                     id = row.id,
@@ -307,6 +339,7 @@ class CloudMealRepository(
                     }.getOrDefault(MealType.DINNER),
                     autoRotationEnabled =
                         rotationByRecipe[row.id]?.autoRotationEnabled ?: true,
+                    prepMinutes = timeByRecipe[row.id]?.prepMinutes,
                     proteinTag = row.proteinTag,
                     categoryTag = row.categoryTag,
                     notes = row.notes,
@@ -346,6 +379,11 @@ class CloudMealRepository(
                 recipes = recipes,
                 pantry = pantryRows.associate { it.ingredientId to it.amountBase },
                 dayModes = modes,
+                dayMaxPrepMinutes = orderedWeekDays.associateWith { day ->
+                    constraintRows
+                        .firstOrNull { it.dayOfWeek == day.value }
+                        ?.maxPrepMinutes
+                },
                 plan = plan,
                 lockedDays = locked,
                 shoppingChecked = shoppingRows.associate { it.ingredientId to it.checked },
@@ -570,6 +608,16 @@ class CloudMealRepository(
             onConflict = "household_id,recipe_id"
         }
 
+        supabase.from("recipe_time_settings").upsert(
+            RecipeTimeRow(
+                householdId = householdId,
+                recipeId = recipe.id,
+                prepMinutes = recipe.prepMinutes
+            )
+        ) {
+            onConflict = "household_id,recipe_id"
+        }
+
         supabase.from("recipe_ingredients").delete {
             filter {
                 eq("household_id", householdId)
@@ -651,6 +699,33 @@ class CloudMealRepository(
             }
         ) {
             onConflict = "weekly_plan_id,day_of_week"
+        }
+    }
+
+    suspend fun setDayPrepLimit(
+        weeklyPlanId: String,
+        day: DayOfWeek,
+        maxPrepMinutes: Int?
+    ) = withContext(Dispatchers.IO) {
+        if (maxPrepMinutes == null) {
+            supabase.from("weekly_day_constraints").delete {
+                filter {
+                    eq("household_id", householdId)
+                    eq("weekly_plan_id", weeklyPlanId)
+                    eq("day_of_week", day.value)
+                }
+            }
+        } else {
+            supabase.from("weekly_day_constraints").upsert(
+                DayConstraintRow(
+                    householdId = householdId,
+                    weeklyPlanId = weeklyPlanId,
+                    dayOfWeek = day.value,
+                    maxPrepMinutes = maxPrepMinutes
+                )
+            ) {
+                onConflict = "weekly_plan_id,day_of_week"
+            }
         }
     }
 
@@ -737,11 +812,13 @@ class CloudMealRepository(
             "shopping_categories",
             "recipes",
             "recipe_rotation_settings",
+            "recipe_time_settings",
             "recipe_ingredients",
             "pantry_items",
             "household_settings",
             "weekly_plans",
             "planned_meals",
+            "weekly_day_constraints",
             "weekly_lunch_recipes",
             "shopping_checks",
             "meal_history"
