@@ -1,6 +1,7 @@
 package com.example.mealplanner
 
 import java.time.DayOfWeek
+import java.time.LocalDate
 import java.util.UUID
 import kotlin.math.abs
 
@@ -60,7 +61,8 @@ data class Ingredient(
     val name: String,
     val quantityType: QuantityType,
     val preferredUnit: MeasurementUnit,
-    val imageUri: String? = null
+    val imageUri: String? = null,
+    val imagePath: String? = null
 )
 
 data class RecipeIngredient(
@@ -75,10 +77,10 @@ data class Recipe(
     val categoryTag: String = "",
     val notes: String = "",
     val imageUri: String? = null,
+    val imagePath: String? = null,
     val ingredients: List<RecipeIngredient>
 )
 
-// FIXED is kept only so data from the earlier prototype can still be loaded.
 enum class DayMode {
     AUTO,
     AWAY,
@@ -95,6 +97,26 @@ data class ShoppingItem(
     val ingredient: Ingredient,
     val requiredBase: Double,
     val pantryBase: Double
+)
+
+data class MealHistoryEntry(
+    val recipeId: String,
+    val eatenOn: LocalDate
+)
+
+data class PlannerWeights(
+    val pantryCoverage: Double = 20.0,
+    val ingredientReuse: Double = 12.0,
+    val duplicateRecipe: Double = 120.0,
+    val repeatedProtein: Double = 15.0,
+    val adjacentProtein: Double = 28.0,
+    val repeatedCategory: Double = 11.0,
+    val adjacentCategory: Double = 14.0,
+    val recency7Days: Double = 90.0,
+    val recency14Days: Double = 55.0,
+    val recency30Days: Double = 25.0,
+    val keepSameDay: Double = 4.0,
+    val jitter: Double = 8.0
 )
 
 val orderedWeekDays = listOf(
