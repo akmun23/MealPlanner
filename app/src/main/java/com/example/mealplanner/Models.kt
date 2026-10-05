@@ -28,17 +28,20 @@ enum class MeasurementUnit(
     TABLESPOON("spsk.", QuantityType.VOLUME, 15.0),
     LITRE("l", QuantityType.VOLUME, 1000.0),
     PIECE("stk.", QuantityType.COUNT, 1.0),
+    PACK("pakke", QuantityType.PACKAGE, 1.0),
     CAN("dåse", QuantityType.PACKAGE, 1.0);
 
     fun toBase(amount: Double): Double = amount * toBaseFactor
     fun fromBase(amountBase: Double): Double = amountBase / toBaseFactor
 
     fun labelFor(amount: Double): String = when (this) {
+        PACK -> if (abs(amount - 1.0) < 0.00001) "pakke" else "pakker"
         CAN -> if (abs(amount - 1.0) < 0.00001) "dåse" else "dåser"
         else -> symbol
     }
 
     fun selectorLabel(): String = when (this) {
+        PACK -> "pakke"
         CAN -> "dåse"
         PIECE -> "stk."
         else -> symbol
@@ -53,41 +56,23 @@ enum class MeasurementUnit(
                 QuantityType.MASS -> GRAM
                 QuantityType.VOLUME -> LITRE
                 QuantityType.COUNT -> PIECE
-                QuantityType.PACKAGE -> CAN
+                QuantityType.PACKAGE -> PACK
             }
     }
 }
 
-enum class ShoppingCategory {
-    PRODUCE,
-    MEAT_FISH,
-    DAIRY_CHILLED,
-    BREAD_BAKERY,
-    PANTRY,
-    SPICES,
-    FROZEN,
-    DRINKS,
-    OTHER
-}
-
-fun ShoppingCategory.danishName(): String = when (this) {
-    ShoppingCategory.PRODUCE -> "Frugt & grønt"
-    ShoppingCategory.MEAT_FISH -> "Kød & fisk"
-    ShoppingCategory.DAIRY_CHILLED -> "Mejeri & køl"
-    ShoppingCategory.BREAD_BAKERY -> "Brød & bager"
-    ShoppingCategory.PANTRY -> "Kolonial"
-    ShoppingCategory.SPICES -> "Krydderier"
-    ShoppingCategory.FROZEN -> "Frost"
-    ShoppingCategory.DRINKS -> "Drikkevarer"
-    ShoppingCategory.OTHER -> "Andet"
-}
+data class IngredientCategory(
+    val id: String,
+    val name: String,
+    val position: Int = 0
+)
 
 data class Ingredient(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
     val quantityType: QuantityType,
     val preferredUnit: MeasurementUnit,
-    val shoppingCategory: ShoppingCategory = ShoppingCategory.OTHER,
+    val shoppingCategoryId: String? = null,
     val imageUri: String? = null,
     val imagePath: String? = null
 )
