@@ -177,6 +177,19 @@ fun MealPlannerApp(
     var tab by remember { mutableStateOf(AppTab.WEEK) }
     var page by remember { mutableStateOf<AppPage?>(null) }
 
+    state.lastError?.let { error ->
+        AlertDialog(
+            onDismissRequest = { state.clearError() },
+            title = { Text("Fejl") },
+            text = { Text(error) },
+            confirmButton = {
+                TextButton(onClick = { state.clearError() }) {
+                    Text("OK")
+                }
+            }
+        )
+    }
+
     when (val current = page) {
         AppPage.Settings -> SettingsScreen(
             household = household,
