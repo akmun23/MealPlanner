@@ -1,6 +1,10 @@
 package com.example.mealplanner
 
 import android.content.Intent
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -1782,6 +1786,8 @@ private fun SettingsScreen(
     onBack: () -> Unit,
     onLogout: () -> Unit
 ) {
+    val context = LocalContext.current
+
     SubpageScaffold(
         title = "Indstillinger",
         onBack = onBack
@@ -1805,11 +1811,38 @@ private fun SettingsScreen(
 
             item {
                 SectionCard("Invitationskode") {
-                    Text(
-                        household.joinCode,
-                        style = MaterialTheme.typography.headlineSmall,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            household.joinCode,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        TextButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(
+                                    Context.CLIPBOARD_SERVICE
+                                ) as ClipboardManager
+                                clipboard.setPrimaryClip(
+                                    ClipData.newPlainText(
+                                        "Invitationskode",
+                                        household.joinCode
+                                    )
+                                )
+                                Toast.makeText(
+                                    context,
+                                    "Kopieret",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        ) {
+                            Text("Kopiér")
+                        }
+                    }
                 }
             }
 
