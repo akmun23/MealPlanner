@@ -1127,6 +1127,7 @@ private fun RecipeDetailScreen(
 private fun RecipeEditorScreen(
     state: MealPlannerState,
     recipeId: String?,
+    initialMealType: MealType,
     onBack: () -> Unit,
     onSaved: (String?) -> Unit
 ) {
@@ -1135,8 +1136,16 @@ private fun RecipeEditorScreen(
     }
 
     var name by remember(recipeId) { mutableStateOf(existing?.name ?: "") }
+    var mealType by remember(recipeId) {
+        mutableStateOf(existing?.mealType ?: initialMealType)
+    }
     var protein by remember(recipeId) { mutableStateOf(existing?.proteinTag ?: "") }
-    var category by remember(recipeId) { mutableStateOf(existing?.categoryTag ?: "") }
+    var category by remember(recipeId) {
+        mutableStateOf(
+            existing?.categoryTag?.toRecipeCategory()
+                ?: RecipeCategory.OTHER
+        )
+    }
     var notes by remember(recipeId) { mutableStateOf(existing?.notes ?: "") }
     var imageUri by remember(recipeId) { mutableStateOf(existing?.imageUri) }
     var ingredientSearch by remember { mutableStateOf("") }
@@ -1259,23 +1268,48 @@ private fun RecipeEditorScreen(
             }
 
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(
-                        value = category,
-                        onValueChange = { category = it },
-                        label = { Text("Kategori") },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
-                    )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Måltid",
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        SimpleSelector(
+                            label = mealType.danishName(),
+                            options = MealType.entries,
+                            optionText = { it.danishName() },
+                            onSelected = { mealType = it }
+                        )
+                    }
 
-                    OutlinedTextField(
-                        value = protein,
-                        onValueChange = { protein = it },
-                        label = { Text("Protein") },
-                        modifier = Modifier.weight(1f),
-                        singleLine = true
-                    )
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Kategori",
+                            style = MaterialTheme.typography.labelMedium
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        SimpleSelector(
+                            label = category.danishName(),
+                            options = RecipeCategory.entries,
+                            optionText = { it.danishName() },
+                            onSelected = { category = it }
+                        )
+                    }
                 }
+            }
+
+            item {
+                OutlinedTextField(
+                    value = protein,
+                    onValueChange = { protein = it },
+                    label = { Text("Protein") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
             }
 
             item {
@@ -1376,6 +1410,7 @@ private fun RecipeEditorScreen(
                         if (existing == null) {
                             state.addRecipe(
                                 name = name,
+                                mealType = mealType,
                                 protein = protein,
                                 category = category,
                                 notes = notes,
@@ -1392,6 +1427,7 @@ private fun RecipeEditorScreen(
                             state.updateRecipe(
                                 id = existing.id,
                                 name = name,
+                                mealType = mealType,
                                 protein = protein,
                                 category = category,
                                 notes = notes,
