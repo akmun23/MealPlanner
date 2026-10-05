@@ -840,7 +840,7 @@ private fun RecipeDetailScreen(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(14.dp)
                     ) {
-                        Text("Sæt som ugens sandwich")
+                        Text("Vælg som ugens sandwich")
                     }
                 }
             } else {
