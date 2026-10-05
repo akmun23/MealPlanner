@@ -186,6 +186,9 @@ create table if not exists public.weekly_lunch_recipes (
 create index if not exists idx_weekly_lunch_recipes_household
     on public.weekly_lunch_recipes(household_id);
 
+create index if not exists idx_weekly_lunch_recipes_plan_household
+    on public.weekly_lunch_recipes(weekly_plan_id, household_id);
+
 create index if not exists idx_weekly_lunch_recipes_recipe_household
     on public.weekly_lunch_recipes(recipe_id, household_id);
 
