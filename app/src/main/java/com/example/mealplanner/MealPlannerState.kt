@@ -34,6 +34,7 @@ class MealPlannerState(
 
     val ingredients = mutableStateListOf<Ingredient>()
     val ingredientCategories = mutableStateListOf<IngredientCategory>()
+    val recipeCategories = mutableStateListOf<RecipeCategoryOption>()
     val recipes = mutableStateListOf<Recipe>()
     val pantry = mutableStateMapOf<String, Double>()
     val dayModes = mutableStateMapOf<DayOfWeek, DayMode>()
@@ -104,6 +105,14 @@ class MealPlannerState(
         lastError = null
     }
 
+    private fun normalizeDisplayName(value: String): String {
+        val clean = value.trim()
+        if (clean.isBlank()) return clean
+        return clean.replaceFirstChar { first ->
+            first.titlecase(Locale.forLanguageTag("da-DK"))
+        }
+    }
+
     private suspend fun reload(
         syncHistory: Boolean = false
     ) {
@@ -120,6 +129,9 @@ class MealPlannerState(
 
         ingredientCategories.clear()
         ingredientCategories.addAll(snapshot.ingredientCategories)
+
+        recipeCategories.clear()
+        recipeCategories.addAll(snapshot.recipeCategories)
 
         recipes.clear()
         recipes.addAll(snapshot.recipes)
@@ -234,7 +246,7 @@ class MealPlannerState(
         imageUri: String? = null,
         preferredUnit: MeasurementUnit = MeasurementUnit.defaultFor(type)
     ): Boolean {
-        val clean = name.trim()
+        val clean = normalizeDisplayName(name)
         if (clean.isBlank() || preferredUnit.quantityType != type) return false
         if (!isIngredientNameAvailable(clean)) {
             lastError = "Ingrediensen findes allerede."
@@ -283,7 +295,7 @@ class MealPlannerState(
         }
 
         val updated = ingredients[index].copy(
-            name = name.trim(),
+            name = normalizeDisplayName(name),
             quantityType = type,
             preferredUnit = preferredUnit,
             shoppingCategoryId = shoppingCategoryId,
@@ -313,7 +325,7 @@ class MealPlannerState(
     }
 
     fun addIngredientCategory(name: String): Boolean {
-        val clean = name.trim()
+        val clean = normalizeDisplayName(name)
         if (!isIngredientCategoryNameAvailable(clean)) {
             lastError = "Kategorien findes allerede."
             return false
@@ -342,7 +354,7 @@ class MealPlannerState(
         categoryId: String,
         name: String
     ): Boolean {
-        val clean = name.trim()
+        val clean = normalizeDisplayName(name)
         if (!isIngredientCategoryNameAvailable(clean, excludingId = categoryId)) {
             lastError = "Kategorien findes allerede."
             return false
@@ -368,6 +380,74 @@ class MealPlannerState(
             .find { it.id == categoryId }
             ?.name
             ?: "Andet"
+
+    fun isRecipeCategoryNameAvailable(
+        name: String,
+        excludingId: String? = null
+    ): Boolean {
+        val clean = normalizeDisplayName(name)
+        return clean.isNotBlank() && recipeCategories.none {
+            it.id != excludingId &&
+                it.name.equals(clean, ignoreCase = true)
+        }
+    }
+
+    fun addRecipeCategory(name: String): Boolean {
+        val clean = normalizeDisplayName(name)
+        if (!isRecipeCategoryNameAvailable(clean)) {
+            lastError = "Kategorien findes allerede."
+            return false
+        }
+
+        val nextPosition =
+            (recipeCategories.maxOfOrNull { it.position } ?: -1) + 1
+
+        runMutation {
+            val saved = repository.createRecipeCategory(
+                name = clean,
+                position = nextPosition
+            )
+            if (recipeCategories.none { it.id == saved.id }) {
+                recipeCategories += saved
+                recipeCategories.sortWith(
+                    compareBy<RecipeCategoryOption> { it.position }
+                        .thenBy { it.name.lowercase() }
+                )
+            }
+        }
+        return true
+    }
+
+    fun renameRecipeCategory(
+        categoryId: String,
+        name: String
+    ): Boolean {
+        val clean = normalizeDisplayName(name)
+        if (!isRecipeCategoryNameAvailable(clean, excludingId = categoryId)) {
+            lastError = "Kategorien findes allerede."
+            return false
+        }
+
+        val index = recipeCategories.indexOfFirst { it.id == categoryId }
+        if (index < 0) return false
+
+        recipeCategories[index] =
+            recipeCategories[index].copy(name = clean)
+
+        runMutation {
+            repository.renameRecipeCategory(
+                categoryId = categoryId,
+                name = clean
+            )
+        }
+        return true
+    }
+
+    fun recipeCategoryName(recipe: Recipe): String =
+        recipeCategories
+            .find { it.id == recipe.categoryId }
+            ?.name
+            ?: recipe.categoryTag.toRecipeCategory().danishName()
 
     fun deleteIngredient(ingredientId: String) {
         if (recipes.any { recipe ->
@@ -407,7 +487,7 @@ class MealPlannerState(
         mealType: MealType,
         autoRotationEnabled: Boolean,
         prepMinutes: Int?,
-        category: RecipeCategory,
+        categoryId: String?,
         notes: String = "",
         imageUri: String? = null,
         requirements: List<DraftRequirement>
@@ -423,7 +503,7 @@ class MealPlannerState(
             mealType = mealType,
             autoRotationEnabled = autoRotationEnabled,
             prepMinutes = prepMinutes,
-            category = category,
+            categoryId = categoryId,
             notes = notes,
             imageUri = imageUri,
             imagePath = null,
@@ -446,7 +526,7 @@ class MealPlannerState(
         mealType: MealType,
         autoRotationEnabled: Boolean,
         prepMinutes: Int?,
-        category: RecipeCategory,
+        categoryId: String?,
         notes: String = "",
         imageUri: String? = null,
         requirements: List<DraftRequirement>
@@ -466,7 +546,7 @@ class MealPlannerState(
             mealType = mealType,
             autoRotationEnabled = autoRotationEnabled,
             prepMinutes = prepMinutes,
-            category = category,
+            categoryId = categoryId,
             notes = notes,
             imageUri = imageUri,
             imagePath = existing.imagePath,
@@ -536,14 +616,15 @@ class MealPlannerState(
         mealType: MealType,
         autoRotationEnabled: Boolean,
         prepMinutes: Int?,
-        category: RecipeCategory,
+        categoryId: String?,
         notes: String,
         imageUri: String?,
         imagePath: String?,
         requirements: List<DraftRequirement>
     ): Recipe? {
-        val clean = name.trim()
+        val clean = normalizeDisplayName(name)
         val cleanPrepMinutes = prepMinutes?.takeIf { it in 1..1440 }
+        val selectedCategory = recipeCategories.find { it.id == categoryId }
         if (clean.isBlank() || requirements.isEmpty()) return null
 
         val converted = requirements.mapNotNull { draft ->
@@ -576,7 +657,12 @@ class MealPlannerState(
                     ingredients.find { it.id == ingredientId }?.isProtein == true
                 }
                 .toSet(),
-            categoryTag = category.name,
+            categoryId = selectedCategory?.id,
+            categoryTag = selectedCategory
+                ?.name
+                ?.toRecipeCategory()
+                ?.name
+                ?: RecipeCategory.OTHER.name,
             notes = notes.trim(),
             imageUri = imageUri,
             imagePath = imagePath,
