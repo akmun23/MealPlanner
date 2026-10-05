@@ -11,7 +11,6 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -56,6 +55,7 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -64,12 +64,15 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -90,6 +93,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import io.github.jan.supabase.auth.handleDeeplinks
 import java.time.DayOfWeek
 import java.util.Locale
 
@@ -110,6 +114,8 @@ private val AppColors = lightColorScheme(
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        SupabaseProvider.client.handleDeeplinks(intent)
+
         setContent {
             MaterialTheme(colorScheme = AppColors) {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -117,6 +123,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        SupabaseProvider.client.handleDeeplinks(intent)
     }
 }
 
@@ -127,71 +139,147 @@ enum class AppTab(val label: String, val icon: ImageVector) {
     SHOPPING("Indkøb", Icons.Filled.ShoppingCart)
 }
 
+private sealed interface AppPage {
+    data object Settings : AppPage
+    data object IngredientLibrary : AppPage
+    data class IngredientEditor(val ingredientId: String?) : AppPage
+    data class RecipeDetail(val recipeId: String) : AppPage
+    data class RecipeEditor(val recipeId: String?) : AppPage
+}
+
 @Composable
-fun MealPlannerApp() {
+fun MealPlannerApp(
+    household: HouseholdDto,
+    onLogout: () -> Unit
+) {
     val context = LocalContext.current
     val state = remember { MealPlannerState(context.applicationContext) }
-    var tab by remember { mutableStateOf(AppTab.WEEK) }
 
-    Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            Surface(shadowElevation = 2.dp) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 20.dp, vertical = 14.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("MealPlanner", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                        Text(
-                            "Klog ugeplan, automatisk indkøb",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Surface(
-                        shape = CircleShape,
-                        color = MaterialTheme.colorScheme.primaryContainer
-                    ) {
-                        Text(
-                            "${state.recipes.size} retter",
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer
-                        )
-                    }
-                }
+    var tab by remember { mutableStateOf(AppTab.WEEK) }
+    var page by remember { mutableStateOf<AppPage?>(null) }
+
+    when (val current = page) {
+        AppPage.Settings -> SettingsScreen(
+            household = household,
+            onBack = { page = null },
+            onLogout = onLogout
+        )
+
+        AppPage.IngredientLibrary -> IngredientLibraryScreen(
+            state = state,
+            onBack = { page = null },
+            onAdd = { page = AppPage.IngredientEditor(null) },
+            onOpen = { page = AppPage.IngredientEditor(it) }
+        )
+
+        is AppPage.IngredientEditor -> IngredientEditorScreen(
+            state = state,
+            ingredientId = current.ingredientId,
+            onBack = { page = AppPage.IngredientLibrary },
+            onSaved = { page = AppPage.IngredientLibrary }
+        )
+
+        is AppPage.RecipeDetail -> RecipeDetailScreen(
+            state = state,
+            recipeId = current.recipeId,
+            onBack = { page = null },
+            onEdit = { page = AppPage.RecipeEditor(current.recipeId) }
+        )
+
+        is AppPage.RecipeEditor -> RecipeEditorScreen(
+            state = state,
+            recipeId = current.recipeId,
+            onBack = {
+                page = current.recipeId?.let { AppPage.RecipeDetail(it) }
+            },
+            onSaved = { savedId ->
+                page = savedId?.let { AppPage.RecipeDetail(it) }
             }
-        },
-        bottomBar = {
-            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                AppTab.entries.forEach { item ->
-                    NavigationBarItem(
-                        selected = item == tab,
-                        onClick = { tab = item },
-                        icon = { Icon(item.icon, contentDescription = item.label) },
-                        label = { Text(item.label, fontWeight = if (item == tab) FontWeight.Bold else FontWeight.Normal) }
+        )
+
+        null -> {
+            Scaffold(
+                containerColor = MaterialTheme.colorScheme.background,
+                topBar = {
+                    AppHeader(
+                        onSettings = { page = AppPage.Settings }
                     )
+                },
+                bottomBar = {
+                    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                        AppTab.entries.forEach { item ->
+                            NavigationBarItem(
+                                selected = item == tab,
+                                onClick = { tab = item },
+                                icon = {
+                                    Icon(
+                                        item.icon,
+                                        contentDescription = item.label
+                                    )
+                                },
+                                label = {
+                                    Text(
+                                        item.label,
+                                        fontWeight = if (item == tab) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                }
+                            )
+                        }
+                    }
                 }
-            }
-        }
-    ) { padding ->
-        Box(modifier = Modifier.padding(padding)) {
-            when (tab) {
-                AppTab.WEEK -> WeekScreen(state)
-                AppTab.RECIPES -> RecipesScreen(state)
-                AppTab.PANTRY -> PantryScreen(state)
-                AppTab.SHOPPING -> ShoppingScreen(state)
+            ) { padding ->
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(padding)
+                ) {
+                    when (tab) {
+                        AppTab.WEEK -> WeekScreen(state)
+                        AppTab.RECIPES -> RecipesScreen(
+                            state = state,
+                            onAddRecipe = { page = AppPage.RecipeEditor(null) },
+                            onIngredients = { page = AppPage.IngredientLibrary },
+                            onOpenRecipe = { page = AppPage.RecipeDetail(it) }
+                        )
+                        AppTab.PANTRY -> PantryScreen(state)
+                        AppTab.SHOPPING -> ShoppingScreen(state)
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun ScreenColumn(content: @Composable ColumnScope.() -> Unit) {
+private fun AppHeader(onSettings: () -> Unit) {
+    Surface(shadowElevation = 1.dp) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                "MealPlanner",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+
+            IconButton(onClick = onSettings) {
+                Icon(
+                    Icons.Filled.Settings,
+                    contentDescription = "Indstillinger"
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ScreenColumn(
+    content: @Composable ColumnScope.() -> Unit
+) {
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -205,32 +293,30 @@ private fun ScreenColumn(content: @Composable ColumnScope.() -> Unit) {
 fun WeekScreen(state: MealPlannerState) {
     val sandwichDay = state.sandwichDay()
     val homeCount = orderedWeekDays.count { state.dayModes[it] != DayMode.AWAY }
-    val lockedCount = state.lockedDays.size
 
     ScreenColumn {
-        Text("Ugens madplan", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
         Text(
-            "Tilpas ugen her. Du kan låse retter, du vil beholde, eller vælge en ret direkte per dag.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant
+            "Madplan",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = FontWeight.Bold
         )
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(14.dp))
 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             SummaryCard("Hjemme", "$homeCount dage", Modifier.weight(1f))
-            SummaryCard("Låst", "$lockedCount retter", Modifier.weight(1f))
             SummaryCard(
                 "Sandwich",
-                sandwichDay?.shortDanishName() ?: "-",
+                sandwichDay?.shortDanishName() ?: "–",
                 Modifier.weight(1f),
                 highlighted = true
             )
         }
 
-        Spacer(Modifier.height(18.dp))
+        Spacer(Modifier.height(16.dp))
 
         if (state.weeklySandwichRecipeId == null) {
-            NoticeCard("Vælg en opskrift som ugens faste sandwich under Opskrifter.")
+            NoticeCard("Vælg ugens sandwich under Opskrifter.")
             Spacer(Modifier.height(12.dp))
         }
 
@@ -239,37 +325,56 @@ fun WeekScreen(state: MealPlannerState) {
             Spacer(Modifier.height(10.dp))
         }
 
-        Spacer(Modifier.height(6.dp))
         Button(
             onClick = { state.generateWeek() },
-            enabled = state.recipes.isNotEmpty() && state.weeklySandwichRecipeId != null && homeCount > 0,
+            enabled = state.recipes.isNotEmpty() &&
+                state.weeklySandwichRecipeId != null &&
+                homeCount > 0,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(54.dp),
+                .height(52.dp),
             shape = RoundedCornerShape(16.dp)
         ) {
             Icon(Icons.Filled.Refresh, contentDescription = null)
             Spacer(Modifier.width(8.dp))
-            Text("Generér ny madplan", fontWeight = FontWeight.Bold)
+            Text("Ny madplan", fontWeight = FontWeight.Bold)
         }
-        Spacer(Modifier.height(24.dp))
+
+        Spacer(Modifier.height(20.dp))
     }
 }
 
 @Composable
-private fun SummaryCard(title: String, value: String, modifier: Modifier, highlighted: Boolean = false) {
+private fun SummaryCard(
+    title: String,
+    value: String,
+    modifier: Modifier,
+    highlighted: Boolean = false
+) {
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (highlighted) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+            containerColor = if (highlighted) {
+                MaterialTheme.colorScheme.primaryContainer
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
         Column(Modifier.padding(12.dp)) {
-            Text(title, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(
+                title,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
             Spacer(Modifier.height(2.dp))
-            Text(value, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+            Text(
+                value,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }
@@ -277,15 +382,24 @@ private fun SummaryCard(title: String, value: String, modifier: Modifier, highli
 @Composable
 private fun NoticeCard(text: String) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer
+        ),
         shape = RoundedCornerShape(16.dp)
     ) {
-        Text(text, modifier = Modifier.padding(14.dp), color = MaterialTheme.colorScheme.onSecondaryContainer)
+        Text(
+            text,
+            modifier = Modifier.padding(14.dp),
+            color = MaterialTheme.colorScheme.onSecondaryContainer
+        )
     }
 }
 
 @Composable
-fun DayCard(day: DayOfWeek, state: MealPlannerState) {
+fun DayCard(
+    day: DayOfWeek,
+    state: MealPlannerState
+) {
     val away = state.dayModes[day] == DayMode.AWAY
     val recipe = state.recipeFor(day)
     val isSandwich = recipe?.id == state.weeklySandwichRecipeId
@@ -305,58 +419,71 @@ fun DayCard(day: DayOfWeek, state: MealPlannerState) {
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = if (away) 0.dp else 1.dp)
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(modifier = Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                // DAY BADGE PILL
                 Surface(
                     shape = RoundedCornerShape(8.dp),
-                    color = if (away) MaterialTheme.colorScheme.outline.copy(alpha = 0.3f) else MaterialTheme.colorScheme.primary
+                    color = if (away) {
+                        MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                    } else {
+                        MaterialTheme.colorScheme.primary
+                    }
                 ) {
                     Text(
                         day.shortDanishName(),
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                         style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
-                        color = if (away) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onPrimary
+                        color = if (away) {
+                            MaterialTheme.colorScheme.onSurfaceVariant
+                        } else {
+                            MaterialTheme.colorScheme.onPrimary
+                        }
                     )
                 }
 
                 Spacer(Modifier.width(10.dp))
 
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(day.danishName(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                    Text(
+                        day.danishName(),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
                     Text(
                         when {
-                            away -> "Spiser ikke hjemme"
+                            away -> "Ikke hjemme"
                             recipe != null -> recipe.name
-                            else -> "Ingen ret valgt"
+                            else -> "Ingen ret"
                         },
                         style = MaterialTheme.typography.bodyMedium,
-                        color = if (away) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (!away && recipe != null) {
-                        IconButton(
-                            onClick = { state.toggleLockDay(day) },
-                            modifier = Modifier.size(36.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (isLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
-                                contentDescription = "Lås ret",
-                                tint = if (isLocked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+                if (!away && recipe != null) {
+                    IconButton(
+                        onClick = { state.toggleLockDay(day) },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
+                            contentDescription = if (isLocked) "Lås op" else "Lås ret",
+                            tint = if (isLocked) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
+                        )
                     }
-
-                    Switch(
-                        checked = !away,
-                        onCheckedChange = { state.toggleEatingAtHome(day) }
-                    )
                 }
+
+                Switch(
+                    checked = !away,
+                    onCheckedChange = { state.toggleEatingAtHome(day) }
+                )
             }
 
             if (!away) {
@@ -367,27 +494,30 @@ fun DayCard(day: DayOfWeek, state: MealPlannerState) {
                         contentDescription = null,
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(100.dp)
+                            .height(96.dp)
                             .clip(RoundedCornerShape(12.dp)),
                         contentScale = ContentScale.Crop
                     )
                 }
 
-                Spacer(Modifier.height(10.dp))
-
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    if (isSandwich) StatusPill("Ugens sandwich", true)
-                    if (recipe?.proteinTag?.isNotBlank() == true) StatusPill(recipe.proteinTag, false)
-                    if (recipe?.categoryTag?.isNotBlank() == true && !isSandwich) StatusPill(recipe.categoryTag, false)
+                if (recipe != null) {
+                    Spacer(Modifier.height(8.dp))
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        if (isSandwich) StatusPill("Ugens sandwich", true)
+                        if (recipe.categoryTag.isNotBlank()) {
+                            StatusPill(recipe.categoryTag, false)
+                        }
+                    }
                 }
 
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(8.dp))
 
                 Row(
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Box(modifier = Modifier.weight(1f)) {
@@ -396,9 +526,7 @@ fun DayCard(day: DayOfWeek, state: MealPlannerState) {
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(6.dp))
-                            Text("Skift ret", style = MaterialTheme.typography.labelMedium)
+                            Text("Skift ret")
                         }
 
                         DropdownMenu(
@@ -406,12 +534,13 @@ fun DayCard(day: DayOfWeek, state: MealPlannerState) {
                             onDismissRequest = { showRecipePicker = false }
                         ) {
                             DropdownMenuItem(
-                                text = { Text("— Ingen ret —", fontStyle = androidx.compose.ui.text.font.FontStyle.Italic) },
+                                text = { Text("Ingen ret") },
                                 onClick = {
                                     state.setRecipeForDay(day, null)
                                     showRecipePicker = false
                                 }
                             )
+
                             state.recipes.forEach { candidate ->
                                 DropdownMenuItem(
                                     text = { Text(candidate.name) },
@@ -429,14 +558,16 @@ fun DayCard(day: DayOfWeek, state: MealPlannerState) {
                             onClick = { state.moveSandwich() },
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Text("Flyt sandwich", style = MaterialTheme.typography.labelMedium)
+                            Text("Flyt")
                         }
-                    } else if (!isLocked) {
+                    } else if (!isLocked && recipe != null) {
                         IconButton(
-                            onClick = { state.reroll(day) },
-                            modifier = Modifier.size(40.dp)
+                            onClick = { state.reroll(day) }
                         ) {
-                            Icon(Icons.Filled.Refresh, contentDescription = "Rul igen")
+                            Icon(
+                                Icons.Filled.Refresh,
+                                contentDescription = "Ny ret"
+                            )
                         }
                     }
                 }
@@ -446,22 +577,1404 @@ fun DayCard(day: DayOfWeek, state: MealPlannerState) {
 }
 
 @Composable
-private fun StatusPill(text: String, accent: Boolean) {
+private fun StatusPill(
+    text: String,
+    highlighted: Boolean
+) {
     Surface(
-        shape = RoundedCornerShape(50),
-        color = if (accent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant
+        shape = CircleShape,
+        color = if (highlighted) {
+            MaterialTheme.colorScheme.primary
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant
+        }
     ) {
         Text(
             text,
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
-            style = MaterialTheme.typography.labelMedium,
-            color = if (accent) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            style = MaterialTheme.typography.labelSmall,
+            color = if (highlighted) {
+                MaterialTheme.colorScheme.onPrimary
+            } else {
+                MaterialTheme.colorScheme.onSurfaceVariant
+            }
         )
     }
 }
 
 @Composable
-fun ImagePickerBox(
+fun RecipesScreen(
+    state: MealPlannerState,
+    onAddRecipe: () -> Unit,
+    onIngredients: () -> Unit,
+    onOpenRecipe: (String) -> Unit
+) {
+    var searchQuery by remember { mutableStateOf("") }
+    var selectedFilter by remember { mutableStateOf("Alle") }
+
+    val categories = listOf("Alle") +
+        state.recipes
+            .flatMap { listOf(it.categoryTag, it.proteinTag) }
+            .filter { it.isNotBlank() }
+            .distinct()
+            .sorted()
+
+    val filteredRecipes = state.recipes.filter { recipe ->
+        val matchesSearch =
+            searchQuery.isBlank() ||
+                recipe.name.contains(searchQuery, ignoreCase = true) ||
+                recipe.categoryTag.contains(searchQuery, ignoreCase = true) ||
+                recipe.proteinTag.contains(searchQuery, ignoreCase = true)
+
+        val matchesFilter =
+            selectedFilter == "Alle" ||
+                recipe.categoryTag.equals(selectedFilter, ignoreCase = true) ||
+                recipe.proteinTag.equals(selectedFilter, ignoreCase = true)
+
+        matchesSearch && matchesFilter
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item {
+            Text(
+                "Opskrifter",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = onAddRecipe,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Ny opskrift")
+                }
+
+                OutlinedButton(
+                    onClick = onIngredients,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("Ingredienser")
+                }
+            }
+        }
+
+        item {
+            SearchField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = "Søg i opskrifter"
+            )
+        }
+
+        if (categories.size > 1) {
+            item {
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    contentPadding = PaddingValues(end = 8.dp)
+                ) {
+                    items(categories, key = { it }) { category ->
+                        FilterChip(
+                            selected = category == selectedFilter,
+                            onClick = { selectedFilter = category },
+                            label = { Text(category) }
+                        )
+                    }
+                }
+            }
+        }
+
+        if (filteredRecipes.isEmpty()) {
+            item {
+                EmptyCard("Ingen opskrifter fundet.")
+            }
+        } else {
+            items(
+                items = filteredRecipes,
+                key = { it.id }
+            ) { recipe ->
+                RecipeListCard(
+                    recipe = recipe,
+                    isSandwich = state.weeklySandwichRecipeId == recipe.id,
+                    onClick = { onOpenRecipe(recipe.id) }
+                )
+            }
+        }
+
+        item { Spacer(Modifier.height(12.dp)) }
+    }
+}
+
+@Composable
+private fun RecipeListCard(
+    recipe: Recipe,
+    isSandwich: Boolean,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(18.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AppThumbnail(
+                imageUri = recipe.imageUri,
+                fallback = recipe.name.take(1).uppercase()
+            )
+
+            Spacer(Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    recipe.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                val meta = buildList {
+                    if (recipe.categoryTag.isNotBlank()) add(recipe.categoryTag)
+                    if (recipe.proteinTag.isNotBlank()) add(recipe.proteinTag)
+                    add("${recipe.ingredients.size} ingredienser")
+                }
+
+                Text(
+                    meta.joinToString(" · "),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                if (isSandwich) {
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        "Ugens sandwich",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+
+            Text(
+                "›",
+                style = MaterialTheme.typography.headlineSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RecipeDetailScreen(
+    state: MealPlannerState,
+    recipeId: String,
+    onBack: () -> Unit,
+    onEdit: () -> Unit
+) {
+    val recipe = state.recipes.find { it.id == recipeId }
+
+    if (recipe == null) {
+        onBack()
+        return
+    }
+
+    SubpageScaffold(
+        title = recipe.name,
+        onBack = onBack,
+        action = {
+            TextButton(onClick = onEdit) {
+                Text("Rediger")
+            }
+        }
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            item {
+                LargeImage(
+                    imageUri = recipe.imageUri,
+                    fallback = recipe.name.take(1).uppercase()
+                )
+            }
+
+            if (recipe.categoryTag.isNotBlank() || recipe.proteinTag.isNotBlank()) {
+                item {
+                    Text(
+                        listOf(recipe.categoryTag, recipe.proteinTag)
+                            .filter { it.isNotBlank() }
+                            .joinToString(" · "),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
+            if (state.weeklySandwichRecipeId != recipe.id) {
+                item {
+                    OutlinedButton(
+                        onClick = { state.setWeeklySandwichRecipe(recipe.id) },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text("Vælg som ugens sandwich")
+                    }
+                }
+            } else {
+                item {
+                    Surface(
+                        shape = RoundedCornerShape(14.dp),
+                        color = MaterialTheme.colorScheme.primaryContainer
+                    ) {
+                        Text(
+                            "Ugens sandwich",
+                            modifier = Modifier.padding(12.dp),
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+
+            item {
+                SectionCard("Ingredienser") {
+                    recipe.ingredients.forEach { requirement ->
+                        val ingredient = state.ingredients.find {
+                            it.id == requirement.ingredientId
+                        }
+
+                        if (ingredient != null) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(vertical = 4.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    ingredient.name,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                Text(
+                                    state.formatBaseAmount(
+                                        ingredient,
+                                        requirement.amountBase
+                                    ),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (recipe.notes.isNotBlank()) {
+                item {
+                    SectionCard("Noter") {
+                        Text(recipe.notes)
+                    }
+                }
+            }
+
+            item {
+                TextButton(
+                    onClick = {
+                        state.deleteRecipe(recipe.id)
+                        onBack()
+                    }
+                ) {
+                    Icon(
+                        Icons.Filled.Delete,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.error
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        "Slet opskrift",
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun RecipeEditorScreen(
+    state: MealPlannerState,
+    recipeId: String?,
+    onBack: () -> Unit,
+    onSaved: (String?) -> Unit
+) {
+    val existing = recipeId?.let { id ->
+        state.recipes.find { it.id == id }
+    }
+
+    var name by remember(recipeId) { mutableStateOf(existing?.name ?: "") }
+    var protein by remember(recipeId) { mutableStateOf(existing?.proteinTag ?: "") }
+    var category by remember(recipeId) { mutableStateOf(existing?.categoryTag ?: "") }
+    var notes by remember(recipeId) { mutableStateOf(existing?.notes ?: "") }
+    var imageUri by remember(recipeId) { mutableStateOf(existing?.imageUri) }
+    var ingredientSearch by remember { mutableStateOf("") }
+
+    val drafts = remember(recipeId) {
+        mutableStateListOf<DraftRequirement>().apply {
+            existing?.ingredients?.forEach { requirement ->
+                val ingredient = state.ingredients.find {
+                    it.id == requirement.ingredientId
+                }
+
+                if (ingredient != null) {
+                    add(
+                        DraftRequirement(
+                            ingredientId = ingredient.id,
+                            amount = ingredient.preferredUnit.fromBase(
+                                requirement.amountBase
+                            ),
+                            unit = ingredient.preferredUnit
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    val matches = state.ingredients
+        .filter { ingredient ->
+            ingredientSearch.isNotBlank() &&
+                ingredient.name.contains(ingredientSearch, ignoreCase = true) &&
+                drafts.none { it.ingredientId == ingredient.id }
+        }
+        .take(8)
+
+    SubpageScaffold(
+        title = if (existing == null) "Ny opskrift" else "Rediger opskrift",
+        onBack = onBack
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item {
+                ImagePickerBox(
+                    imageUri = imageUri,
+                    onImageSelected = { imageUri = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    height = 150.dp,
+                    label = "Vælg billede"
+                )
+            }
+
+            item {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Navn") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            }
+
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = category,
+                        onValueChange = { category = it },
+                        label = { Text("Kategori") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+
+                    OutlinedTextField(
+                        value = protein,
+                        onValueChange = { protein = it },
+                        label = { Text("Protein") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                }
+            }
+
+            item {
+                Text(
+                    "Ingredienser",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            itemsIndexed(
+                items = drafts,
+                key = { _, item -> item.ingredientId }
+            ) { index, draft ->
+                val ingredient = state.ingredients.find {
+                    it.id == draft.ingredientId
+                }
+
+                if (ingredient != null) {
+                    RequirementEditor(
+                        ingredient = ingredient,
+                        draft = draft,
+                        onChange = { drafts[index] = it },
+                        onRemove = { drafts.removeAt(index) }
+                    )
+                }
+            }
+
+            item {
+                SearchField(
+                    value = ingredientSearch,
+                    onValueChange = { ingredientSearch = it },
+                    placeholder = "Tilføj ingrediens"
+                )
+            }
+
+            items(matches, key = { it.id }) { ingredient ->
+                OutlinedCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            drafts += DraftRequirement(
+                                ingredientId = ingredient.id,
+                                amount = 1.0,
+                                unit = ingredient.preferredUnit
+                            )
+                            ingredientSearch = ""
+                        },
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            ingredient.name,
+                            modifier = Modifier.weight(1f),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text("Tilføj")
+                    }
+                }
+            }
+
+            item {
+                OutlinedTextField(
+                    value = notes,
+                    onValueChange = { notes = it },
+                    label = { Text("Noter") },
+                    modifier = Modifier.fillMaxWidth(),
+                    minLines = 3
+                )
+            }
+
+            item {
+                Button(
+                    onClick = {
+                        if (existing == null) {
+                            state.addRecipe(
+                                name = name,
+                                protein = protein,
+                                category = category,
+                                notes = notes,
+                                imageUri = imageUri,
+                                requirements = drafts.toList()
+                            )
+
+                            val saved = state.recipes
+                                .lastOrNull { it.name == name.trim() }
+                                ?.id
+
+                            onSaved(saved)
+                        } else {
+                            state.updateRecipe(
+                                id = existing.id,
+                                name = name,
+                                protein = protein,
+                                category = category,
+                                notes = notes,
+                                imageUri = imageUri,
+                                requirements = drafts.toList()
+                            )
+                            onSaved(existing.id)
+                        }
+                    },
+                    enabled = name.isNotBlank() &&
+                        drafts.isNotEmpty() &&
+                        drafts.all { it.amount > 0.0 },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("Gem")
+                }
+            }
+
+            item { Spacer(Modifier.height(12.dp)) }
+        }
+    }
+}
+
+@Composable
+private fun RequirementEditor(
+    ingredient: Ingredient,
+    draft: DraftRequirement,
+    onChange: (DraftRequirement) -> Unit,
+    onRemove: () -> Unit
+) {
+    var amountText by remember(draft.ingredientId) {
+        mutableStateOf(formatDisplayNumber(draft.amount))
+    }
+
+    OutlinedCard(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    ingredient.name,
+                    modifier = Modifier.weight(1f),
+                    fontWeight = FontWeight.SemiBold
+                )
+                TextButton(onClick = onRemove) {
+                    Text("Fjern")
+                }
+            }
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                OutlinedTextField(
+                    value = amountText,
+                    onValueChange = { value ->
+                        amountText = value
+                            .filter { it.isDigit() || it == ',' || it == '.' }
+
+                        amountText
+                            .replace(',', '.')
+                            .toDoubleOrNull()
+                            ?.takeIf { it > 0.0 }
+                            ?.let { amount ->
+                                onChange(draft.copy(amount = amount))
+                            }
+                    },
+                    label = { Text("Mængde") },
+                    modifier = Modifier.weight(1f),
+                    singleLine = true
+                )
+
+                SimpleSelector(
+                    label = draft.unit.selectorLabel(),
+                    options = MeasurementUnit.compatibleWith(
+                        ingredient.quantityType
+                    ),
+                    optionText = { it.selectorLabel() },
+                    onSelected = { unit ->
+                        onChange(draft.copy(unit = unit))
+                    }
+                )
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun IngredientLibraryScreen(
+    state: MealPlannerState,
+    onBack: () -> Unit,
+    onAdd: () -> Unit,
+    onOpen: (String) -> Unit
+) {
+    var search by remember { mutableStateOf("") }
+
+    val filtered = state.ingredients
+        .filter {
+            search.isBlank() ||
+                it.name.contains(search, ignoreCase = true)
+        }
+        .sortedBy { it.name.lowercase() }
+
+    SubpageScaffold(
+        title = "Ingredienser",
+        onBack = onBack,
+        action = {
+            IconButton(onClick = onAdd) {
+                Icon(
+                    Icons.Filled.Add,
+                    contentDescription = "Ny ingrediens"
+                )
+            }
+        }
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            item {
+                SearchField(
+                    value = search,
+                    onValueChange = { search = it },
+                    placeholder = "Søg i ingredienser"
+                )
+            }
+
+            items(filtered, key = { it.id }) { ingredient ->
+                IngredientListCard(
+                    ingredient = ingredient,
+                    onClick = { onOpen(ingredient.id) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun IngredientListCard(
+    ingredient: Ingredient,
+    onClick: () -> Unit
+) {
+    OutlinedCard(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            AppThumbnail(
+                imageUri = ingredient.imageUri,
+                fallback = ingredient.name.take(1).uppercase()
+            )
+
+            Spacer(Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    ingredient.name,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    "${ingredient.quantityType.danishName()} · ${ingredient.preferredUnit.selectorLabel()}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            Text("›")
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun IngredientEditorScreen(
+    state: MealPlannerState,
+    ingredientId: String?,
+    onBack: () -> Unit,
+    onSaved: () -> Unit
+) {
+    val existing = ingredientId?.let { id ->
+        state.ingredients.find { it.id == id }
+    }
+
+    var name by remember(ingredientId) {
+        mutableStateOf(existing?.name ?: "")
+    }
+
+    var type by remember(ingredientId) {
+        mutableStateOf(existing?.quantityType ?: QuantityType.MASS)
+    }
+
+    var preferredUnit by remember(ingredientId) {
+        mutableStateOf(existing?.preferredUnit ?: MeasurementUnit.GRAM)
+    }
+
+    var imageUri by remember(ingredientId) {
+        mutableStateOf(existing?.imageUri)
+    }
+
+    SubpageScaffold(
+        title = if (existing == null) "Ny ingrediens" else "Rediger ingrediens",
+        onBack = onBack
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            item {
+                ImagePickerBox(
+                    imageUri = imageUri,
+                    onImageSelected = { imageUri = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    height = 150.dp,
+                    label = "Vælg billede"
+                )
+            }
+
+            item {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Navn") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            }
+
+            item {
+                Text(
+                    "Type",
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(6.dp))
+                SelectorChips(
+                    items = QuantityType.entries,
+                    selected = type,
+                    label = { it.danishName() },
+                    onSelected = {
+                        type = it
+                        preferredUnit = MeasurementUnit.defaultFor(it)
+                    }
+                )
+            }
+
+            item {
+                Text(
+                    "Foretrukken enhed",
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(6.dp))
+                SelectorChips(
+                    items = MeasurementUnit.compatibleWith(type),
+                    selected = preferredUnit,
+                    label = { it.selectorLabel() },
+                    onSelected = { preferredUnit = it }
+                )
+            }
+
+            item {
+                Button(
+                    onClick = {
+                        if (existing == null) {
+                            state.addIngredient(
+                                name = name,
+                                type = type,
+                                imageUri = imageUri,
+                                preferredUnit = preferredUnit
+                            )
+                        } else {
+                            state.updateIngredient(
+                                id = existing.id,
+                                name = name,
+                                type = type,
+                                preferredUnit = preferredUnit,
+                                imageUri = imageUri
+                            )
+                        }
+                        onSaved()
+                    },
+                    enabled = name.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("Gem")
+                }
+            }
+
+            if (existing != null) {
+                item {
+                    TextButton(
+                        onClick = {
+                            state.deleteIngredient(existing.id)
+                            onSaved()
+                        }
+                    ) {
+                        Icon(
+                            Icons.Filled.Delete,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.error
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            "Slet ingrediens",
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PantryScreen(state: MealPlannerState) {
+    var searchQuery by remember { mutableStateOf("") }
+    var editing by remember { mutableStateOf<Ingredient?>(null) }
+
+    editing?.let { ingredient ->
+        PantryAmountDialog(
+            ingredient = ingredient,
+            state = state,
+            onDismiss = { editing = null }
+        )
+    }
+
+    val filtered = state.ingredients
+        .filter {
+            searchQuery.isBlank() ||
+                it.name.contains(searchQuery, ignoreCase = true)
+        }
+        .sortedBy { it.name.lowercase() }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item {
+            Text(
+                "Lager",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        item {
+            SearchField(
+                value = searchQuery,
+                onValueChange = { searchQuery = it },
+                placeholder = "Søg i lageret"
+            )
+        }
+
+        items(filtered, key = { it.id }) { ingredient ->
+            val amount = state.pantry[ingredient.id] ?: 0.0
+
+            OutlinedCard(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { editing = ingredient },
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    AppThumbnail(
+                        imageUri = ingredient.imageUri,
+                        fallback = ingredient.name.take(1).uppercase()
+                    )
+
+                    Spacer(Modifier.width(12.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            ingredient.name,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            if (amount > 0.0) {
+                                state.formatBaseAmount(
+                                    ingredient,
+                                    amount
+                                )
+                            } else {
+                                "Ikke registreret"
+                            },
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    Text("›")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PantryAmountDialog(
+    ingredient: Ingredient,
+    state: MealPlannerState,
+    onDismiss: () -> Unit
+) {
+    val initialUnit = ingredient.preferredUnit
+    val currentBase = state.pantry[ingredient.id] ?: 0.0
+
+    var unit by remember(ingredient.id) {
+        mutableStateOf(initialUnit)
+    }
+
+    var amountText by remember(ingredient.id) {
+        mutableStateOf(
+            if (currentBase > 0.0) {
+                formatDisplayNumber(initialUnit.fromBase(currentBase))
+            } else {
+                ""
+            }
+        )
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(ingredient.name) },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                OutlinedTextField(
+                    value = amountText,
+                    onValueChange = {
+                        amountText = it.filter { char ->
+                            char.isDigit() || char == ',' || char == '.'
+                        }
+                    },
+                    label = { Text("Mængde") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                SimpleSelector(
+                    label = unit.selectorLabel(),
+                    options = MeasurementUnit.compatibleWith(
+                        ingredient.quantityType
+                    ),
+                    optionText = { it.selectorLabel() },
+                    onSelected = { unit = it }
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val amount = amountText
+                        .replace(',', '.')
+                        .toDoubleOrNull()
+                        ?: 0.0
+
+                    state.setPantry(
+                        ingredientId = ingredient.id,
+                        amount = amount,
+                        unit = unit
+                    )
+                    onDismiss()
+                }
+            ) {
+                Text("Gem")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Annuller")
+            }
+        }
+    )
+}
+
+@Composable
+fun ShoppingScreen(state: MealPlannerState) {
+    val shoppingItems = state.shoppingItems()
+    val checkedCount = shoppingItems.count {
+        state.shoppingChecked[it.ingredient.id] == true
+    }
+
+    val missing = shoppingItems.filter {
+        state.shoppingChecked[it.ingredient.id] != true
+    }
+
+    val bought = shoppingItems.filter {
+        state.shoppingChecked[it.ingredient.id] == true
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        item {
+            Text(
+                "Indkøb",
+                style = MaterialTheme.typography.headlineMedium,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        if (shoppingItems.isNotEmpty()) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(18.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    )
+                ) {
+                    Column(Modifier.padding(14.dp)) {
+                        Text(
+                            "$checkedCount af ${shoppingItems.size}",
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(Modifier.height(6.dp))
+                        LinearProgressIndicator(
+                            progress = {
+                                checkedCount.toFloat() /
+                                    shoppingItems.size.toFloat()
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+            }
+        }
+
+        if (shoppingItems.isEmpty()) {
+            item {
+                EmptyCard("Indkøbslisten er tom.")
+            }
+        } else {
+            if (missing.isNotEmpty()) {
+                item {
+                    Text(
+                        "Mangler",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                items(missing, key = { it.ingredient.id }) { item ->
+                    ShoppingItemCard(
+                        item = item,
+                        state = state,
+                        checked = false
+                    )
+                }
+            }
+
+            if (bought.isNotEmpty()) {
+                item {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Købt",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                items(bought, key = { it.ingredient.id }) { item ->
+                    ShoppingItemCard(
+                        item = item,
+                        state = state,
+                        checked = true
+                    )
+                }
+            }
+        }
+
+        item { Spacer(Modifier.height(12.dp)) }
+    }
+}
+
+@Composable
+private fun ShoppingItemCard(
+    item: ShoppingItem,
+    state: MealPlannerState,
+    checked: Boolean
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (checked) {
+                MaterialTheme.colorScheme.surfaceVariant
+            } else {
+                MaterialTheme.colorScheme.surface
+            }
+        )
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(10.dp)
+        ) {
+            Checkbox(
+                checked = checked,
+                onCheckedChange = {
+                    state.setShoppingChecked(
+                        item.ingredient.id,
+                        it
+                    )
+                }
+            )
+
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    item.ingredient.name,
+                    fontWeight = FontWeight.Bold,
+                    textDecoration = if (checked) {
+                        TextDecoration.LineThrough
+                    } else {
+                        TextDecoration.None
+                    }
+                )
+
+                Text(
+                    "Behov: " +
+                        state.formatBaseAmount(
+                            item.ingredient,
+                            item.requiredBase
+                        ),
+                    style = MaterialTheme.typography.bodyMedium
+                )
+
+                if (item.pantryBase > 0.0) {
+                    Text(
+                        "Lager: " +
+                            state.formatBaseAmount(
+                                item.ingredient,
+                                item.pantryBase
+                            ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SettingsScreen(
+    household: HouseholdDto,
+    onBack: () -> Unit,
+    onLogout: () -> Unit
+) {
+    val context = LocalContext.current
+
+    SubpageScaffold(
+        title = "Indstillinger",
+        onBack = onBack
+    ) { padding ->
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(padding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp)
+        ) {
+            item {
+                SectionCard("Hjem") {
+                    Text(
+                        household.name,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            item {
+                SectionCard("Invitationskode") {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            household.joinCode,
+                            style = MaterialTheme.typography.headlineSmall,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.weight(1f)
+                        )
+
+                        TextButton(
+                            onClick = {
+                                val clipboard = context.getSystemService(
+                                    Context.CLIPBOARD_SERVICE
+                                ) as ClipboardManager
+                                clipboard.setPrimaryClip(
+                                    ClipData.newPlainText(
+                                        "Invitationskode",
+                                        household.joinCode
+                                    )
+                                )
+                                Toast.makeText(
+                                    context,
+                                    "Kopieret",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
+                        ) {
+                            Text("Kopiér")
+                        }
+                    }
+                }
+            }
+
+            item {
+                OutlinedButton(
+                    onClick = onLogout,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("Log ud")
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SubpageScaffold(
+    title: String,
+    onBack: () -> Unit,
+    action: (@Composable () -> Unit)? = null,
+    content: @Composable (PaddingValues) -> Unit
+) {
+    Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text(
+                        title,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = "Tilbage"
+                        )
+                    }
+                },
+                actions = {
+                    action?.invoke()
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.background
+                )
+            )
+        },
+        content = content
+    )
+}
+
+@Composable
+private fun SectionCard(
+    title: String,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
+    ) {
+        Column(Modifier.padding(16.dp)) {
+            Text(
+                title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(Modifier.height(8.dp))
+            content()
+        }
+    }
+}
+
+@Composable
+private fun EmptyCard(text: String) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant
+    ) {
+        Text(
+            text,
+            modifier = Modifier.padding(16.dp),
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+    }
+}
+
+@Composable
+private fun SearchField(
+    value: String,
+    onValueChange: (String) -> Unit,
+    placeholder: String
+) {
+    OutlinedTextField(
+        value = value,
+        onValueChange = onValueChange,
+        placeholder = { Text(placeholder) },
+        leadingIcon = {
+            Icon(
+                Icons.Filled.Search,
+                contentDescription = null
+            )
+        },
+        trailingIcon = {
+            if (value.isNotEmpty()) {
+                IconButton(
+                    onClick = { onValueChange("") }
+                ) {
+                    Icon(
+                        Icons.Filled.Clear,
+                        contentDescription = "Ryd søgning"
+                    )
+                }
+            }
+        },
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        singleLine = true
+    )
+}
+
+@Composable
+private fun ImagePickerBox(
     imageUri: String?,
     onImageSelected: (String?) -> Unit,
     modifier: Modifier = Modifier,
@@ -469,6 +1982,7 @@ fun ImagePickerBox(
     label: String = "Vælg billede"
 ) {
     val context = LocalContext.current
+
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -478,7 +1992,8 @@ fun ImagePickerBox(
                     uri,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
-            } catch (_: Exception) {}
+            } catch (_: Exception) {
+            }
             onImageSelected(uri.toString())
         }
     }
@@ -486,1087 +2001,128 @@ fun ImagePickerBox(
     Box(
         modifier = modifier
             .height(height)
-            .clip(RoundedCornerShape(14.dp))
+            .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .clickable { launcher.launch("image/*") },
         contentAlignment = Alignment.Center
     ) {
-        if (!imageUri.isNullOrEmpty()) {
+        if (!imageUri.isNullOrBlank()) {
             AsyncImage(
                 model = imageUri,
                 contentDescription = null,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop
             )
+
             TextButton(
                 onClick = { onImageSelected(null) },
                 modifier = Modifier
                     .align(Alignment.TopEnd)
                     .padding(4.dp)
-                    .background(Color.Black.copy(alpha = 0.6f), CircleShape)
+                    .background(
+                        Color.Black.copy(alpha = 0.55f),
+                        CircleShape
+                    )
             ) {
-                Text("Fjern", color = Color.White, style = MaterialTheme.typography.labelSmall)
-            }
-        } else {
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center
-            ) {
-                Text("📷 $label", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text("Tryk for at vælge et foto", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-        }
-    }
-}
-
-@Composable
-fun RecipesScreen(state: MealPlannerState) {
-    var searchQuery by remember { mutableStateOf("") }
-    var selectedCategoryFilter by remember { mutableStateOf("Alle") }
-    var showNewRecipeForm by remember { mutableStateOf(false) }
-
-    var recipeName by remember { mutableStateOf("") }
-    var proteinTag by remember { mutableStateOf("") }
-    var categoryTag by remember { mutableStateOf("") }
-    var notes by remember { mutableStateOf("") }
-    var recipeImageUri by remember { mutableStateOf<String?>(null) }
-
-    var selectedIngredientId by remember { mutableStateOf<String?>(null) }
-    var amountText by remember { mutableStateOf("") }
-    var selectedUnit by remember { mutableStateOf(MeasurementUnit.GRAM) }
-    val draftRequirements = remember { mutableStateListOf<DraftRequirement>() }
-
-    var editingRecipe by remember { mutableStateOf<Recipe?>(null) }
-
-    if (editingRecipe != null) {
-        EditRecipeDialog(
-            recipe = editingRecipe!!,
-            state = state,
-            onDismiss = { editingRecipe = null }
-        )
-    }
-
-    // Filter recipes by search query and category
-    val categories = remember(state.recipes) {
-        listOf("Alle") + state.recipes.flatMap { listOf(it.proteinTag, it.categoryTag) }
-            .filter { it.isNotBlank() }
-            .distinct()
-    }
-
-    val filteredRecipes = remember(searchQuery, selectedCategoryFilter, state.recipes) {
-        state.recipes.filter { recipe ->
-            val matchesSearch = searchQuery.isBlank() ||
-                recipe.name.contains(searchQuery, ignoreCase = true) ||
-                recipe.proteinTag.contains(searchQuery, ignoreCase = true) ||
-                recipe.categoryTag.contains(searchQuery, ignoreCase = true)
-
-            val matchesCategory = selectedCategoryFilter == "Alle" ||
-                recipe.proteinTag.equals(selectedCategoryFilter, ignoreCase = true) ||
-                recipe.categoryTag.equals(selectedCategoryFilter, ignoreCase = true)
-
-            matchesSearch && matchesCategory
-        }
-    }
-
-    ScreenColumn {
-        Text("Opskrifter", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("Opret og administrér jeres opskrifter.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(14.dp))
-
-        Button(
-            onClick = { showNewRecipeForm = !showNewRecipeForm },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp)
-        ) {
-            Icon(if (showNewRecipeForm) Icons.Filled.Clear else Icons.Filled.Add, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text(if (showNewRecipeForm) "Luk Opret Form" else "+ Opret Ny Opskrift", fontWeight = FontWeight.Bold)
-        }
-
-        AnimatedVisibility(visible = showNewRecipeForm) {
-            Column {
-                Spacer(Modifier.height(12.dp))
-                SectionCard("Ny Opskrift") {
-                    ImagePickerBox(
-                        imageUri = recipeImageUri,
-                        onImageSelected = { recipeImageUri = it },
-                        modifier = Modifier.fillMaxWidth(),
-                        height = 130.dp,
-                        label = "Billede af retten"
-                    )
-                    Spacer(Modifier.height(10.dp))
-
-                    OutlinedTextField(
-                        value = recipeName,
-                        onValueChange = { recipeName = it },
-                        label = { Text("Navn på ret") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = proteinTag,
-                            onValueChange = { proteinTag = it },
-                            label = { Text("Protein (fx kylling)") },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true
-                        )
-                        OutlinedTextField(
-                            value = categoryTag,
-                            onValueChange = { categoryTag = it },
-                            label = { Text("Kategori (fx pasta)") },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true
-                        )
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    OutlinedTextField(
-                        value = notes,
-                        onValueChange = { notes = it },
-                        label = { Text("Noter / tilberedning") },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-
-                    Spacer(Modifier.height(12.dp))
-
-                    if (state.ingredients.isEmpty()) {
-                        Text("Opret mindst én ingrediens under fanen Lager først.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } else {
-                        val selectedIngredient = state.ingredients.find { it.id == selectedIngredientId } ?: state.ingredients.first()
-                        if (selectedIngredientId == null) {
-                            selectedIngredientId = selectedIngredient.id
-                            selectedUnit = selectedIngredient.preferredUnit
-                        }
-
-                        Text("Tilføj ingrediens til opskrift", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleSmall)
-                        Spacer(Modifier.height(6.dp))
-                        SimpleSelector(
-                            label = selectedIngredient.name,
-                            options = state.ingredients.toList(),
-                            optionText = { it.name },
-                            onSelected = { ingredient ->
-                                selectedIngredientId = ingredient.id
-                                selectedUnit = ingredient.preferredUnit
-                            }
-                        )
-                        Spacer(Modifier.height(6.dp))
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            OutlinedTextField(
-                                value = amountText,
-                                onValueChange = { amountText = it.replace(',', '.') },
-                                label = { Text("Mængde") },
-                                modifier = Modifier.weight(1f),
-                                singleLine = true
-                            )
-                            Spacer(Modifier.width(8.dp))
-                            SimpleSelector(
-                                label = selectedUnit.selectorLabel(),
-                                options = MeasurementUnit.compatibleWith(selectedIngredient.quantityType),
-                                optionText = { it.selectorLabel() },
-                                onSelected = { selectedUnit = it }
-                            )
-                        }
-                        Spacer(Modifier.height(8.dp))
-                        OutlinedButton(
-                            onClick = {
-                                val amount = amountText.toDoubleOrNull()
-                                if (amount != null && amount > 0.0) {
-                                    draftRequirements += DraftRequirement(selectedIngredient.id, amount, selectedUnit)
-                                    amountText = ""
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
-                        ) { Text("Tilføj til opskriften") }
-
-                        if (draftRequirements.isNotEmpty()) {
-                            Spacer(Modifier.height(10.dp))
-                            draftRequirements.forEachIndexed { index, draft ->
-                                val ingredient = state.ingredients.find { it.id == draft.ingredientId }
-                                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-                                    Text(
-                                        "• ${ingredient?.name ?: "Ukendt"}: ${state.formatEnteredAmount(draft.amount, draft.unit)}",
-                                        modifier = Modifier.weight(1f)
-                                    )
-                                    TextButton(onClick = { draftRequirements.removeAt(index) }) { Text("Fjern") }
-                                }
-                            }
-                        }
-
-                        Spacer(Modifier.height(10.dp))
-                        Button(
-                            onClick = {
-                                state.addRecipe(recipeName, proteinTag, categoryTag, notes, recipeImageUri, draftRequirements.toList())
-                                recipeName = ""
-                                proteinTag = ""
-                                categoryTag = ""
-                                notes = ""
-                                recipeImageUri = null
-                                draftRequirements.clear()
-                                showNewRecipeForm = false
-                            },
-                            enabled = recipeName.isNotBlank() && draftRequirements.isNotEmpty(),
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(14.dp)
-                        ) { Text("Gem Opskrift", fontWeight = FontWeight.Bold) }
-                    }
-                }
-            }
-        }
-
-        Spacer(Modifier.height(18.dp))
-
-        // SEARCH BAR
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
-            placeholder = { Text("Søg efter opskrift eller ingrediens...") },
-            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-            trailingIcon = {
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { searchQuery = "" }) {
-                        Icon(Icons.Filled.Clear, contentDescription = "Ryd søgning")
-                    }
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
-            singleLine = true
-        )
-
-        if (categories.size > 1) {
-            Spacer(Modifier.height(8.dp))
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .verticalScroll(rememberScrollState())
-            ) {
-                categories.forEach { cat ->
-                    FilterChip(
-                        selected = cat == selectedCategoryFilter,
-                        onClick = { selectedCategoryFilter = cat },
-                        label = { Text(cat) }
-                    )
-                }
-            }
-        }
-
-        Spacer(Modifier.height(16.dp))
-        Text("Jeres Opskrifter (${filteredRecipes.size})", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-        Spacer(Modifier.height(10.dp))
-
-        if (filteredRecipes.isEmpty()) {
-            Text("Ingen opskrifter matchede din søgning.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        } else {
-            filteredRecipes.forEach { recipe ->
-                RecipeCard(
-                    recipe = recipe,
-                    state = state,
-                    onEdit = { editingRecipe = recipe }
-                )
-                Spacer(Modifier.height(14.dp))
-            }
-        }
-        Spacer(Modifier.height(24.dp))
-    }
-}
-
-@Composable
-private fun SectionCard(title: String, content: @Composable ColumnScope.() -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
-        Column(Modifier.padding(16.dp)) {
-            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(10.dp))
-            content()
-        }
-    }
-}
-
-@Composable
-fun RecipeCard(
-    recipe: Recipe,
-    state: MealPlannerState,
-    onEdit: () -> Unit
-) {
-    val isSandwich = state.weeklySandwichRecipeId == recipe.id
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSandwich) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-    ) {
-        Column {
-            if (!recipe.imageUri.isNullOrEmpty()) {
-                AsyncImage(
-                    model = recipe.imageUri,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(160.dp),
-                    contentScale = ContentScale.Crop
-                )
-            }
-
-            Column(Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        recipe.name,
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.weight(1f),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    if (isSandwich) StatusPill("Ugens sandwich", true)
-                }
-
-                if (recipe.proteinTag.isNotBlank() || recipe.categoryTag.isNotBlank()) {
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        listOf(recipe.proteinTag, recipe.categoryTag).filter { it.isNotBlank() }.joinToString(" · "),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-
-                if (recipe.notes.isNotBlank()) {
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        recipe.notes,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                Spacer(Modifier.height(12.dp))
-                Text("Ingredienser:", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(4.dp))
-                recipe.ingredients.forEach { req ->
-                    val ingredient = state.ingredients.find { it.id == req.ingredientId }
-                    if (ingredient != null) {
-                        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(vertical = 2.dp)) {
-                            if (!ingredient.imageUri.isNullOrEmpty()) {
-                                AsyncImage(
-                                    model = ingredient.imageUri,
-                                    contentDescription = null,
-                                    modifier = Modifier
-                                        .size(20.dp)
-                                        .clip(CircleShape),
-                                    contentScale = ContentScale.Crop
-                                )
-                                Spacer(Modifier.width(6.dp))
-                            }
-                            Text("• ${ingredient.name}: ${state.formatBaseAmount(ingredient, req.amountBase)}")
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(14.dp))
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    if (!isSandwich) {
-                        OutlinedButton(
-                            onClick = { state.setWeeklySandwichRecipe(recipe.id) },
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
-                        ) { Text("Faste sandwich") }
-                    }
-                    OutlinedButton(
-                        onClick = onEdit,
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(4.dp))
-                        Text("Redigér")
-                    }
-                    IconButton(onClick = { state.deleteRecipe(recipe.id) }) {
-                        Icon(Icons.Filled.Delete, contentDescription = "Slet", tint = MaterialTheme.colorScheme.error)
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun EditRecipeDialog(
-    recipe: Recipe,
-    state: MealPlannerState,
-    onDismiss: () -> Unit
-) {
-    var recipeName by remember { mutableStateOf(recipe.name) }
-    var proteinTag by remember { mutableStateOf(recipe.proteinTag) }
-    var categoryTag by remember { mutableStateOf(recipe.categoryTag) }
-    var notes by remember { mutableStateOf(recipe.notes) }
-    var imageUri by remember { mutableStateOf(recipe.imageUri) }
-
-    var selectedIngredientId by remember { mutableStateOf<String?>(null) }
-    var amountText by remember { mutableStateOf("") }
-    var selectedUnit by remember { mutableStateOf(MeasurementUnit.GRAM) }
-
-    val draftRequirements = remember {
-        mutableStateListOf<DraftRequirement>().apply {
-            recipe.ingredients.forEach { req ->
-                val ing = state.ingredients.find { it.id == req.ingredientId }
-                if (ing != null) {
-                    val unit = ing.preferredUnit
-                    val amount = unit.fromBase(req.amountBase)
-                    add(DraftRequirement(req.ingredientId, amount, unit))
-                }
-            }
-        }
-    }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Redigér Opskrift") },
-        text = {
-            Column(
-                modifier = Modifier
-                    .verticalScroll(rememberScrollState())
-                    .fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                ImagePickerBox(
-                    imageUri = imageUri,
-                    onImageSelected = { imageUri = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    height = 120.dp,
-                    label = "Opskriftsbillede"
-                )
-
-                OutlinedTextField(
-                    value = recipeName,
-                    onValueChange = { recipeName = it },
-                    label = { Text("Navn på ret") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                OutlinedTextField(
-                    value = proteinTag,
-                    onValueChange = { proteinTag = it },
-                    label = { Text("Protein (fx kylling)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                OutlinedTextField(
-                    value = categoryTag,
-                    onValueChange = { categoryTag = it },
-                    label = { Text("Kategori (fx pasta)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-                OutlinedTextField(
-                    value = notes,
-                    onValueChange = { notes = it },
-                    label = { Text("Noter / tilberedning") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(Modifier.height(8.dp))
-                Text("Ingredienser i opskriften", fontWeight = FontWeight.Bold)
-
-                if (state.ingredients.isNotEmpty()) {
-                    val selectedIngredient = state.ingredients.find { it.id == selectedIngredientId } ?: state.ingredients.first()
-                    if (selectedIngredientId == null) {
-                        selectedIngredientId = selectedIngredient.id
-                        selectedUnit = selectedIngredient.preferredUnit
-                    }
-
-                    SimpleSelector(
-                        label = selectedIngredient.name,
-                        options = state.ingredients.toList(),
-                        optionText = { it.name },
-                        onSelected = { ingredient ->
-                            selectedIngredientId = ingredient.id
-                            selectedUnit = ingredient.preferredUnit
-                        }
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        OutlinedTextField(
-                            value = amountText,
-                            onValueChange = { amountText = it.replace(',', '.') },
-                            label = { Text("Mængde") },
-                            modifier = Modifier.weight(1f),
-                            singleLine = true
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        SimpleSelector(
-                            label = selectedUnit.selectorLabel(),
-                            options = MeasurementUnit.compatibleWith(selectedIngredient.quantityType),
-                            optionText = { it.selectorLabel() },
-                            onSelected = { selectedUnit = it }
-                        )
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            val amount = amountText.toDoubleOrNull()
-                            if (amount != null && amount > 0.0) {
-                                draftRequirements += DraftRequirement(selectedIngredient.id, amount, selectedUnit)
-                                amountText = ""
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("Tilføj ingrediens") }
-                }
-
-                draftRequirements.forEachIndexed { index, draft ->
-                    val ingredient = state.ingredients.find { it.id == draft.ingredientId }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(
-                            "• ${ingredient?.name ?: "Ukendt"}: ${state.formatEnteredAmount(draft.amount, draft.unit)}",
-                            modifier = Modifier.weight(1f)
-                        )
-                        TextButton(onClick = { draftRequirements.removeAt(index) }) {
-                            Text("Fjern")
-                        }
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    state.updateRecipe(
-                        id = recipe.id,
-                        name = recipeName,
-                        protein = proteinTag,
-                        category = categoryTag,
-                        notes = notes,
-                        imageUri = imageUri,
-                        requirements = draftRequirements.toList()
-                    )
-                    onDismiss()
-                },
-                enabled = recipeName.isNotBlank() && draftRequirements.isNotEmpty()
-            ) {
-                Text("Gem ændringer")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Annuller") }
-        }
-    )
-}
-
-@Composable
-fun AddIngredientDialog(
-    state: MealPlannerState,
-    onDismiss: () -> Unit
-) {
-    var name by remember { mutableStateOf("") }
-    var type by remember { mutableStateOf(QuantityType.MASS) }
-    var imageUri by remember { mutableStateOf<String?>(null) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Opret Ny Ingrediens") },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                ImagePickerBox(
-                    imageUri = imageUri,
-                    onImageSelected = { imageUri = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    height = 110.dp,
-                    label = "Billede af råvare"
-                )
-
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Ingrediensnavn (fx Kyllingebryst)") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                SimpleSelector(
-                    label = "Måles som: ${type.danishName()}",
-                    options = QuantityType.entries,
-                    optionText = { it.danishName() },
-                    onSelected = { type = it }
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    state.addIngredient(name, type, imageUri)
-                    onDismiss()
-                },
-                enabled = name.isNotBlank()
-            ) {
-                Text("Gem ingrediens")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) { Text("Annuller") }
-        }
-    )
-}
-
-@Composable
-fun EditIngredientDialog(
-    ingredient: Ingredient,
-    state: MealPlannerState,
-    onDismiss: () -> Unit
-) {
-    var name by remember { mutableStateOf(ingredient.name) }
-    var type by remember { mutableStateOf(ingredient.quantityType) }
-    var preferredUnit by remember { mutableStateOf(ingredient.preferredUnit) }
-    var imageUri by remember { mutableStateOf(ingredient.imageUri) }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Redigér Ingrediens") },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                ImagePickerBox(
-                    imageUri = imageUri,
-                    onImageSelected = { imageUri = it },
-                    modifier = Modifier.fillMaxWidth(),
-                    height = 110.dp,
-                    label = "Foto af råvare"
-                )
-
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Ingrediensnavn") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                SimpleSelector(
-                    label = "Måles som: ${type.danishName()}",
-                    options = QuantityType.entries,
-                    optionText = { it.danishName() },
-                    onSelected = {
-                        type = it
-                        preferredUnit = MeasurementUnit.defaultFor(it)
-                    }
-                )
-
-                SimpleSelector(
-                    label = "Forestrukket enhed: ${preferredUnit.symbol}",
-                    options = MeasurementUnit.compatibleWith(type),
-                    optionText = { it.symbol },
-                    onSelected = { preferredUnit = it }
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    state.updateIngredient(
-                        id = ingredient.id,
-                        name = name,
-                        type = type,
-                        preferredUnit = preferredUnit,
-                        imageUri = imageUri
-                    )
-                    onDismiss()
-                },
-                enabled = name.isNotBlank()
-            ) {
-                Text("Gem ændringer")
-            }
-        },
-        dismissButton = {
-            Row {
-                TextButton(
-                    onClick = {
-                        state.deleteIngredient(ingredient.id)
-                        onDismiss()
-                    }
-                ) {
-                    Text("Slet", color = MaterialTheme.colorScheme.error)
-                }
-                Spacer(Modifier.width(8.dp))
-                TextButton(onClick = onDismiss) { Text("Annuller") }
-            }
-        }
-    )
-}
-
-@Composable
-fun PantryScreen(state: MealPlannerState) {
-    var searchQuery by remember { mutableStateOf("") }
-    var editingIngredient by remember { mutableStateOf<Ingredient?>(null) }
-    var showAddIngredientDialog by remember { mutableStateOf(false) }
-
-    if (editingIngredient != null) {
-        EditIngredientDialog(
-            ingredient = editingIngredient!!,
-            state = state,
-            onDismiss = { editingIngredient = null }
-        )
-    }
-
-    if (showAddIngredientDialog) {
-        AddIngredientDialog(
-            state = state,
-            onDismiss = { showAddIngredientDialog = false }
-        )
-    }
-
-    val filteredIngredients = remember(searchQuery, state.ingredients) {
-        state.ingredients.filter {
-            searchQuery.isBlank() || it.name.contains(searchQuery, ignoreCase = true)
-        }
-    }
-
-    ScreenColumn {
-        Text("Lager & Råvarer", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text(
-            "Tryk på en ingrediens for at redigere den. Tilpas mængden på lageret direkte nedenfor.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(14.dp))
-
-        Button(
-            onClick = { showAddIngredientDialog = true },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp)
-        ) {
-            Icon(Icons.Filled.Add, contentDescription = null)
-            Spacer(Modifier.width(8.dp))
-            Text("Opret Ny Ingrediens", fontWeight = FontWeight.Bold)
-        }
-
-        Spacer(Modifier.height(14.dp))
-
-        OutlinedTextField(
-            value = searchQuery,
-            onValueChange = { searchQuery = it },
-            placeholder = { Text("Søg råvarer...") },
-            leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-            trailingIcon = {
-                if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { searchQuery = "" }) {
-                        Icon(Icons.Filled.Clear, contentDescription = "Ryd")
-                    }
-                }
-            },
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
-            singleLine = true
-        )
-
-        Spacer(Modifier.height(16.dp))
-
-        if (filteredIngredients.isEmpty()) {
-            NoticeCard("Ingen ingredienser matchede.")
-        } else {
-            Text("Ingredienser (${filteredIngredients.size})", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-            Spacer(Modifier.height(10.dp))
-
-            filteredIngredients
-                .sortedBy { it.name.lowercase() }
-                .forEach { ingredient ->
-                    PantryIngredientItemCard(
-                        ingredient = ingredient,
-                        state = state,
-                        onEdit = { editingIngredient = ingredient }
-                    )
-                    Spacer(Modifier.height(10.dp))
-                }
-        }
-        Spacer(Modifier.height(24.dp))
-    }
-}
-
-@Composable
-fun PantryIngredientItemCard(
-    ingredient: Ingredient,
-    state: MealPlannerState,
-    onEdit: () -> Unit
-) {
-    val currentBaseAmount = state.pantry[ingredient.id] ?: 0.0
-    val currentUnit = ingredient.preferredUnit
-    val currentVal = currentUnit.fromBase(currentBaseAmount)
-
-    var amountText by remember(currentVal) {
-        mutableStateOf(if (currentBaseAmount > 0.0) formatDisplayNumber(currentVal) else "")
-    }
-    var selectedUnit by remember(currentUnit) { mutableStateOf(currentUnit) }
-
-    val isStocked = currentBaseAmount > 0.0
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { onEdit() }
-            ) {
-                if (!ingredient.imageUri.isNullOrEmpty()) {
-                    AsyncImage(
-                        model = ingredient.imageUri,
-                        contentDescription = null,
-                        modifier = Modifier
-                            .size(46.dp)
-                            .clip(RoundedCornerShape(12.dp)),
-                        contentScale = ContentScale.Crop
-                    )
-                    Spacer(Modifier.width(12.dp))
-                } else {
-                    Box(
-                        modifier = Modifier
-                            .size(46.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text("🥗", style = MaterialTheme.typography.titleMedium)
-                    }
-                    Spacer(Modifier.width(12.dp))
-                }
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            ingredient.name,
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
-                        Spacer(Modifier.width(6.dp))
-                        Icon(
-                            Icons.Filled.Edit,
-                            contentDescription = "Redigér",
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    Text(
-                        "${ingredient.quantityType.danishName()} · Tryk for detaljer",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-
-                Spacer(Modifier.width(6.dp))
-
-                Surface(
-                    shape = CircleShape,
-                    color = if (isStocked) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
-                ) {
-                    Text(
-                        if (isStocked) "På lager" else "Tomt",
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                        style = MaterialTheme.typography.labelSmall,
-                        color = if (isStocked) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(10.dp))
-
-            // INLINE PANTRY AMOUNT CONTROLLER
-            Surface(
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                ) {
-                    Text(
-                        "Mængde:",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(Modifier.width(8.dp))
-
-                    OutlinedTextField(
-                        value = amountText,
-                        onValueChange = { newText ->
-                            amountText = newText.replace(',', '.')
-                            val parsed = amountText.toDoubleOrNull()
-                            if (parsed != null && parsed >= 0.0) {
-                                state.setPantry(ingredient.id, parsed, selectedUnit)
-                            } else if (newText.isEmpty()) {
-                                state.setPantry(ingredient.id, 0.0, selectedUnit)
-                            }
-                        },
-                        placeholder = { Text("0") },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(52.dp),
-                        singleLine = true
-                    )
-
-                    Spacer(Modifier.width(8.dp))
-
-                    SimpleSelector(
-                        label = selectedUnit.symbol,
-                        options = MeasurementUnit.compatibleWith(ingredient.quantityType),
-                        optionText = { it.symbol },
-                        onSelected = { unit ->
-                            selectedUnit = unit
-                            val parsed = amountText.toDoubleOrNull() ?: 0.0
-                            state.setPantry(ingredient.id, parsed, unit)
-                        }
-                    )
-                }
-            }
-        }
-    }
-}
-
-private fun formatDisplayNumber(value: Double): String {
-    if (kotlin.math.abs(value - value.toInt()) < 0.00001) {
-        return value.toInt().toString()
-    }
-    return String.format(Locale("da", "DK"), "%.2f", value).trimEnd('0').trimEnd('.')
-}
-
-@Composable
-fun ShoppingScreen(state: MealPlannerState) {
-    val items = state.shoppingItems()
-    val checkedCount = items.count { state.shoppingChecked[it.ingredient.id] == true }
-
-    ScreenColumn {
-        Text("Indkøb", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text(
-            "Automatisk indkøbsliste baseret på din madplan.",
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-        Spacer(Modifier.height(16.dp))
-
-        if (items.isNotEmpty()) {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)
-            ) {
-                Column(Modifier.padding(16.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(
-                            "$checkedCount af ${items.size} varer købt",
-                            fontWeight = FontWeight.Bold,
-                            style = MaterialTheme.typography.titleMedium,
-                            modifier = Modifier.weight(1f)
-                        )
-                        val progressPercent = if (items.isEmpty()) 0 else (checkedCount * 100 / items.size)
-                        Text("$progressPercent%", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
-                    }
-                    Spacer(Modifier.height(8.dp))
-                    LinearProgressIndicator(
-                        progress = { if (items.isEmpty()) 0f else checkedCount.toFloat() / items.size.toFloat() },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            }
-            Spacer(Modifier.height(16.dp))
-        }
-
-        if (items.isEmpty()) {
-            NoticeCard("Generér en madplan under fanen Madplan, så bygges indkøbslisten automatisk.")
-        } else {
-            val uncheckedItems = items.filter { state.shoppingChecked[it.ingredient.id] != true }
-            val checkedItems = items.filter { state.shoppingChecked[it.ingredient.id] == true }
-
-            if (uncheckedItems.isNotEmpty()) {
-                Text("Mangler (${uncheckedItems.size})", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(8.dp))
-                uncheckedItems.forEach { item ->
-                    ShoppingItemCard(item = item, state = state, checked = false)
-                    Spacer(Modifier.height(8.dp))
-                }
-            }
-
-            if (checkedItems.isNotEmpty()) {
-                Spacer(Modifier.height(16.dp))
-                Text("Klaret (${checkedItems.size})", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Spacer(Modifier.height(8.dp))
-                checkedItems.forEach { item ->
-                    ShoppingItemCard(item = item, state = state, checked = true)
-                    Spacer(Modifier.height(8.dp))
-                }
-            }
-        }
-        Spacer(Modifier.height(24.dp))
-    }
-}
-
-@Composable
-fun ShoppingItemCard(
-    item: ShoppingItem,
-    state: MealPlannerState,
-    checked: Boolean
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (checked) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
-        )
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(12.dp)
-        ) {
-            Checkbox(
-                checked = checked,
-                onCheckedChange = { state.setShoppingChecked(item.ingredient.id, it) }
-            )
-            if (!item.ingredient.imageUri.isNullOrEmpty()) {
-                AsyncImage(
-                    model = item.ingredient.imageUri,
-                    contentDescription = null,
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(CircleShape),
-                    contentScale = ContentScale.Crop
-                )
-                Spacer(Modifier.width(10.dp))
-            }
-            Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    item.ingredient.name,
+                    "Fjern",
+                    color = Color.White
+                )
+            }
+        } else {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    label,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun LargeImage(
+    imageUri: String?,
+    fallback: String
+) {
+    if (!imageUri.isNullOrBlank()) {
+        AsyncImage(
+            model = imageUri,
+            contentDescription = null,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(210.dp)
+                .clip(RoundedCornerShape(22.dp)),
+            contentScale = ContentScale.Crop
+        )
+    } else {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(160.dp),
+            shape = RoundedCornerShape(22.dp),
+            color = MaterialTheme.colorScheme.primaryContainer
+        ) {
+            Box(contentAlignment = Alignment.Center) {
+                Text(
+                    fallback,
+                    style = MaterialTheme.typography.displayMedium,
                     fontWeight = FontWeight.Bold,
-                    textDecoration = if (checked) TextDecoration.LineThrough else TextDecoration.None
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AppThumbnail(
+    imageUri: String?,
+    fallback: String
+) {
+    if (!imageUri.isNullOrBlank()) {
+        AsyncImage(
+            model = imageUri,
+            contentDescription = null,
+            modifier = Modifier
+                .size(52.dp)
+                .clip(RoundedCornerShape(14.dp)),
+            contentScale = ContentScale.Crop
+        )
+    } else {
+        Surface(
+            modifier = Modifier.size(52.dp),
+            shape = RoundedCornerShape(14.dp),
+            color = MaterialTheme.colorScheme.primaryContainer
+        ) {
+            Box(contentAlignment = Alignment.Center) {
                 Text(
-                    "Behov: ${state.formatBaseAmount(item.ingredient, item.requiredBase)}",
-                    style = MaterialTheme.typography.bodyMedium
+                    fallback,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
-                if (item.pantryBase > 0.0) {
-                    Text(
-                        "Har på lager: ${state.formatBaseAmount(item.ingredient, item.pantryBase)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+            }
+        }
+    }
+}
+
+@Composable
+private fun <T> SelectorChips(
+    items: List<T>,
+    selected: T,
+    label: (T) -> String,
+    onSelected: (T) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        items.chunked(3).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                row.forEach { item ->
+                    FilterChip(
+                        selected = item == selected,
+                        onClick = { onSelected(item) },
+                        label = { Text(label(item)) }
                     )
                 }
             }
@@ -1575,18 +2131,26 @@ fun ShoppingItemCard(
 }
 
 @Composable
-fun <T> SimpleSelector(
+private fun <T> SimpleSelector(
     label: String,
     options: List<T>,
     optionText: (T) -> String,
     onSelected: (T) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
+
     Box {
-        OutlinedButton(onClick = { expanded = true }, shape = RoundedCornerShape(12.dp)) {
+        OutlinedButton(
+            onClick = { expanded = true },
+            shape = RoundedCornerShape(12.dp)
+        ) {
             Text(label)
         }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
+
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false }
+        ) {
             options.forEach { option ->
                 DropdownMenuItem(
                     text = { Text(optionText(option)) },
@@ -1598,4 +2162,16 @@ fun <T> SimpleSelector(
             }
         }
     }
+}
+
+private fun formatDisplayNumber(value: Double): String {
+    if (kotlin.math.abs(value - value.toInt()) < 0.00001) {
+        return value.toInt().toString()
+    }
+
+    return String.format(
+        Locale.forLanguageTag("da-DK"),
+        "%.2f",
+        value
+    ).trimEnd('0').trimEnd(',')
 }
