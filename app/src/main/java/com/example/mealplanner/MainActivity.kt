@@ -79,6 +79,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -812,30 +813,41 @@ fun RecipesScreen(
     var searchQuery by remember { mutableStateOf("") }
     var mealFilter by remember { mutableStateOf("Alle måltider") }
     var categoryFilter by remember { mutableStateOf("Alle kategorier") }
+    var canMakeOnly by remember { mutableStateOf(false) }
 
     val mealOptions = listOf("Alle måltider") +
         MealType.entries.map { it.danishName() }
     val categoryOptions = listOf("Alle kategorier") +
         RecipeCategory.entries.map { it.danishName() }
 
-    val filteredRecipes = state.recipes.filter { recipe ->
-        val category = recipe.categoryTag.toRecipeCategory()
+    val filteredRecipes by remember {
+        derivedStateOf {
+            state.recipes.filter { recipe ->
+                val category = recipe.categoryTag.toRecipeCategory()
 
-        val matchesSearch =
-            searchQuery.isBlank() ||
-                recipe.name.contains(searchQuery, ignoreCase = true) ||
-                category.danishName().contains(searchQuery, ignoreCase = true) ||
-                recipe.proteinTag.contains(searchQuery, ignoreCase = true)
+                val matchesSearch =
+                    searchQuery.isBlank() ||
+                        recipe.name.contains(searchQuery, ignoreCase = true) ||
+                        category.danishName().contains(searchQuery, ignoreCase = true) ||
+                        recipe.proteinTag.contains(searchQuery, ignoreCase = true)
 
-        val matchesMeal =
-            mealFilter == "Alle måltider" ||
-                recipe.mealType.danishName() == mealFilter
+                val matchesMeal =
+                    mealFilter == "Alle måltider" ||
+                        recipe.mealType.danishName() == mealFilter
 
-        val matchesCategory =
-            categoryFilter == "Alle kategorier" ||
-                category.danishName() == categoryFilter
+                val matchesCategory =
+                    categoryFilter == "Alle kategorier" ||
+                        category.danishName() == categoryFilter
 
-        matchesSearch && matchesMeal && matchesCategory
+                val matchesPantry =
+                    !canMakeOnly || state.canMake(recipe)
+
+                matchesSearch &&
+                    matchesMeal &&
+                    matchesCategory &&
+                    matchesPantry
+            }
+        }
     }
 
     LazyColumn(
@@ -894,6 +906,14 @@ fun RecipesScreen(
                     )
                 }
             }
+        }
+
+        item {
+            FilterChip(
+                selected = canMakeOnly,
+                onClick = { canMakeOnly = !canMakeOnly },
+                label = { Text("Kan laves") }
+            )
         }
 
         if (filteredRecipes.isEmpty()) {
@@ -1582,6 +1602,12 @@ private fun IngredientEditorScreen(
         mutableStateOf(existing?.preferredUnit ?: MeasurementUnit.GRAM)
     }
 
+    var shoppingCategory by remember(ingredientId) {
+        mutableStateOf(
+            existing?.shoppingCategory ?: ShoppingCategory.OTHER
+        )
+    }
+
     var imageUri by remember(ingredientId) {
         mutableStateOf(existing?.imageUri)
     }
@@ -1662,12 +1688,27 @@ private fun IngredientEditorScreen(
             }
 
             item {
+                Text(
+                    "Indkøbskategori",
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(6.dp))
+                SimpleSelector(
+                    label = shoppingCategory.danishName(),
+                    options = ShoppingCategory.entries,
+                    optionText = { it.danishName() },
+                    onSelected = { shoppingCategory = it }
+                )
+            }
+
+            item {
                 Button(
                     onClick = {
                         val saved = if (existing == null) {
                             state.addIngredient(
                                 name = name,
                                 type = type,
+                                shoppingCategory = shoppingCategory,
                                 imageUri = imageUri,
                                 preferredUnit = preferredUnit
                             )
@@ -1676,6 +1717,7 @@ private fun IngredientEditorScreen(
                                 id = existing.id,
                                 name = name,
                                 type = type,
+                                shoppingCategory = shoppingCategory,
                                 preferredUnit = preferredUnit,
                                 imageUri = imageUri
                             )
@@ -1909,7 +1951,9 @@ private fun PantryAmountDialog(
 
 @Composable
 fun ShoppingScreen(state: MealPlannerState) {
-    val shoppingItems = state.shoppingItems()
+    val shoppingItems by remember {
+        derivedStateOf { state.shoppingItems() }
+    }
     val checkedCount = shoppingItems.count {
         state.shoppingChecked[it.ingredient.id] == true
     }
@@ -1968,20 +2012,32 @@ fun ShoppingScreen(state: MealPlannerState) {
             }
         } else {
             if (missing.isNotEmpty()) {
-                item {
-                    Text(
-                        "Mangler",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+                ShoppingCategory.entries.forEach { category ->
+                    val categoryItems = missing.filter {
+                        it.ingredient.shoppingCategory == category
+                    }
 
-                items(missing, key = { it.ingredient.id }) { item ->
-                    ShoppingItemCard(
-                        item = item,
-                        state = state,
-                        checked = false
-                    )
+                    if (categoryItems.isNotEmpty()) {
+                        item(key = "category-${category.name}") {
+                            Text(
+                                category.danishName(),
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(top = 6.dp)
+                            )
+                        }
+
+                        items(
+                            items = categoryItems,
+                            key = { "missing-${it.ingredient.id}" }
+                        ) { item ->
+                            ShoppingItemCard(
+                                item = item,
+                                state = state,
+                                checked = false
+                            )
+                        }
+                    }
                 }
             }
 

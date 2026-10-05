@@ -29,6 +29,7 @@ class LocalStorage(context: Context) {
                     put("name", ingredient.name)
                     put("quantityType", ingredient.quantityType.name)
                     put("preferredUnit", ingredient.preferredUnit.name)
+                    put("shoppingCategory", ingredient.shoppingCategory.name)
                     put("imageUri", ingredient.imageUri ?: JSONObject.NULL)
                 })
             }
@@ -98,6 +99,14 @@ class LocalStorage(context: Context) {
                             name = obj.getString("name"),
                             quantityType = QuantityType.valueOf(obj.getString("quantityType")),
                             preferredUnit = MeasurementUnit.valueOf(obj.getString("preferredUnit")),
+                            shoppingCategory = runCatching {
+                                ShoppingCategory.valueOf(
+                                    obj.optString(
+                                        "shoppingCategory",
+                                        ShoppingCategory.OTHER.name
+                                    )
+                                )
+                            }.getOrDefault(ShoppingCategory.OTHER),
                             imageUri = obj.nullableString("imageUri")
                         )
                     )

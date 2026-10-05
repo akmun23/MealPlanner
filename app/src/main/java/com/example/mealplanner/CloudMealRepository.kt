@@ -39,6 +39,7 @@ private data class IngredientRow(
     val name: String,
     @SerialName("quantity_type") val quantityType: String,
     @SerialName("preferred_unit") val preferredUnit: String,
+    @SerialName("shopping_category") val shoppingCategory: String = "OTHER",
     @SerialName("image_path") val imagePath: String? = null
 )
 
@@ -155,8 +156,12 @@ class CloudMealRepository(
     private fun currentWeekStart(): LocalDate =
         LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
 
-    suspend fun loadCurrent(): CloudSnapshot = withContext(Dispatchers.IO) {
-        syncRecentHistory()
+    suspend fun loadCurrent(
+        syncHistory: Boolean = false
+    ): CloudSnapshot = withContext(Dispatchers.IO) {
+        if (syncHistory) {
+            syncRecentHistory()
+        }
 
         coroutineScope {
             val ingredientsDeferred = async {
@@ -256,6 +261,9 @@ class CloudMealRepository(
                     name = row.name,
                     quantityType = type,
                     preferredUnit = unit,
+                    shoppingCategory = runCatching {
+                        ShoppingCategory.valueOf(row.shoppingCategory)
+                    }.getOrDefault(ShoppingCategory.OTHER),
                     imageUri = row.imagePath?.let(urls::get),
                     imagePath = row.imagePath
                 )
@@ -429,6 +437,7 @@ class CloudMealRepository(
                 name = ingredient.name,
                 quantityType = ingredient.quantityType.name,
                 preferredUnit = ingredient.preferredUnit.name,
+                shoppingCategory = ingredient.shoppingCategory.name,
                 imagePath = finalImage.first
             )
         ) {

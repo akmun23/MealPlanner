@@ -58,11 +58,36 @@ enum class MeasurementUnit(
     }
 }
 
+enum class ShoppingCategory {
+    PRODUCE,
+    MEAT_FISH,
+    DAIRY_CHILLED,
+    BREAD_BAKERY,
+    PANTRY,
+    SPICES,
+    FROZEN,
+    DRINKS,
+    OTHER
+}
+
+fun ShoppingCategory.danishName(): String = when (this) {
+    ShoppingCategory.PRODUCE -> "Frugt & grønt"
+    ShoppingCategory.MEAT_FISH -> "Kød & fisk"
+    ShoppingCategory.DAIRY_CHILLED -> "Mejeri & køl"
+    ShoppingCategory.BREAD_BAKERY -> "Brød & bager"
+    ShoppingCategory.PANTRY -> "Kolonial"
+    ShoppingCategory.SPICES -> "Krydderier"
+    ShoppingCategory.FROZEN -> "Frost"
+    ShoppingCategory.DRINKS -> "Drikkevarer"
+    ShoppingCategory.OTHER -> "Andet"
+}
+
 data class Ingredient(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
     val quantityType: QuantityType,
     val preferredUnit: MeasurementUnit,
+    val shoppingCategory: ShoppingCategory = ShoppingCategory.OTHER,
     val imageUri: String? = null,
     val imagePath: String? = null
 )

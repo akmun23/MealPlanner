@@ -82,7 +82,7 @@ class MealPlannerState(
                 }
             }
 
-            reload()
+            reload(syncHistory = true)
             repository.startRealtime(scope) {
                 reload()
             }
@@ -101,9 +101,13 @@ class MealPlannerState(
         lastError = null
     }
 
-    private suspend fun reload() {
+    private suspend fun reload(
+        syncHistory: Boolean = false
+    ) {
         reloadMutex.withLock {
-            applySnapshot(repository.loadCurrent())
+            applySnapshot(
+                repository.loadCurrent(syncHistory = syncHistory)
+            )
         }
     }
 
@@ -214,6 +218,7 @@ class MealPlannerState(
     fun addIngredient(
         name: String,
         type: QuantityType,
+        shoppingCategory: ShoppingCategory,
         imageUri: String? = null,
         preferredUnit: MeasurementUnit = MeasurementUnit.defaultFor(type)
     ): Boolean {
@@ -229,6 +234,7 @@ class MealPlannerState(
             name = clean,
             quantityType = type,
             preferredUnit = preferredUnit,
+            shoppingCategory = shoppingCategory,
             imageUri = imageUri
         )
 
@@ -246,6 +252,7 @@ class MealPlannerState(
         id: String,
         name: String,
         type: QuantityType,
+        shoppingCategory: ShoppingCategory,
         preferredUnit: MeasurementUnit,
         imageUri: String? = null
     ): Boolean {
@@ -265,6 +272,7 @@ class MealPlannerState(
             name = name.trim(),
             quantityType = type,
             preferredUnit = preferredUnit,
+            shoppingCategory = shoppingCategory,
             imageUri = imageUri
         )
         ingredients[index] = updated
@@ -712,6 +720,12 @@ class MealPlannerState(
 
     fun sandwichDay(): DayOfWeek? = sandwichDay
 
+    fun canMake(recipe: Recipe): Boolean =
+        PantryRules.canMake(
+            recipe = recipe,
+            pantry = pantry
+        )
+
     fun recipeFor(day: DayOfWeek): Recipe? {
         if (dayModes[day] == DayMode.AWAY) return null
 
@@ -731,26 +745,42 @@ class MealPlannerState(
 
     fun shoppingItems(): List<ShoppingItem> {
         val totals = mutableMapOf<String, Double>()
+        val recipesById = recipes.associateBy { it.id }
 
         orderedWeekDays.forEach { day ->
             if (dayModes[day] == DayMode.AWAY) return@forEach
 
-            val recipe = recipeFor(day) ?: return@forEach
+            val recipeId = if (
+                day == sandwichDay &&
+                weeklySandwichRecipeId != null
+            ) {
+                weeklySandwichRecipeId
+            } else {
+                plan[day]
+            }
+
+            val recipe = recipeId?.let(recipesById::get) ?: return@forEach
             recipe.ingredients.forEach { req ->
                 totals[req.ingredientId] =
                     (totals[req.ingredientId] ?: 0.0) + req.amountBase
             }
         }
 
-        lunchRecipes().forEach { recipe ->
+        selectedLunchRecipeIds.forEach { recipeId ->
+            val recipe = recipesById[recipeId]
+                ?.takeIf { it.mealType == MealType.LUNCH }
+                ?: return@forEach
+
             recipe.ingredients.forEach { req ->
                 totals[req.ingredientId] =
                     (totals[req.ingredientId] ?: 0.0) + req.amountBase
             }
         }
+
+        val ingredientsById = ingredients.associateBy { it.id }
 
         return totals.mapNotNull { (ingredientId, requiredBase) ->
-            val ingredient = ingredients.find { it.id == ingredientId }
+            val ingredient = ingredientsById[ingredientId]
                 ?: return@mapNotNull null
 
             ShoppingItem(
@@ -758,16 +788,21 @@ class MealPlannerState(
                 requiredBase = requiredBase,
                 pantryBase = pantry[ingredientId] ?: 0.0
             )
-        }.sortedBy { it.ingredient.name.lowercase() }
+        }.sortedWith(
+            compareBy<ShoppingItem>(
+                { it.ingredient.shoppingCategory.ordinal },
+                { it.ingredient.name.lowercase() }
+            )
+        )
     }
 
-    fun lunchRecipes(): List<Recipe> =
-        selectedLunchRecipeIds.mapNotNull { recipeId ->
-            recipes.find {
-                it.id == recipeId &&
-                    it.mealType == MealType.LUNCH
-            }
+    fun lunchRecipes(): List<Recipe> {
+        val recipesById = recipes.associateBy { it.id }
+        return selectedLunchRecipeIds.mapNotNull { recipeId ->
+            recipesById[recipeId]
+                ?.takeIf { it.mealType == MealType.LUNCH }
         }
+    }
 
     fun addLunchRecipe(recipeId: String) {
         val recipe = recipes.find {
