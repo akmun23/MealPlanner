@@ -11,7 +11,7 @@ enum class QuantityType {
 
 fun QuantityType.danishName(): String = when (this) {
     QuantityType.MASS -> "vægt"
-    QuantityType.VOLUME -> "væske"
+    QuantityType.VOLUME -> "volumen"
     QuantityType.COUNT -> "stk."
     QuantityType.PACKAGE -> "pakke/dåse"
 }
@@ -24,6 +24,8 @@ enum class MeasurementUnit(
     GRAM("g", QuantityType.MASS, 1.0),
     KILOGRAM("kg", QuantityType.MASS, 1000.0),
     MILLILITRE("ml", QuantityType.VOLUME, 1.0),
+    TEASPOON("tsk.", QuantityType.VOLUME, 5.0),
+    TABLESPOON("spsk.", QuantityType.VOLUME, 15.0),
     LITRE("l", QuantityType.VOLUME, 1000.0),
     PIECE("stk.", QuantityType.COUNT, 1.0),
     CAN("dåse", QuantityType.PACKAGE, 1.0);
