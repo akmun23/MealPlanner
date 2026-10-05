@@ -7,6 +7,7 @@ import android.net.Uri
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.realtime.PostgresAction
+import io.github.jan.supabase.realtime.channel
 import io.github.jan.supabase.realtime.RealtimeChannel
 import io.github.jan.supabase.realtime.postgresChangeFlow
 import io.github.jan.supabase.realtime.realtime
@@ -317,23 +318,23 @@ class CloudMealRepository(
         }
 
         if (snapshot.pantry.isNotEmpty()) {
-            supabase.from("pantry_items").insert(
+            supabase.from("pantry_items").upsert(
                 snapshot.pantry.map { (ingredientId, amount) ->
                     PantryRow(householdId, ingredientId, amount)
-                },
-                upsert = true,
+                }
+            ) {
                 onConflict = "household_id,ingredient_id"
-            )
+            }
         }
 
-        supabase.from("household_settings").insert(
+        supabase.from("household_settings").upsert(
             SettingsRow(
                 householdId = householdId,
                 sandwichRecipeId = snapshot.weeklySandwichRecipeId
-            ),
-            upsert = true,
+            )
+        ) {
             onConflict = "household_id"
-        )
+        }
 
         val week = ensureWeek(
             currentWeekStart(),
@@ -355,11 +356,9 @@ class CloudMealRepository(
                 locked = false
             )
         }
-        supabase.from("planned_meals").insert(
-            meals,
-            upsert = true,
+        supabase.from("planned_meals").upsert(meals) {
             onConflict = "weekly_plan_id,day_of_week"
-        )
+        }
 
         saveWeekHeader(
             weeklyPlanId = week.id,
@@ -376,11 +375,9 @@ class CloudMealRepository(
             )
         }
         if (checks.isNotEmpty()) {
-            supabase.from("shopping_checks").insert(
-                checks,
-                upsert = true,
+            supabase.from("shopping_checks").upsert(checks) {
                 onConflict = "weekly_plan_id,ingredient_id"
-            )
+            }
         }
     }
 
@@ -392,7 +389,7 @@ class CloudMealRepository(
             existingPath = ingredient.imagePath
         )
 
-        supabase.from("ingredients").insert(
+        supabase.from("ingredients").upsert(
             IngredientRow(
                 id = ingredient.id,
                 householdId = householdId,
@@ -400,10 +397,10 @@ class CloudMealRepository(
                 quantityType = ingredient.quantityType.name,
                 preferredUnit = ingredient.preferredUnit.name,
                 imagePath = finalImage.first
-            ),
-            upsert = true,
+            )
+        ) {
             onConflict = "id"
-        )
+        }
 
         ingredient.copy(
             imagePath = finalImage.first,
@@ -413,8 +410,10 @@ class CloudMealRepository(
 
     suspend fun deleteIngredient(id: String, imagePath: String?) = withContext(Dispatchers.IO) {
         supabase.from("ingredients").delete {
-            eq("household_id", householdId)
-            eq("id", id)
+            filter {
+                eq("household_id", householdId)
+                eq("id", id)
+            }
         }
         deleteImage(imagePath)
     }
@@ -427,7 +426,7 @@ class CloudMealRepository(
             existingPath = recipe.imagePath
         )
 
-        supabase.from("recipes").insert(
+        supabase.from("recipes").upsert(
             RecipeRow(
                 id = recipe.id,
                 householdId = householdId,
@@ -436,14 +435,16 @@ class CloudMealRepository(
                 categoryTag = recipe.categoryTag,
                 notes = recipe.notes,
                 imagePath = finalImage.first
-            ),
-            upsert = true,
+            )
+        ) {
             onConflict = "id"
-        )
+        }
 
         supabase.from("recipe_ingredients").delete {
-            eq("household_id", householdId)
-            eq("recipe_id", recipe.id)
+            filter {
+                eq("household_id", householdId)
+                eq("recipe_id", recipe.id)
+            }
         }
 
         if (recipe.ingredients.isNotEmpty()) {
@@ -467,33 +468,35 @@ class CloudMealRepository(
 
     suspend fun deleteRecipe(id: String, imagePath: String?) = withContext(Dispatchers.IO) {
         supabase.from("recipes").delete {
-            eq("household_id", householdId)
-            eq("id", id)
+            filter {
+                eq("household_id", householdId)
+                eq("id", id)
+            }
         }
         deleteImage(imagePath)
     }
 
     suspend fun setPantry(ingredientId: String, amountBase: Double) = withContext(Dispatchers.IO) {
-        supabase.from("pantry_items").insert(
+        supabase.from("pantry_items").upsert(
             PantryRow(
                 householdId = householdId,
                 ingredientId = ingredientId,
                 amountBase = amountBase
-            ),
-            upsert = true,
+            )
+        ) {
             onConflict = "household_id,ingredient_id"
-        )
+        }
     }
 
     suspend fun setHouseholdSandwich(recipeId: String?) = withContext(Dispatchers.IO) {
-        supabase.from("household_settings").insert(
+        supabase.from("household_settings").upsert(
             SettingsRow(
                 householdId = householdId,
                 sandwichRecipeId = recipeId
-            ),
-            upsert = true,
+            )
+        ) {
             onConflict = "household_id"
-        )
+        }
     }
 
     suspend fun saveWeekState(
@@ -506,7 +509,7 @@ class CloudMealRepository(
     ) = withContext(Dispatchers.IO) {
         saveWeekHeader(weeklyPlanId, sandwichRecipeId, sandwichDay)
 
-        supabase.from("planned_meals").insert(
+        supabase.from("planned_meals").upsert(
             orderedWeekDays.map { day ->
                 PlannedMealRow(
                     householdId = householdId,
@@ -516,10 +519,10 @@ class CloudMealRepository(
                     recipeId = plan[day],
                     locked = day in lockedDays
                 )
-            },
-            upsert = true,
+            }
+        ) {
             onConflict = "weekly_plan_id,day_of_week"
-        )
+        }
     }
 
     suspend fun setShoppingChecked(
@@ -527,22 +530,24 @@ class CloudMealRepository(
         ingredientId: String,
         checked: Boolean
     ) = withContext(Dispatchers.IO) {
-        supabase.from("shopping_checks").insert(
+        supabase.from("shopping_checks").upsert(
             ShoppingCheckRow(
                 householdId = householdId,
                 weeklyPlanId = weeklyPlanId,
                 ingredientId = ingredientId,
                 checked = checked
-            ),
-            upsert = true,
+            )
+        ) {
             onConflict = "weekly_plan_id,ingredient_id"
-        )
+        }
     }
 
     suspend fun clearShoppingChecks(weeklyPlanId: String) = withContext(Dispatchers.IO) {
         supabase.from("shopping_checks").delete {
-            eq("household_id", householdId)
-            eq("weekly_plan_id", weeklyPlanId)
+            filter {
+                eq("household_id", householdId)
+                eq("weekly_plan_id", weeklyPlanId)
+            }
         }
     }
 
@@ -565,7 +570,7 @@ class CloudMealRepository(
     ) {
         stopRealtime()
 
-        val channel = supabase.realtime.createChannel("household-$householdId")
+        val channel = supabase.realtime.channel("household-$householdId")
         val changes = MutableSharedFlow<Unit>(extraBufferCapacity = 32)
 
         val watchedTables = listOf(
@@ -592,7 +597,6 @@ class CloudMealRepository(
             .launchIn(scope)
 
         realtimeChannel = channel
-        supabase.realtime.connect()
         channel.subscribe()
     }
 
@@ -623,11 +627,10 @@ class CloudMealRepository(
             sandwichRecipeId = sandwichRecipeId
         )
 
-        return supabase.from("weekly_plans").insert(
-            row,
-            upsert = true,
+        return supabase.from("weekly_plans").upsert(row) {
             onConflict = "household_id,week_start"
-        ).decodeList<WeeklyPlanRow>().firstOrNull() ?: row
+            select()
+        }.decodeList<WeeklyPlanRow>().firstOrNull() ?: row
     }
 
     private suspend fun saveWeekHeader(
@@ -641,8 +644,10 @@ class CloudMealRepository(
                 set("sandwich_day", sandwichDay?.value)
             }
         ) {
-            eq("household_id", householdId)
-            eq("id", weeklyPlanId)
+            filter {
+                eq("household_id", householdId)
+                eq("id", weeklyPlanId)
+            }
         }
     }
 
@@ -702,11 +707,9 @@ class CloudMealRepository(
             }
 
             if (changedRows.isNotEmpty()) {
-                supabase.from("meal_history").insert(
-                    changedRows,
-                    upsert = true,
+                supabase.from("meal_history").upsert(changedRows) {
                     onConflict = "household_id,eaten_on"
-                )
+                }
             }
         }
     }
@@ -728,7 +731,9 @@ class CloudMealRepository(
 
         val bytes = prepareImage(Uri.parse(imageUri))
         val path = "$householdId/$kind/$objectId-\${UUID.randomUUID()}.jpg"
-        supabase.storage["meal-images"].upload(path, bytes, upsert = false)
+        supabase.storage["meal-images"].upload(path, bytes) {
+            upsert = false
+        }
 
         if (existingPath != null && existingPath != path) {
             deleteImage(existingPath)
