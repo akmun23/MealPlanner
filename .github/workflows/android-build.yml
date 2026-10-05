@@ -3,8 +3,10 @@ name: Android build
 on:
   pull_request:
     branches: [ master ]
-  push:
-    branches: [ ux/stabilize-and-polish ]
+
+concurrency:
+  group: android-build-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   build:
