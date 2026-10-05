@@ -10,6 +10,9 @@ alter table public.planned_meals
     add column if not exists locked boolean not null default false;
 
 alter table public.household_settings
+    add column if not exists local_import_completed boolean not null default false;
+
+alter table public.household_settings
     drop constraint if exists household_settings_sandwich_recipe_id_household_id_fkey;
 
 alter table public.household_settings
