@@ -802,6 +802,40 @@ class MealPlannerState(
         }
     }
 
+    fun addPantryAmount(
+        ingredientId: String,
+        amount: Double,
+        unit: MeasurementUnit
+    ) {
+        val ingredient = ingredients.find { it.id == ingredientId } ?: return
+        if (unit.quantityType != ingredient.quantityType || amount <= 0.0) return
+
+        val addedBase = unit.toBase(amount)
+        val next = (pantry[ingredientId] ?: 0.0) + addedBase
+        pantry[ingredientId] = next
+
+        runMutation {
+            repository.setPantry(ingredientId, next)
+        }
+    }
+
+    fun consumeRecipeIngredients(recipeId: String) {
+        val recipe = recipes.find { it.id == recipeId } ?: return
+        val updates = recipe.ingredients.associate { requirement ->
+            val current = pantry[requirement.ingredientId] ?: 0.0
+            requirement.ingredientId to
+                (current - requirement.amountBase).coerceAtLeast(0.0)
+        }
+
+        updates.forEach { (ingredientId, amountBase) ->
+            pantry[ingredientId] = amountBase
+        }
+
+        runMutation {
+            repository.setPantryBatch(updates)
+        }
+    }
+
     fun generateWeek() {
         if (isPlanning || weeklyPlanId == null) return
 
