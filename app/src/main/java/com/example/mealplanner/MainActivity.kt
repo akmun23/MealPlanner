@@ -661,8 +661,10 @@ fun DayCard(
     val recipe = state.recipeFor(day)
     val isSandwich = recipe?.id == state.weeklySandwichRecipeId
     val isLocked = day in state.lockedDays
+    val maxPrepMinutes = state.dayMaxPrepMinutes[day]
 
     var showRecipePicker by remember { mutableStateOf(false) }
+    var showTimePicker by remember { mutableStateOf(false) }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -770,6 +772,44 @@ fun DayCard(
                                 false
                             )
                         }
+                        recipe.prepMinutes?.let {
+                            StatusPill("${it} min", false)
+                        }
+                    }
+                }
+
+                Spacer(Modifier.height(6.dp))
+
+                Box {
+                    FilterChip(
+                        selected = maxPrepMinutes != null,
+                        onClick = { showTimePicker = true },
+                        label = {
+                            Text(
+                                maxPrepMinutes?.let { "≤ ${it} min" }
+                                    ?: "Tid"
+                            )
+                        }
+                    )
+
+                    DropdownMenu(
+                        expanded = showTimePicker,
+                        onDismissRequest = { showTimePicker = false }
+                    ) {
+                        listOf<Int?>(null, 20, 30, 45, 60).forEach { minutes ->
+                            DropdownMenuItem(
+                                text = {
+                                    Text(
+                                        minutes?.let { "Maks. ${it} min" }
+                                            ?: "Ingen tidsgrænse"
+                                    )
+                                },
+                                onClick = {
+                                    state.setDayMaxPrepMinutes(day, minutes)
+                                    showTimePicker = false
+                                }
+                            )
+                        }
                     }
                 }
 
@@ -817,7 +857,16 @@ fun DayCard(
                                     }
                                     .forEach { candidate ->
                                         DropdownMenuItem(
-                                            text = { Text(candidate.name) },
+                                            text = {
+                                                Text(
+                                                    buildString {
+                                                        append(candidate.name)
+                                                        candidate.prepMinutes?.let {
+                                                            append(" · ${it} min")
+                                                        }
+                                                    }
+                                                )
+                                            },
                                             onClick = {
                                                 state.setRecipeForDay(day, candidate.id)
                                                 showRecipePicker = false
@@ -1048,6 +1097,7 @@ private fun RecipeListCard(
                     ) {
                         add("Kun manuelt")
                     }
+                    recipe.prepMinutes?.let { add("${it} min") }
                     if (recipe.proteinTag.isNotBlank()) add(recipe.proteinTag)
                 }
 
@@ -1128,6 +1178,7 @@ private fun RecipeDetailScreen(
                         ) {
                             add("Kun manuelt")
                         }
+                        recipe.prepMinutes?.let { add("${it} min") }
                         if (recipe.proteinTag.isNotBlank()) add(recipe.proteinTag)
                     }.joinToString(" · "),
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1247,6 +1298,16 @@ private fun RecipeEditorScreen(
     var autoRotationEnabled by remember(recipeId) {
         mutableStateOf(existing?.autoRotationEnabled ?: true)
     }
+    var prepMinutesText by remember(recipeId) {
+        mutableStateOf(existing?.prepMinutes?.toString() ?: "")
+    }
+    val prepMinutes = prepMinutesText
+        .trim()
+        .takeIf { it.isNotBlank() }
+        ?.toIntOrNull()
+        ?.takeIf { it in 1..1440 }
+    val prepTimeValid =
+        prepMinutesText.isBlank() || prepMinutes != null
     var protein by remember(recipeId) { mutableStateOf(existing?.proteinTag ?: "") }
     var category by remember(recipeId) {
         mutableStateOf(
@@ -1386,6 +1447,19 @@ private fun RecipeEditorScreen(
 
             item {
                 OutlinedTextField(
+                    value = prepMinutesText,
+                    onValueChange = { value ->
+                        prepMinutesText = value.filter { it.isDigit() }
+                    },
+                    label = { Text("Tid (min)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true,
+                    isError = !prepTimeValid
+                )
+            }
+
+            item {
+                OutlinedTextField(
                     value = protein,
                     onValueChange = { protein = it },
                     label = { Text("Protein") },
@@ -1474,6 +1548,7 @@ private fun RecipeEditorScreen(
                                 name = name,
                                 mealType = mealType,
                                 autoRotationEnabled = autoRotationEnabled,
+                                prepMinutes = prepMinutes,
                                 protein = protein,
                                 category = category,
                                 notes = notes,
@@ -1490,6 +1565,7 @@ private fun RecipeEditorScreen(
                                 name = name,
                                 mealType = mealType,
                                 autoRotationEnabled = autoRotationEnabled,
+                                prepMinutes = prepMinutes,
                                 protein = protein,
                                 category = category,
                                 notes = notes,
@@ -1503,6 +1579,7 @@ private fun RecipeEditorScreen(
                     },
                     enabled = name.isNotBlank() &&
                         recipeNameAvailable &&
+                        prepTimeValid &&
                         drafts.isNotEmpty() &&
                         drafts.all { it.amount > 0.0 },
                     modifier = Modifier.fillMaxWidth(),
