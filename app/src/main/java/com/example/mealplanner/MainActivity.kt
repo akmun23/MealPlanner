@@ -790,28 +790,32 @@ fun RecipesScreen(
     onOpenRecipe: (String) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
-    var selectedFilter by remember { mutableStateOf("Alle") }
+    var mealFilter by remember { mutableStateOf("Alle måltider") }
+    var categoryFilter by remember { mutableStateOf("Alle kategorier") }
 
-    val categories = listOf("Alle") +
-        state.recipes
-            .flatMap { listOf(it.categoryTag, it.proteinTag) }
-            .filter { it.isNotBlank() }
-            .distinct()
-            .sorted()
+    val mealOptions = listOf("Alle måltider") +
+        MealType.entries.map { it.danishName() }
+    val categoryOptions = listOf("Alle kategorier") +
+        RecipeCategory.entries.map { it.danishName() }
 
     val filteredRecipes = state.recipes.filter { recipe ->
+        val category = recipe.categoryTag.toRecipeCategory()
+
         val matchesSearch =
             searchQuery.isBlank() ||
                 recipe.name.contains(searchQuery, ignoreCase = true) ||
-                recipe.categoryTag.contains(searchQuery, ignoreCase = true) ||
+                category.danishName().contains(searchQuery, ignoreCase = true) ||
                 recipe.proteinTag.contains(searchQuery, ignoreCase = true)
 
-        val matchesFilter =
-            selectedFilter == "Alle" ||
-                recipe.categoryTag.equals(selectedFilter, ignoreCase = true) ||
-                recipe.proteinTag.equals(selectedFilter, ignoreCase = true)
+        val matchesMeal =
+            mealFilter == "Alle måltider" ||
+                recipe.mealType.danishName() == mealFilter
 
-        matchesSearch && matchesFilter
+        val matchesCategory =
+            categoryFilter == "Alle kategorier" ||
+                category.danishName() == categoryFilter
+
+        matchesSearch && matchesMeal && matchesCategory
     }
 
     LazyColumn(
@@ -860,19 +864,27 @@ fun RecipesScreen(
             )
         }
 
-        if (categories.size > 1) {
-            item {
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    contentPadding = PaddingValues(end = 8.dp)
-                ) {
-                    items(categories, key = { it }) { category ->
-                        FilterChip(
-                            selected = category == selectedFilter,
-                            onClick = { selectedFilter = category },
-                            label = { Text(category) }
-                        )
-                    }
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(modifier = Modifier.weight(1f)) {
+                    SimpleSelector(
+                        label = mealFilter,
+                        options = mealOptions,
+                        optionText = { it },
+                        onSelected = { mealFilter = it }
+                    )
+                }
+
+                Box(modifier = Modifier.weight(1f)) {
+                    SimpleSelector(
+                        label = categoryFilter,
+                        options = categoryOptions,
+                        optionText = { it },
+                        onSelected = { categoryFilter = it }
+                    )
                 }
             }
         }
