@@ -82,7 +82,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import java.time.DayOfWeek
-import java.util.Locale
+import java.util.Locale\nimport io.github.jan.supabase.auth.handleDeeplinks
 
 private val AppColors = lightColorScheme(
     primary = Color(0xFF2F6B4F),
@@ -101,6 +101,7 @@ private val AppColors = lightColorScheme(
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        SupabaseProvider.client.handleDeeplinks(intent)
         setContent {
             MaterialTheme(colorScheme = AppColors) {
                 Surface(modifier = Modifier.fillMaxSize()) {
@@ -108,6 +109,12 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        SupabaseProvider.client.handleDeeplinks(intent)
     }
 }
 
