@@ -788,6 +788,24 @@ class CloudMealRepository(
         }
     }
 
+    suspend fun setPantryBatch(
+        amountsByIngredient: Map<String, Double>
+    ) = withContext(Dispatchers.IO) {
+        if (amountsByIngredient.isEmpty()) return@withContext
+
+        supabase.from("pantry_items").upsert(
+            amountsByIngredient.map { (ingredientId, amountBase) ->
+                PantryRow(
+                    householdId = householdId,
+                    ingredientId = ingredientId,
+                    amountBase = amountBase.coerceAtLeast(0.0)
+                )
+            }
+        ) {
+            onConflict = "household_id,ingredient_id"
+        }
+    }
+
     suspend fun setHouseholdSandwich(recipeId: String?) = withContext(Dispatchers.IO) {
         supabase.from("household_settings").update(
             {
