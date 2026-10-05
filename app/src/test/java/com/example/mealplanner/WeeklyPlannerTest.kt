@@ -122,6 +122,58 @@ class WeeklyPlannerTest {
     }
 
     @Test
+    fun lunchRecipesAreNeverRandomizedIntoDinnerPlan() {
+        val dinner = Recipe(
+            id = "dinner",
+            name = "Dinner",
+            mealType = MealType.DINNER,
+            ingredients = emptyList()
+        )
+        val lunch = Recipe(
+            id = "lunch",
+            name = "Lunch",
+            mealType = MealType.LUNCH,
+            ingredients = emptyList()
+        )
+        val modes = orderedWeekDays.associateWith {
+            if (it == DayOfWeek.MONDAY) DayMode.AUTO else DayMode.AWAY
+        }
+
+        repeat(20) { seed ->
+            val result = WeeklyPlanner.generate(
+                recipes = listOf(dinner, lunch),
+                pantry = emptyMap(),
+                dayModes = modes,
+                weeklySandwichRecipeId = null,
+                currentPlan = orderedWeekDays.associateWith { null },
+                currentSandwichDay = null,
+                random = Random(seed)
+            )
+
+            assertEquals(
+                dinner.id,
+                result.plan[DayOfWeek.MONDAY]
+            )
+        }
+    }
+
+    @Test
+    fun legacyCategoryNamesNormalizeToStructuredCategories() {
+        assertEquals(
+            RecipeCategory.PASTA,
+            "pasta".toRecipeCategory()
+        )
+        assertEquals(
+            RecipeCategory.SANDWICH_WRAP,
+            "sandwich".toRecipeCategory()
+        )
+        assertEquals(
+            RecipeCategory.OTHER,
+            "ukendt kategori".toRecipeCategory()
+        )
+    }
+
+    @Test
     fun recentlyEatenRecipeIsStronglyDisfavoured() {
         val recent = recipe("recent")
         val fresh = recipe("fresh")
