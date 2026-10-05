@@ -10,9 +10,9 @@ enum class QuantityType {
 
 fun QuantityType.danishName(): String = when (this) {
     QuantityType.MASS -> "vægt"
-    QuantityType.VOLUME -> "volumen"
-    QuantityType.COUNT -> "antal"
-    QuantityType.PACKAGE -> "dåser"
+    QuantityType.VOLUME -> "væske"
+    QuantityType.COUNT -> "stk."
+    QuantityType.PACKAGE -> "pakke/dåse"
 }
 
 enum class MeasurementUnit(

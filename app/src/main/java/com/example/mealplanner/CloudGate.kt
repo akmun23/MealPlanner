@@ -40,6 +40,8 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+private const val AUTH_REDIRECT_URL = "com.example.mealplanner://login-callback"
+
 
 @Serializable
 data class HouseholdMemberDto(
@@ -82,7 +84,10 @@ class CloudAccountRepository {
         email: String,
         password: String
     ) {
-        supabase.auth.signUpWith(Email) {
+        supabase.auth.signUpWith(
+            provider = Email,
+            redirectUrl = AUTH_REDIRECT_URL
+        ) {
             this.email = email.trim()
             this.password = password
         }
@@ -271,17 +276,14 @@ fun CloudGate() {
 
                             } else {
 
-                                message =
-                                    "Kontoen er oprettet. " +
-                                            "Tjek din e-mail og bekræft kontoen. " +
-                                            "Gå derefter tilbage til appen og log ind."
+                                message = "Tjek din mail for at bekræfte kontoen."
                             }
 
                         } catch (e: Exception) {
 
                             message =
                                 e.message
-                                    ?: "Kunne ikke oprette bruger."
+                                    ?: "Kunne ikke oprette konto."
                         }
                     }
                 }
@@ -312,9 +314,7 @@ fun CloudGate() {
 
                             } else {
 
-                                message =
-                                    "Hjemmet blev oprettet, " +
-                                            "men kunne ikke indlæses."
+                                message = "Kunne ikke indlæse hjemmet."
                             }
 
                         } catch (e: Exception) {
@@ -352,7 +352,7 @@ fun CloudGate() {
 
                             message =
                                 e.message
-                                    ?: "Kunne ikke tilmelde hjem."
+                                    ?: "Kunne ikke tilmelde dig hjemmet."
                         }
                     }
                 },
@@ -372,32 +372,16 @@ fun CloudGate() {
 
 
         is CloudScreen.Ready -> {
-
-            Column(
-                modifier = Modifier.fillMaxSize()
-            ) {
-
-                HouseholdHeader(
-                    household = current.household,
-
-                    onLogout = {
-
-                        scope.launch {
-
-                            repository.signOut()
-
-                            message = null
-                            screen = CloudScreen.Login
-                        }
+            MealPlannerApp(
+                household = current.household,
+                onLogout = {
+                    scope.launch {
+                        repository.signOut()
+                        message = null
+                        screen = CloudScreen.Login
                     }
-                )
-
-                Box(
-                    modifier = Modifier.weight(1f)
-                ) {
-                    MealPlannerApp()
                 }
-            }
+            )
         }
     }
 }
@@ -436,7 +420,7 @@ private fun LoginScreen(
         )
 
         Text(
-            text = "Log ind for at dele madplan, lager og opskrifter."
+            text = "Log ind"
         )
 
         Spacer(
@@ -526,7 +510,7 @@ private fun LoginScreen(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp)
         ) {
-            Text("Opret ny bruger")
+            Text("Opret konto")
         }
 
         Spacer(
@@ -534,7 +518,7 @@ private fun LoginScreen(
         )
 
         Text(
-            text = "Adgangskoden skal være mindst 6 tegn.",
+            text = "Mindst 6 tegn",
             style = MaterialTheme.typography.bodySmall
         )
     }
@@ -565,7 +549,7 @@ private fun HouseholdSetupScreen(
     ) {
 
         Text(
-            text = "Velkommen",
+            text = "Hjem",
             style = MaterialTheme.typography.headlineLarge,
             fontWeight = FontWeight.Bold
         )
@@ -574,18 +558,12 @@ private fun HouseholdSetupScreen(
             modifier = Modifier.height(8.dp)
         )
 
-        Text(
-            text =
-                "Opret et nyt hjem, eller tilmeld dig " +
-                        "et hjem der allerede findes."
-        )
-
         Spacer(
-            modifier = Modifier.height(28.dp)
+            modifier = Modifier.height(22.dp)
         )
 
         Text(
-            text = "Opret nyt hjem",
+            text = "Opret hjem",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold
         )
@@ -600,7 +578,7 @@ private fun HouseholdSetupScreen(
                 homeName = it
             },
             label = {
-                Text("Navn på hjem")
+                Text("Navn")
             },
             placeholder = {
                 Text("Fx Hjem")
@@ -628,7 +606,7 @@ private fun HouseholdSetupScreen(
         )
 
         Text(
-            text = "Tilmeld eksisterende hjem",
+            text = "Tilmeld dig et hjem",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.Bold
         )
@@ -644,7 +622,7 @@ private fun HouseholdSetupScreen(
                     it.uppercase().take(8)
             },
             label = {
-                Text("Hjemmekode")
+                Text("Invitationskode")
             },
             placeholder = {
                 Text("Fx A1B2C3D4")
@@ -664,7 +642,7 @@ private fun HouseholdSetupScreen(
             enabled = joinCode.length == 8,
             modifier = Modifier.fillMaxWidth()
         ) {
-            Text("Tilmeld hjem")
+            Text("Tilmeld")
         }
 
         if (message != null) {
@@ -694,61 +672,6 @@ private fun HouseholdSetupScreen(
             )
         ) {
             Text("Log ud")
-        }
-    }
-}
-
-
-@Composable
-private fun HouseholdHeader(
-    household: HouseholdDto,
-    onLogout: () -> Unit
-) {
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(
-                start = 12.dp,
-                end = 12.dp,
-                top = 8.dp
-            ),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(
-                    horizontal = 14.dp,
-                    vertical = 8.dp
-                ),
-            verticalAlignment =
-                Alignment.CenterVertically
-        ) {
-
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-
-                Text(
-                    text = household.name,
-                    fontWeight = FontWeight.Bold
-                )
-
-                Text(
-                    text =
-                        "Hjemmekode: ${household.joinCode}",
-                    style =
-                        MaterialTheme.typography.bodySmall
-                )
-            }
-
-            TextButton(
-                onClick = onLogout
-            ) {
-                Text("Log ud")
-            }
         }
     }
 }

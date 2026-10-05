@@ -69,15 +69,21 @@ class MealPlannerState(context: Context) {
         save()
     }
 
-    fun addIngredient(name: String, type: QuantityType, imageUri: String? = null) {
+    fun addIngredient(
+        name: String,
+        type: QuantityType,
+        imageUri: String? = null,
+        preferredUnit: MeasurementUnit = MeasurementUnit.defaultFor(type)
+    ) {
         val clean = name.trim()
         if (clean.isBlank()) return
         if (ingredients.any { it.name.equals(clean, ignoreCase = true) }) return
+        if (preferredUnit.quantityType != type) return
 
         ingredients += Ingredient(
             name = clean,
             quantityType = type,
-            preferredUnit = MeasurementUnit.defaultFor(type),
+            preferredUnit = preferredUnit,
             imageUri = imageUri
         )
         save()
@@ -315,7 +321,7 @@ class MealPlannerState(context: Context) {
         "${formatNumber(amount)} ${unit.labelFor(amount)}"
 
     private fun formatNumber(value: Double): String {
-        val formatter = NumberFormat.getNumberInstance(Locale("da", "DK")).apply {
+        val formatter = NumberFormat.getNumberInstance(Locale.forLanguageTag("da-DK")).apply {
             maximumFractionDigits = 2
             minimumFractionDigits = 0
             isGroupingUsed = false
