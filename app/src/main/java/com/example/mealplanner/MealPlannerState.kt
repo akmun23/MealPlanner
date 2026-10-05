@@ -691,14 +691,14 @@ class MealPlannerState(
     ): String {
         val unit = ingredient.preferredUnit
         val value = unit.fromBase(amountBase)
-        return "\${formatNumber(value)} \${unit.labelFor(value)}"
+        return "${formatNumber(value)} ${unit.labelFor(value)}"
     }
 
     fun formatEnteredAmount(
         amount: Double,
         unit: MeasurementUnit
     ): String =
-        "\${formatNumber(amount)} \${unit.labelFor(amount)}"
+        "${formatNumber(amount)} ${unit.labelFor(amount)}"
 
     private fun currentWeekStart(): LocalDate =
         LocalDate.now().with(
