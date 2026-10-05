@@ -308,47 +308,12 @@ class CloudMealRepository(
     suspend fun importLocal(snapshot: LocalStorage.Snapshot) = withContext(Dispatchers.IO) {
         if (!isCloudEmpty()) return@withContext
 
-        if (snapshot.ingredients.isNotEmpty()) {
-            supabase.from("ingredients").insert(
-                snapshot.ingredients.map {
-                    IngredientRow(
-                        id = it.id,
-                        householdId = householdId,
-                        name = it.name,
-                        quantityType = it.quantityType.name,
-                        preferredUnit = it.preferredUnit.name
-                    )
-                }
-            )
+        snapshot.ingredients.forEach { ingredient ->
+            upsertIngredient(ingredient)
         }
 
-        if (snapshot.recipes.isNotEmpty()) {
-            supabase.from("recipes").insert(
-                snapshot.recipes.map {
-                    RecipeRow(
-                        id = it.id,
-                        householdId = householdId,
-                        name = it.name,
-                        proteinTag = it.proteinTag,
-                        categoryTag = it.categoryTag,
-                        notes = it.notes
-                    )
-                }
-            )
-
-            val requirements = snapshot.recipes.flatMap { recipe ->
-                recipe.ingredients.map {
-                    RecipeIngredientRow(
-                        householdId = householdId,
-                        recipeId = recipe.id,
-                        ingredientId = it.ingredientId,
-                        amountBase = it.amountBase
-                    )
-                }
-            }
-            if (requirements.isNotEmpty()) {
-                supabase.from("recipe_ingredients").insert(requirements)
-            }
+        snapshot.recipes.forEach { recipe ->
+            upsertRecipe(recipe)
         }
 
         if (snapshot.pantry.isNotEmpty()) {
@@ -724,11 +689,25 @@ class CloudMealRepository(
         }
 
         if (rows.isNotEmpty()) {
-            supabase.from("meal_history").insert(
-                rows,
-                upsert = true,
-                onConflict = "household_id,eaten_on"
-            )
+            val existing = supabase.from("meal_history").select {
+                filter {
+                    eq("household_id", householdId)
+                    gte("eaten_on", cutoff.toString())
+                }
+            }.decodeList<MealHistoryRow>()
+                .associateBy { it.eatenOn }
+
+            val changedRows = rows.filter { candidate ->
+                existing[candidate.eatenOn]?.recipeId != candidate.recipeId
+            }
+
+            if (changedRows.isNotEmpty()) {
+                supabase.from("meal_history").insert(
+                    changedRows,
+                    upsert = true,
+                    onConflict = "household_id,eaten_on"
+                )
+            }
         }
     }
 
