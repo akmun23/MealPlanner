@@ -8,6 +8,7 @@ import android.widget.Toast
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -181,6 +182,22 @@ fun MealPlannerApp(
     var tab by remember { mutableStateOf(AppTab.WEEK) }
     var page by remember { mutableStateOf<AppPage?>(null) }
 
+    fun navigateBack() {
+        page = when (val current = page) {
+            AppPage.Settings -> null
+            AppPage.IngredientLibrary -> null
+            is AppPage.IngredientEditor -> AppPage.IngredientLibrary
+            is AppPage.RecipeDetail -> null
+            is AppPage.RecipeEditor ->
+                current.recipeId?.let { AppPage.RecipeDetail(it) }
+            null -> null
+        }
+    }
+
+    BackHandler(enabled = page != null) {
+        navigateBack()
+    }
+
     state.lastError?.let { error ->
         AlertDialog(
             onDismissRequest = { state.clearError() },
@@ -198,13 +215,13 @@ fun MealPlannerApp(
         AppPage.Settings -> SettingsScreen(
             household = household,
             state = state,
-            onBack = { page = null },
+            onBack = { navigateBack() },
             onLogout = onLogout
         )
 
         AppPage.IngredientLibrary -> IngredientLibraryScreen(
             state = state,
-            onBack = { page = null },
+            onBack = { navigateBack() },
             onAdd = { page = AppPage.IngredientEditor(null) },
             onOpen = { page = AppPage.IngredientEditor(it) }
         )
@@ -212,14 +229,14 @@ fun MealPlannerApp(
         is AppPage.IngredientEditor -> IngredientEditorScreen(
             state = state,
             ingredientId = current.ingredientId,
-            onBack = { page = AppPage.IngredientLibrary },
+            onBack = { navigateBack() },
             onSaved = { page = AppPage.IngredientLibrary }
         )
 
         is AppPage.RecipeDetail -> RecipeDetailScreen(
             state = state,
             recipeId = current.recipeId,
-            onBack = { page = null },
+            onBack = { navigateBack() },
             onEdit = { page = AppPage.RecipeEditor(current.recipeId) }
         )
 
@@ -227,9 +244,7 @@ fun MealPlannerApp(
             state = state,
             recipeId = current.recipeId,
             initialMealType = current.initialMealType,
-            onBack = {
-                page = current.recipeId?.let { AppPage.RecipeDetail(it) }
-            },
+            onBack = { navigateBack() },
             onSaved = { savedId ->
                 page = savedId?.let { AppPage.RecipeDetail(it) }
             }
