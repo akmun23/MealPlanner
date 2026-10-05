@@ -130,7 +130,7 @@ class CloudAccountRepository {
         householdId: String,
         name: String
     ): HouseholdDto? {
-        val clean = name.trim()
+        val clean = name.normalizedDisplayName()
         require(clean.isNotBlank()) { "Navnet må ikke være tomt." }
 
         supabase.from("households").update(
@@ -153,7 +153,7 @@ class CloudAccountRepository {
         supabase.postgrest.rpc(
             function = "create_household",
             parameters = buildJsonObject {
-                put("p_name", name.trim())
+                put("p_name", name.normalizedDisplayName())
             }
         )
 
