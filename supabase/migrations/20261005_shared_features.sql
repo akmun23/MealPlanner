@@ -229,3 +229,27 @@ create unique index if not exists uq_ingredients_household_normalized_name
 
 create unique index if not exists uq_recipes_household_normalized_name
     on public.recipes (household_id, lower(btrim(name)));
+
+
+-- Shopping aisle/category metadata for grouped shopping lists.
+alter table public.ingredients
+    add column if not exists shopping_category text not null default 'OTHER';
+
+alter table public.ingredients
+    drop constraint if exists ingredients_shopping_category_check;
+
+alter table public.ingredients
+    add constraint ingredients_shopping_category_check
+    check (
+        shopping_category in (
+            'PRODUCE',
+            'MEAT_FISH',
+            'DAIRY_CHILLED',
+            'BREAD_BAKERY',
+            'PANTRY',
+            'SPICES',
+            'FROZEN',
+            'DRINKS',
+            'OTHER'
+        )
+    );
