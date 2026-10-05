@@ -2004,11 +2004,6 @@ private fun ImagePickerBox(
                     label,
                     fontWeight = FontWeight.SemiBold
                 )
-                Text(
-                    "Tryk for at vælge",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
             }
         }
     }
