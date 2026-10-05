@@ -221,6 +221,7 @@ class MealPlannerState(
             dayModes[day] = DayMode.AUTO
         }
         shoppingChecked.clear()
+        shoppingIncluded.clear()
         persistWeek(clearChecks = true)
     }
 
@@ -587,6 +588,7 @@ class MealPlannerState(
 
         if (weekChanged) {
             shoppingChecked.clear()
+        shoppingIncluded.clear()
         }
 
         runMutation {
@@ -683,6 +685,7 @@ class MealPlannerState(
         }
 
         shoppingChecked.clear()
+        shoppingIncluded.clear()
 
         runMutation {
             repository.deleteRecipe(
@@ -710,6 +713,7 @@ class MealPlannerState(
         weeklySandwichRecipeId = null
         sandwichDay = null
         shoppingChecked.clear()
+        shoppingIncluded.clear()
 
         val id = weeklyPlanId ?: return
         runMutation {
@@ -737,6 +741,7 @@ class MealPlannerState(
         }
 
         shoppingChecked.clear()
+        shoppingIncluded.clear()
 
         runMutation {
             repository.setHouseholdSandwich(recipeId)
@@ -771,6 +776,7 @@ class MealPlannerState(
         }
 
         shoppingChecked.clear()
+        shoppingIncluded.clear()
         persistWeek(clearChecks = true)
     }
 
@@ -881,6 +887,7 @@ class MealPlannerState(
                 plan.putAll(result.plan)
                 sandwichDay = result.sandwichDay
                 shoppingChecked.clear()
+        shoppingIncluded.clear()
 
                 val id = weeklyPlanId ?: return@launch
                 repository.clearShoppingChecks(id)
@@ -939,6 +946,7 @@ class MealPlannerState(
 
                 plan.putAll(updated)
                 shoppingChecked.clear()
+        shoppingIncluded.clear()
                 val id = weeklyPlanId ?: return@launch
                 repository.clearShoppingChecks(id)
                 repository.saveWeekState(
@@ -964,6 +972,7 @@ class MealPlannerState(
         )
 
         shoppingChecked.clear()
+        shoppingIncluded.clear()
         persistWeek(clearChecks = true)
     }
 
@@ -1073,6 +1082,7 @@ class MealPlannerState(
 
         selectedLunchRecipeIds += recipe.id
         shoppingChecked.clear()
+        shoppingIncluded.clear()
 
         val planId = weeklyPlanId ?: return
         val position = selectedLunchRecipeIds.indexOf(recipe.id)
@@ -1091,6 +1101,7 @@ class MealPlannerState(
         if (!selectedLunchRecipeIds.remove(recipeId)) return
 
         shoppingChecked.clear()
+        shoppingIncluded.clear()
         val planId = weeklyPlanId ?: return
 
         runMutation {
