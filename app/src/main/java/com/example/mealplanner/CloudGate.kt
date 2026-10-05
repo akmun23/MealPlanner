@@ -60,21 +60,6 @@ data class HouseholdDto(
     val joinCode: String
 )
 
-
-@Serializable
-data class CreateHouseholdParams(
-    @SerialName("p_name")
-    val name: String
-)
-
-
-@Serializable
-data class JoinHouseholdParams(
-    @SerialName("p_join_code")
-    val joinCode: String
-)
-
-
 class CloudAccountRepository {
 
     private val supabase = SupabaseProvider.client
