@@ -93,6 +93,12 @@ fun MealType.danishName(): String = when (this) {
     MealType.LUNCH -> "Frokost"
 }
 
+data class RecipeCategoryOption(
+    val id: String,
+    val name: String,
+    val position: Int = 0
+)
+
 enum class RecipeCategory {
     PASTA,
     CURRY,
@@ -154,6 +160,7 @@ data class Recipe(
     val prepMinutes: Int? = null,
     val proteinTag: String = "",
     val proteinIngredientIds: Set<String> = emptySet(),
+    val categoryId: String? = null,
     val categoryTag: String = RecipeCategory.OTHER.name,
     val notes: String = "",
     val imageUri: String? = null,
