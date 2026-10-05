@@ -21,6 +21,7 @@ object WeeklyPlanner {
         recipes: List<Recipe>,
         pantry: Map<String, Double>,
         dayModes: Map<DayOfWeek, DayMode>,
+        maxPrepMinutesByDay: Map<DayOfWeek, Int?> = emptyMap(),
         weeklySandwichRecipeId: String?,
         currentPlan: Map<DayOfWeek, String?>,
         currentSandwichDay: DayOfWeek?,
@@ -54,7 +55,13 @@ object WeeklyPlanner {
             currentSandwichDay != null &&
                 currentSandwichDay in lockedDays &&
                 currentSandwichDay in homeDays -> currentSandwichDay
-            else -> preferredSandwichDay(dayModes)
+            else -> sandwichDayPreference.firstOrNull { day ->
+                day in homeDays &&
+                    fitsPrepLimit(
+                        recipe = sandwichRecipe,
+                        maxPrepMinutes = maxPrepMinutesByDay[day]
+                    )
+            }
         }
 
         val candidates = ArrayList<Pair<Double, Map<DayOfWeek, String?>>>(TRIALS)
@@ -75,12 +82,19 @@ object WeeklyPlanner {
             homeDays
                 .filter { it !in lockedDays }
                 .forEach { day ->
-                    val available = dinnerRecipes.filter {
+                    val eligible = dinnerRecipes.filter { recipe ->
+                        fitsPrepLimit(
+                            recipe = recipe,
+                            maxPrepMinutes = maxPrepMinutesByDay[day]
+                        )
+                    }
+
+                    val available = eligible.filter {
                         it.id != weeklySandwichRecipeId && it.id !in usedIds
                     }.ifEmpty {
-                        dinnerRecipes.filter { it.id != weeklySandwichRecipeId }
+                        eligible.filter { it.id != weeklySandwichRecipeId }
                     }.ifEmpty {
-                        dinnerRecipes
+                        eligible
                     }
 
                     if (available.isEmpty()) return@forEach
@@ -114,6 +128,7 @@ object WeeklyPlanner {
                 sandwichDay = sandwichDay,
                 sandwichRecipeId = weeklySandwichRecipeId,
                 recipesById = recipesById,
+                maxPrepMinutesByDay = maxPrepMinutesByDay,
                 pantry = pantry,
                 history = history,
                 weekStart = weekStart,
@@ -149,6 +164,7 @@ object WeeklyPlanner {
         recipes: List<Recipe>,
         pantry: Map<String, Double>,
         dayModes: Map<DayOfWeek, DayMode>,
+        maxPrepMinutesByDay: Map<DayOfWeek, Int?> = emptyMap(),
         weeklySandwichRecipeId: String?,
         sandwichDay: DayOfWeek?,
         currentPlan: Map<DayOfWeek, String?>,
@@ -170,12 +186,19 @@ object WeeklyPlanner {
             .mapNotNull { currentPlan[it] }
             .toSet()
 
-        val alternatives = dinnerRecipes.filter {
+        val eligible = dinnerRecipes.filter {
+            fitsPrepLimit(
+                recipe = it,
+                maxPrepMinutes = maxPrepMinutesByDay[day]
+            )
+        }
+
+        val alternatives = eligible.filter {
             it.id != weeklySandwichRecipeId &&
                 it.id != oldId &&
                 it.id !in usedElsewhere
         }.ifEmpty {
-            dinnerRecipes.filter {
+            eligible.filter {
                 it.id != weeklySandwichRecipeId && it.id != oldId
             }
         }
@@ -215,6 +238,7 @@ object WeeklyPlanner {
         sandwichDay: DayOfWeek?,
         sandwichRecipeId: String?,
         recipesById: Map<String, Recipe>,
+        maxPrepMinutesByDay: Map<DayOfWeek, Int?>,
         pantry: Map<String, Double>,
         history: List<MealHistoryEntry>,
         weekStart: LocalDate,
@@ -222,7 +246,9 @@ object WeeklyPlanner {
         weights: PlannerWeights,
         random: Random
     ): Map<DayOfWeek, String?> {
-        val swappable = homeDays.filter { it !in lockedDays }
+        val swappable = homeDays.filter {
+            it !in lockedDays && it != sandwichDay
+        }
         if (swappable.size < 2) return plan
 
         var best = plan.toMutableMap()
@@ -242,6 +268,16 @@ object WeeklyPlanner {
             candidate[a] = candidate[b]
             candidate[b] = tmp
 
+            val respectsTimeLimits = listOf(a, b).all { day ->
+                val recipe = candidate[day]
+                    ?.let(recipesById::get)
+                recipe == null || fitsPrepLimit(
+                    recipe = recipe,
+                    maxPrepMinutes = maxPrepMinutesByDay[day]
+                )
+            }
+            if (!respectsTimeLimits) return@repeat
+
             val score = scoreWholeWeek(
                 candidate, sandwichDay, sandwichRecipeId,
                 orderedWeekDays.associateWith { if (it in homeDays) DayMode.AUTO else DayMode.AWAY },
@@ -254,6 +290,16 @@ object WeeklyPlanner {
         }
 
         return best
+    }
+
+    private fun fitsPrepLimit(
+        recipe: Recipe,
+        maxPrepMinutes: Int?
+    ): Boolean {
+        if (maxPrepMinutes == null) return true
+        return recipe.prepMinutes
+            ?.let { it <= maxPrepMinutes }
+            ?: false
     }
 
     private fun incrementalRecipeScore(

@@ -325,6 +325,129 @@ class WeeklyPlannerTest {
     }
 
     @Test
+    fun timeLimitedDayOnlyUsesRecipesWithinLimit() {
+        val quick = Recipe(
+            id = "quick",
+            name = "Quick",
+            prepMinutes = 20,
+            ingredients = emptyList()
+        )
+        val slow = Recipe(
+            id = "slow",
+            name = "Slow",
+            prepMinutes = 90,
+            ingredients = emptyList()
+        )
+        val modes = orderedWeekDays.associateWith {
+            if (it == DayOfWeek.MONDAY) DayMode.AUTO else DayMode.AWAY
+        }
+
+        repeat(20) { seed ->
+            val result = WeeklyPlanner.generate(
+                recipes = listOf(quick, slow),
+                pantry = emptyMap(),
+                dayModes = modes,
+                maxPrepMinutesByDay = mapOf(
+                    DayOfWeek.MONDAY to 20
+                ),
+                weeklySandwichRecipeId = null,
+                currentPlan = orderedWeekDays.associateWith { null },
+                currentSandwichDay = null,
+                random = Random(seed)
+            )
+
+            assertEquals(
+                quick.id,
+                result.plan[DayOfWeek.MONDAY]
+            )
+        }
+    }
+
+    @Test
+    fun unknownPrepTimeIsExcludedFromTimeLimitedDay() {
+        val known = Recipe(
+            id = "known",
+            name = "Known",
+            prepMinutes = 30,
+            ingredients = emptyList()
+        )
+        val unknown = Recipe(
+            id = "unknown",
+            name = "Unknown",
+            prepMinutes = null,
+            ingredients = emptyList()
+        )
+        val modes = orderedWeekDays.associateWith {
+            if (it == DayOfWeek.MONDAY) DayMode.AUTO else DayMode.AWAY
+        }
+
+        val result = WeeklyPlanner.generate(
+            recipes = listOf(known, unknown),
+            pantry = emptyMap(),
+            dayModes = modes,
+            maxPrepMinutesByDay = mapOf(
+                DayOfWeek.MONDAY to 30
+            ),
+            weeklySandwichRecipeId = null,
+            currentPlan = orderedWeekDays.associateWith { null },
+            currentSandwichDay = null,
+            random = Random(4)
+        )
+
+        assertEquals(
+            known.id,
+            result.plan[DayOfWeek.MONDAY]
+        )
+    }
+
+    @Test
+    fun dayRerollRespectsPreparationTimeLimit() {
+        val current = Recipe(
+            id = "current",
+            name = "Current",
+            prepMinutes = 20,
+            ingredients = emptyList()
+        )
+        val quick = Recipe(
+            id = "quick",
+            name = "Quick",
+            prepMinutes = 25,
+            ingredients = emptyList()
+        )
+        val slow = Recipe(
+            id = "slow",
+            name = "Slow",
+            prepMinutes = 120,
+            ingredients = emptyList()
+        )
+
+        val plan = orderedWeekDays.associateWith { null as String? }
+            .toMutableMap()
+            .apply {
+                this[DayOfWeek.MONDAY] = current.id
+            }
+
+        val result = WeeklyPlanner.rerollDay(
+            day = DayOfWeek.MONDAY,
+            recipes = listOf(current, quick, slow),
+            pantry = emptyMap(),
+            dayModes = allHome(),
+            maxPrepMinutesByDay = mapOf(
+                DayOfWeek.MONDAY to 30
+            ),
+            weeklySandwichRecipeId = null,
+            sandwichDay = null,
+            currentPlan = plan,
+            random = Random(5)
+        )
+
+        assertEquals(
+            quick.id,
+            result[DayOfWeek.MONDAY]
+        )
+    }
+
+    @Test
     fun recentlyEatenRecipeIsStronglyDisfavoured() {
         val recent = recipe("recent")
         val fresh = recipe("fresh")

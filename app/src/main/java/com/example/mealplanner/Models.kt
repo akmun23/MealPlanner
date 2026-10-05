@@ -150,6 +150,7 @@ data class Recipe(
     val name: String,
     val mealType: MealType = MealType.DINNER,
     val autoRotationEnabled: Boolean = true,
+    val prepMinutes: Int? = null,
     val proteinTag: String = "",
     val categoryTag: String = RecipeCategory.OTHER.name,
     val notes: String = "",
