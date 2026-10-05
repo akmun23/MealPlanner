@@ -30,7 +30,11 @@ object WeeklyPlanner {
         weights: PlannerWeights = PlannerWeights(),
         random: Random = Random.Default
     ): PlannerResult {
-        if (recipes.isEmpty()) {
+        val dinnerRecipes = recipes.filter {
+            it.mealType == MealType.DINNER
+        }
+
+        if (dinnerRecipes.isEmpty() && weeklySandwichRecipeId == null) {
             return PlannerResult(currentPlan, currentSandwichDay)
         }
 
@@ -41,7 +45,9 @@ object WeeklyPlanner {
             return PlannerResult(currentPlan, null)
         }
 
-        val sandwichRecipe = weeklySandwichRecipeId?.let(recipesById::get)
+        val sandwichRecipe = weeklySandwichRecipeId
+            ?.let(recipesById::get)
+            ?.takeIf { it.mealType == MealType.DINNER }
         val sandwichDay = when {
             sandwichRecipe == null -> null
             currentSandwichDay != null &&
@@ -68,13 +74,15 @@ object WeeklyPlanner {
             homeDays
                 .filter { it !in lockedDays }
                 .forEach { day ->
-                    val available = recipes.filter {
+                    val available = dinnerRecipes.filter {
                         it.id != weeklySandwichRecipeId && it.id !in usedIds
                     }.ifEmpty {
-                        recipes.filter { it.id != weeklySandwichRecipeId }
+                        dinnerRecipes.filter { it.id != weeklySandwichRecipeId }
                     }.ifEmpty {
-                        recipes
+                        dinnerRecipes
                     }
+
+                    if (available.isEmpty()) return@forEach
 
                     val ranked = available
                         .map { recipe ->
@@ -150,6 +158,9 @@ object WeeklyPlanner {
     ): Map<DayOfWeek, String?> {
         if (dayModes[day] == DayMode.AWAY || day == sandwichDay) return currentPlan
 
+        val dinnerRecipes = recipes.filter {
+            it.mealType == MealType.DINNER
+        }
         val recipesById = recipes.associateBy { it.id }
         val oldId = currentPlan[day]
         val usedElsewhere = orderedWeekDays
@@ -157,12 +168,12 @@ object WeeklyPlanner {
             .mapNotNull { currentPlan[it] }
             .toSet()
 
-        val alternatives = recipes.filter {
+        val alternatives = dinnerRecipes.filter {
             it.id != weeklySandwichRecipeId &&
                 it.id != oldId &&
                 it.id !in usedElsewhere
         }.ifEmpty {
-            recipes.filter {
+            dinnerRecipes.filter {
                 it.id != weeklySandwichRecipeId && it.id != oldId
             }
         }
