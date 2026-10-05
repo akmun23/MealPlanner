@@ -70,11 +70,56 @@ data class RecipeIngredient(
     val amountBase: Double
 )
 
+enum class MealType {
+    DINNER,
+    LUNCH
+}
+
+fun MealType.danishName(): String = when (this) {
+    MealType.DINNER -> "Aftensmad"
+    MealType.LUNCH -> "Frokost"
+}
+
+enum class RecipeCategory {
+    PASTA,
+    CURRY,
+    STEW,
+    OVEN,
+    BURGER,
+    TACOS,
+    SANDWICH_WRAP,
+    RICE,
+    SOUP,
+    SALAD_BOWL,
+    PIZZA_PIE,
+    OTHER
+}
+
+fun RecipeCategory.danishName(): String = when (this) {
+    RecipeCategory.PASTA -> "Pasta"
+    RecipeCategory.CURRY -> "Karry"
+    RecipeCategory.STEW -> "Gryderet"
+    RecipeCategory.OVEN -> "Ovnret"
+    RecipeCategory.BURGER -> "Burger"
+    RecipeCategory.TACOS -> "Tacos"
+    RecipeCategory.SANDWICH_WRAP -> "Sandwich/wrap"
+    RecipeCategory.RICE -> "Risret"
+    RecipeCategory.SOUP -> "Suppe"
+    RecipeCategory.SALAD_BOWL -> "Salat/bowl"
+    RecipeCategory.PIZZA_PIE -> "Pizza/tærte"
+    RecipeCategory.OTHER -> "Andet"
+}
+
+fun String.toRecipeCategory(): RecipeCategory =
+    runCatching { RecipeCategory.valueOf(this) }
+        .getOrDefault(RecipeCategory.OTHER)
+
 data class Recipe(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
+    val mealType: MealType = MealType.DINNER,
     val proteinTag: String = "",
-    val categoryTag: String = "",
+    val categoryTag: String = RecipeCategory.OTHER.name,
     val notes: String = "",
     val imageUri: String? = null,
     val imagePath: String? = null,
