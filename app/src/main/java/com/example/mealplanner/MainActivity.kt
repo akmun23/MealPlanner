@@ -807,10 +807,7 @@ fun DayCard(
                         selected = maxPrepMinutes != null,
                         onClick = { showTimePicker = true },
                         label = {
-                            Text(
-                                maxPrepMinutes?.let { "≤ ${it} min" }
-                                    ?: "Tid"
-                            )
+                            Text(prepLimitLabel(maxPrepMinutes))
                         }
                     )
 
@@ -821,10 +818,7 @@ fun DayCard(
                         listOf<Int?>(null, 20, 30, 45, 60).forEach { minutes ->
                             DropdownMenuItem(
                                 text = {
-                                    Text(
-                                        minutes?.let { "Maks. ${it} min" }
-                                            ?: "Ingen tidsgrænse"
-                                    )
+                                    Text(prepLimitOptionLabel(minutes))
                                 },
                                 onClick = {
                                     state.setDayMaxPrepMinutes(day, minutes)
