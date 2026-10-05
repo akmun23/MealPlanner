@@ -321,7 +321,7 @@ class MealPlannerState(context: Context) {
         "${formatNumber(amount)} ${unit.labelFor(amount)}"
 
     private fun formatNumber(value: Double): String {
-        val formatter = NumberFormat.getNumberInstance(Locale("da", "DK")).apply {
+        val formatter = NumberFormat.getNumberInstance(Locale.forLanguageTag("da-DK")).apply {
             maximumFractionDigits = 2
             minimumFractionDigits = 0
             isGroupingUsed = false
