@@ -27,6 +27,7 @@ object WeeklyPlanner {
         currentSandwichDay: DayOfWeek?,
         lockedDays: Set<DayOfWeek> = emptySet(),
         history: List<MealHistoryEntry> = emptyList(),
+        proteinIngredientIds: Set<String> = emptySet(),
         weekStart: LocalDate = LocalDate.now().with(DayOfWeek.MONDAY),
         weights: PlannerWeights = PlannerWeights(),
         random: Random = Random.Default
@@ -108,6 +109,7 @@ object WeeklyPlanner {
                                     recipesById = recipesById,
                                     pantry = pantry,
                                     history = history,
+                                    proteinIngredientIds = proteinIngredientIds,
                                     targetDate = weekStart.plusDays(day.value.toLong() - 1),
                                     weights = weights
                                 ) + random.nextDouble(0.0, weights.jitter)
@@ -131,6 +133,7 @@ object WeeklyPlanner {
                 maxPrepMinutesByDay = maxPrepMinutesByDay,
                 pantry = pantry,
                 history = history,
+                proteinIngredientIds = proteinIngredientIds,
                 weekStart = weekStart,
                 previousPlan = currentPlan,
                 weights = weights,
@@ -145,6 +148,7 @@ object WeeklyPlanner {
                 recipesById = recipesById,
                 pantry = pantry,
                 history = history,
+                proteinIngredientIds = proteinIngredientIds,
                 weekStart = weekStart,
                 previousPlan = currentPlan,
                 weights = weights
@@ -169,6 +173,7 @@ object WeeklyPlanner {
         sandwichDay: DayOfWeek?,
         currentPlan: Map<DayOfWeek, String?>,
         history: List<MealHistoryEntry> = emptyList(),
+        proteinIngredientIds: Set<String> = emptySet(),
         weekStart: LocalDate = LocalDate.now().with(DayOfWeek.MONDAY),
         weights: PlannerWeights = PlannerWeights(),
         random: Random = Random.Default
@@ -218,6 +223,7 @@ object WeeklyPlanner {
                     recipesById = recipesById,
                     pantry = pantry,
                     history = history,
+                    proteinIngredientIds = proteinIngredientIds,
                     weekStart = weekStart,
                     previousPlan = currentPlan,
                     weights = weights
@@ -241,6 +247,7 @@ object WeeklyPlanner {
         maxPrepMinutesByDay: Map<DayOfWeek, Int?>,
         pantry: Map<String, Double>,
         history: List<MealHistoryEntry>,
+        proteinIngredientIds: Set<String>,
         weekStart: LocalDate,
         previousPlan: Map<DayOfWeek, String?>,
         weights: PlannerWeights,
@@ -255,7 +262,7 @@ object WeeklyPlanner {
         var bestScore = scoreWholeWeek(
             best, sandwichDay, sandwichRecipeId,
             orderedWeekDays.associateWith { if (it in homeDays) DayMode.AUTO else DayMode.AWAY },
-            recipesById, pantry, history, weekStart, previousPlan, weights
+            recipesById, pantry, history, proteinIngredientIds, weekStart, previousPlan, weights
         )
 
         repeat(LOCAL_SEARCH_STEPS) {
@@ -281,7 +288,7 @@ object WeeklyPlanner {
             val score = scoreWholeWeek(
                 candidate, sandwichDay, sandwichRecipeId,
                 orderedWeekDays.associateWith { if (it in homeDays) DayMode.AUTO else DayMode.AWAY },
-                recipesById, pantry, history, weekStart, previousPlan, weights
+                recipesById, pantry, history, proteinIngredientIds, weekStart, previousPlan, weights
             )
             if (score > bestScore) {
                 best = candidate
@@ -308,6 +315,7 @@ object WeeklyPlanner {
         recipesById: Map<String, Recipe>,
         pantry: Map<String, Double>,
         history: List<MealHistoryEntry>,
+        proteinIngredientIds: Set<String>,
         targetDate: LocalDate,
         weights: PlannerWeights
     ): Double {
@@ -330,16 +338,22 @@ object WeeklyPlanner {
             if (it.ingredientId in alreadyNeeded) score += weights.ingredientReuse
         }
 
-        if (recipe.proteinTag.isNotBlank()) {
-            val sameProtein = chosenRecipes.count {
-                it.proteinTag.equals(recipe.proteinTag, ignoreCase = true)
+        val recipeProteins = proteinIds(
+            recipe = recipe,
+            proteinIngredientIds = proteinIngredientIds
+        )
+        if (recipeProteins.isNotEmpty()) {
+            val sameProtein = chosenRecipes.count { chosen ->
+                proteinIds(chosen, proteinIngredientIds)
+                    .any { it in recipeProteins }
             }
             score -= sameProtein * weights.repeatedProtein
         }
 
-        if (recipe.categoryTag.isNotBlank()) {
+        val recipeCategory = categoryKey(recipe)
+        if (recipeCategory.isNotBlank()) {
             val sameCategory = chosenRecipes.count {
-                it.categoryTag.equals(recipe.categoryTag, ignoreCase = true)
+                categoryKey(it) == recipeCategory
             }
             score -= sameCategory * weights.repeatedCategory
         }
@@ -356,6 +370,7 @@ object WeeklyPlanner {
         recipesById: Map<String, Recipe>,
         pantry: Map<String, Double>,
         history: List<MealHistoryEntry>,
+        proteinIngredientIds: Set<String>,
         weekStart: LocalDate,
         previousPlan: Map<DayOfWeek, String?>,
         weights: PlannerWeights
@@ -409,16 +424,19 @@ object WeeklyPlanner {
                 if (
                     isAdjacentCalendarDay &&
                     previous != null &&
-                    recipe.proteinTag.isNotBlank() &&
-                    previous.proteinTag.equals(recipe.proteinTag, ignoreCase = true)
+                    proteinIds(recipe, proteinIngredientIds)
+                        .intersect(
+                            proteinIds(previous, proteinIngredientIds)
+                        )
+                        .isNotEmpty()
                 ) {
                     score -= weights.adjacentProtein
                 }
                 if (
                     isAdjacentCalendarDay &&
                     previous != null &&
-                    recipe.categoryTag.isNotBlank() &&
-                    previous.categoryTag.equals(recipe.categoryTag, ignoreCase = true)
+                    categoryKey(recipe).isNotBlank() &&
+                    categoryKey(recipe) == categoryKey(previous)
                 ) {
                     score -= weights.adjacentCategory
                 }
@@ -426,17 +444,20 @@ object WeeklyPlanner {
         }
 
         selected
-            .filter { it.proteinTag.isNotBlank() }
-            .groupingBy { it.proteinTag.lowercase() }
+            .flatMap { proteinIds(it, proteinIngredientIds) }
+            .groupingBy { it }
             .eachCount()
             .values
             .forEach { count ->
-                if (count > 1) score -= (count - 1) * weights.repeatedProtein
+                if (count > 1) {
+                    score -= (count - 1) * weights.repeatedProtein
+                }
             }
 
         selected
-            .filter { it.categoryTag.isNotBlank() }
-            .groupingBy { it.categoryTag.lowercase() }
+            .map(::categoryKey)
+            .filter { it.isNotBlank() }
+            .groupingBy { it }
             .eachCount()
             .values
             .forEach { count ->
@@ -458,6 +479,20 @@ object WeeklyPlanner {
 
         return score
     }
+
+    private fun proteinIds(
+        recipe: Recipe,
+        proteinIngredientIds: Set<String>
+    ): Set<String> =
+        recipe.ingredients
+            .asSequence()
+            .map { it.ingredientId }
+            .filter { it in proteinIngredientIds }
+            .toSet()
+
+    private fun categoryKey(recipe: Recipe): String =
+        recipe.categoryId
+            ?: recipe.categoryTag.trim().lowercase()
 
     private fun recencyPenalty(
         recipeId: String,
