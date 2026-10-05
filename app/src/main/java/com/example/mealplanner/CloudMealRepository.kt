@@ -58,6 +58,7 @@ private data class RecipeRow(
     @SerialName("household_id") val householdId: String,
     val name: String,
     @SerialName("meal_type") val mealType: String = "DINNER",
+    @SerialName("auto_rotation_enabled") val autoRotationEnabled: Boolean = true,
     @SerialName("protein_tag") val proteinTag: String = "",
     @SerialName("category_tag") val categoryTag: String = "OTHER",
     val notes: String = "",
@@ -291,6 +292,7 @@ class CloudMealRepository(
                     mealType = runCatching {
                         MealType.valueOf(row.mealType)
                     }.getOrDefault(MealType.DINNER),
+                    autoRotationEnabled = row.autoRotationEnabled,
                     proteinTag = row.proteinTag,
                     categoryTag = row.categoryTag,
                     notes = row.notes,
@@ -535,6 +537,7 @@ class CloudMealRepository(
                 householdId = householdId,
                 name = recipe.name,
                 mealType = recipe.mealType.name,
+                autoRotationEnabled = recipe.autoRotationEnabled,
                 proteinTag = recipe.proteinTag,
                 categoryTag = recipe.categoryTag,
                 notes = recipe.notes,
