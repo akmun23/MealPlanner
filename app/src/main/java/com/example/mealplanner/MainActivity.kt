@@ -2261,16 +2261,23 @@ fun ShoppingScreen(state: MealPlannerState) {
     val shoppingItems by remember {
         derivedStateOf { state.shoppingItems() }
     }
-    val checkedCount = shoppingItems.count {
+    val included = shoppingItems.filter {
+        state.isShoppingIncluded(it.ingredient.id)
+    }
+    val checkedCount = included.count {
         state.shoppingChecked[it.ingredient.id] == true
     }
 
-    val missing = shoppingItems.filter {
+    val missing = included.filter {
         state.shoppingChecked[it.ingredient.id] != true
     }
 
-    val bought = shoppingItems.filter {
+    val bought = included.filter {
         state.shoppingChecked[it.ingredient.id] == true
+    }
+
+    val excluded = shoppingItems.filter {
+        !state.isShoppingIncluded(it.ingredient.id)
     }
 
     LazyColumn(
@@ -2297,14 +2304,18 @@ fun ShoppingScreen(state: MealPlannerState) {
                 ) {
                     Column(Modifier.padding(14.dp)) {
                         Text(
-                            "$checkedCount af ${shoppingItems.size}",
+                            "$checkedCount af ${included.size} købt",
                             fontWeight = FontWeight.Bold
                         )
                         Spacer(Modifier.height(6.dp))
                         LinearProgressIndicator(
                             progress = {
-                                checkedCount.toFloat() /
-                                    shoppingItems.size.toFloat()
+                                if (included.isEmpty()) {
+                                    0f
+                                } else {
+                                    checkedCount.toFloat() /
+                                        included.size.toFloat()
+                                }
                             },
                             modifier = Modifier.fillMaxWidth()
                         )
@@ -2344,6 +2355,7 @@ fun ShoppingScreen(state: MealPlannerState) {
                             ShoppingItemCard(
                                 item = item,
                                 state = state,
+                                included = true,
                                 checked = false
                             )
                         }
@@ -2371,6 +2383,7 @@ fun ShoppingScreen(state: MealPlannerState) {
                         ShoppingItemCard(
                             item = item,
                             state = state,
+                            included = true,
                             checked = false
                         )
                     }
@@ -2391,10 +2404,34 @@ fun ShoppingScreen(state: MealPlannerState) {
                     ShoppingItemCard(
                         item = item,
                         state = state,
+                        included = true,
                         checked = true,
                         onAddToPantry = {
                             addToPantryItem = item
                         }
+                    )
+                }
+            }
+
+            if (excluded.isNotEmpty()) {
+                item {
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        "Købes ikke",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                items(
+                    items = excluded,
+                    key = { "excluded-${it.ingredient.id}" }
+                ) { item ->
+                    ShoppingItemCard(
+                        item = item,
+                        state = state,
+                        included = false,
+                        checked = false
                     )
                 }
             }
@@ -2408,6 +2445,7 @@ fun ShoppingScreen(state: MealPlannerState) {
 private fun ShoppingItemCard(
     item: ShoppingItem,
     state: MealPlannerState,
+    included: Boolean,
     checked: Boolean,
     onAddToPantry: (() -> Unit)? = null
 ) {
@@ -2428,6 +2466,7 @@ private fun ShoppingItemCard(
         ) {
             Checkbox(
                 checked = checked,
+                enabled = included,
                 onCheckedChange = {
                     state.setShoppingChecked(
                         item.ingredient.id,
@@ -2467,6 +2506,17 @@ private fun ShoppingItemCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+
+                FilterChip(
+                    selected = included,
+                    onClick = {
+                        state.setShoppingIncluded(
+                            ingredientId = item.ingredient.id,
+                            included = !included
+                        )
+                    },
+                    label = { Text("Køb") }
+                )
 
                 if (checked && onAddToPantry != null) {
                     TextButton(
