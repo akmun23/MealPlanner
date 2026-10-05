@@ -230,6 +230,7 @@ class MealPlannerState(
         name: String,
         type: QuantityType,
         shoppingCategoryId: String?,
+        isProtein: Boolean,
         imageUri: String? = null,
         preferredUnit: MeasurementUnit = MeasurementUnit.defaultFor(type)
     ): Boolean {
@@ -246,6 +247,7 @@ class MealPlannerState(
             quantityType = type,
             preferredUnit = preferredUnit,
             shoppingCategoryId = shoppingCategoryId,
+            isProtein = isProtein,
             imageUri = imageUri
         )
 
@@ -264,6 +266,7 @@ class MealPlannerState(
         name: String,
         type: QuantityType,
         shoppingCategoryId: String?,
+        isProtein: Boolean,
         preferredUnit: MeasurementUnit,
         imageUri: String? = null
     ): Boolean {
@@ -284,9 +287,11 @@ class MealPlannerState(
             quantityType = type,
             preferredUnit = preferredUnit,
             shoppingCategoryId = shoppingCategoryId,
+            isProtein = isProtein,
             imageUri = imageUri
         )
         ingredients[index] = updated
+        refreshRecipeProteinIngredients()
 
         runMutation {
             val saved = repository.upsertIngredient(updated)
@@ -402,7 +407,6 @@ class MealPlannerState(
         mealType: MealType,
         autoRotationEnabled: Boolean,
         prepMinutes: Int?,
-        protein: String,
         category: RecipeCategory,
         notes: String = "",
         imageUri: String? = null,
@@ -419,7 +423,6 @@ class MealPlannerState(
             mealType = mealType,
             autoRotationEnabled = autoRotationEnabled,
             prepMinutes = prepMinutes,
-            protein = protein,
             category = category,
             notes = notes,
             imageUri = imageUri,
@@ -443,7 +446,6 @@ class MealPlannerState(
         mealType: MealType,
         autoRotationEnabled: Boolean,
         prepMinutes: Int?,
-        protein: String,
         category: RecipeCategory,
         notes: String = "",
         imageUri: String? = null,
@@ -464,7 +466,6 @@ class MealPlannerState(
             mealType = mealType,
             autoRotationEnabled = autoRotationEnabled,
             prepMinutes = prepMinutes,
-            protein = protein,
             category = category,
             notes = notes,
             imageUri = imageUri,
@@ -535,7 +536,6 @@ class MealPlannerState(
         mealType: MealType,
         autoRotationEnabled: Boolean,
         prepMinutes: Int?,
-        protein: String,
         category: RecipeCategory,
         notes: String,
         imageUri: String?,
@@ -569,13 +569,43 @@ class MealPlannerState(
             mealType = mealType,
             autoRotationEnabled = autoRotationEnabled,
             prepMinutes = cleanPrepMinutes,
-            proteinTag = protein.trim(),
+            proteinTag = "",
+            proteinIngredientIds = converted
+                .map { it.ingredientId }
+                .filter { ingredientId ->
+                    ingredients.find { it.id == ingredientId }?.isProtein == true
+                }
+                .toSet(),
             categoryTag = category.name,
             notes = notes.trim(),
             imageUri = imageUri,
             imagePath = imagePath,
             ingredients = converted
         )
+    }
+
+    fun recipeProteinNames(recipe: Recipe): List<String> =
+        recipe.proteinIngredientIds
+            .mapNotNull { ingredientId ->
+                ingredients.find { it.id == ingredientId }?.name
+            }
+            .sortedBy { it.lowercase() }
+
+    private fun refreshRecipeProteinIngredients() {
+        val proteinIds = ingredients
+            .filter { it.isProtein }
+            .map { it.id }
+            .toSet()
+
+        recipes.indices.forEach { index ->
+            val recipe = recipes[index]
+            recipes[index] = recipe.copy(
+                proteinIngredientIds = recipe.ingredients
+                    .map { it.ingredientId }
+                    .filter { it in proteinIds }
+                    .toSet()
+            )
+        }
     }
 
     fun deleteRecipe(recipeId: String) {
