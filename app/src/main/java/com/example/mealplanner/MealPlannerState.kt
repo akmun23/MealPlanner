@@ -339,10 +339,57 @@ class MealPlannerState(
 
         recipes[index] = updated
 
+        var weekChanged = false
+        var removedFromLunch = false
+
+        if (updated.mealType == MealType.LUNCH) {
+            orderedWeekDays.forEach { day ->
+                if (plan[day] == id) {
+                    plan[day] = null
+                    lockedDays.remove(day)
+                    weekChanged = true
+                }
+            }
+
+            if (weeklySandwichRecipeId == id) {
+                weeklySandwichRecipeId = null
+                sandwichDay = null
+                weekChanged = true
+            }
+        } else if (selectedLunchRecipeIds.remove(id)) {
+            removedFromLunch = true
+            weekChanged = true
+        }
+
+        if (weekChanged) {
+            shoppingChecked.clear()
+        }
+
         runMutation {
             val saved = repository.upsertRecipe(updated)
             val current = recipes.indexOfFirst { it.id == saved.id }
             if (current >= 0) recipes[current] = saved
+
+            val currentPlanId = weeklyPlanId
+            if (removedFromLunch && currentPlanId != null) {
+                repository.removeLunchRecipe(
+                    weeklyPlanId = currentPlanId,
+                    recipeId = id
+                )
+            }
+
+            if (weekChanged && currentPlanId != null) {
+                repository.setHouseholdSandwich(weeklySandwichRecipeId)
+                repository.clearShoppingChecks(currentPlanId)
+                repository.saveWeekState(
+                    weeklyPlanId = currentPlanId,
+                    plan = plan.toMap(),
+                    dayModes = dayModes.toMap(),
+                    lockedDays = lockedDays.toSet(),
+                    sandwichRecipeId = weeklySandwichRecipeId,
+                    sandwichDay = sandwichDay
+                )
+            }
         }
     }
 
