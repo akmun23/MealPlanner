@@ -306,6 +306,9 @@ fun MealPlannerApp(
                     when (tab) {
                         AppTab.WEEK -> WeekScreen(
                             state = state,
+                            onOpenRecipe = {
+                                page = AppPage.RecipeDetail(it)
+                            },
                             onNewLunchRecipe = {
                                 page = AppPage.RecipeEditor(
                                     recipeId = null,
@@ -378,6 +381,7 @@ private fun ScreenColumn(
 @Composable
 fun WeekScreen(
     state: MealPlannerState,
+    onOpenRecipe: (String) -> Unit,
     onNewLunchRecipe: () -> Unit
 ) {
     val sandwichDay = state.sandwichDay()
@@ -579,7 +583,11 @@ fun WeekScreen(
         Spacer(Modifier.height(14.dp))
 
         orderedWeekDays.forEach { day ->
-            DayCard(day, state)
+            DayCard(
+                day = day,
+                state = state,
+                onOpenRecipe = onOpenRecipe
+            )
             Spacer(Modifier.height(10.dp))
         }
 
@@ -663,7 +671,8 @@ private fun NoticeCard(text: String) {
 @Composable
 fun DayCard(
     day: DayOfWeek,
-    state: MealPlannerState
+    state: MealPlannerState,
+    onOpenRecipe: (String) -> Unit
 ) {
     val away = state.dayModes[day] == DayMode.AWAY
     val recipe = state.recipeFor(day)
@@ -722,6 +731,13 @@ fun DayCard(
                             away -> "Ikke hjemme"
                             recipe != null -> recipe.name
                             else -> "Ingen ret"
+                        },
+                        modifier = if (!away && recipe != null) {
+                            Modifier.clickable {
+                                onOpenRecipe(recipe.id)
+                            }
+                        } else {
+                            Modifier
                         },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -1153,10 +1169,40 @@ private fun RecipeDetailScreen(
     onEdit: () -> Unit
 ) {
     val recipe = state.recipes.find { it.id == recipeId }
+    var showConsumeConfirm by remember(recipeId) {
+        mutableStateOf(false)
+    }
 
     if (recipe == null) {
         onBack()
         return
+    }
+
+    if (showConsumeConfirm) {
+        AlertDialog(
+            onDismissRequest = { showConsumeConfirm = false },
+            title = { Text("Brug ingredienser") },
+            text = {
+                Text("Træk opskriftens mængder fra lageret?")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        state.consumeRecipeIngredients(recipe.id)
+                        showConsumeConfirm = false
+                    }
+                ) {
+                    Text("Brug")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showConsumeConfirm = false }
+                ) {
+                    Text("Annuller")
+                }
+            }
+        )
     }
 
     SubpageScaffold(
@@ -1262,6 +1308,16 @@ private fun RecipeDetailScreen(
                             }
                         }
                     }
+                }
+            }
+
+            item {
+                OutlinedButton(
+                    onClick = { showConsumeConfirm = true },
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("Brug fra lager")
                 }
             }
 
@@ -2190,6 +2246,18 @@ private fun PantryAmountDialog(
 
 @Composable
 fun ShoppingScreen(state: MealPlannerState) {
+    var addToPantryItem by remember {
+        mutableStateOf<ShoppingItem?>(null)
+    }
+
+    addToPantryItem?.let { item ->
+        AddPurchasedToPantryDialog(
+            item = item,
+            state = state,
+            onDismiss = { addToPantryItem = null }
+        )
+    }
+
     val shoppingItems by remember {
         derivedStateOf { state.shoppingItems() }
     }
@@ -2323,7 +2391,10 @@ fun ShoppingScreen(state: MealPlannerState) {
                     ShoppingItemCard(
                         item = item,
                         state = state,
-                        checked = true
+                        checked = true,
+                        onAddToPantry = {
+                            addToPantryItem = item
+                        }
                     )
                 }
             }
@@ -2337,7 +2408,8 @@ fun ShoppingScreen(state: MealPlannerState) {
 private fun ShoppingItemCard(
     item: ShoppingItem,
     state: MealPlannerState,
-    checked: Boolean
+    checked: Boolean,
+    onAddToPantry: (() -> Unit)? = null
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -2395,9 +2467,110 @@ private fun ShoppingItemCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
+
+                if (checked && onAddToPantry != null) {
+                    TextButton(
+                        onClick = onAddToPantry,
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text("Til lager")
+                    }
+                }
             }
         }
     }
+}
+
+@Composable
+private fun AddPurchasedToPantryDialog(
+    item: ShoppingItem,
+    state: MealPlannerState,
+    onDismiss: () -> Unit
+) {
+    val ingredient = item.ingredient
+    var unit by remember(ingredient.id) {
+        mutableStateOf(ingredient.preferredUnit)
+    }
+
+    val suggestedBase =
+        (item.requiredBase - item.pantryBase)
+            .takeIf { it > 0.0 }
+            ?: item.requiredBase
+
+    var amountText by remember(ingredient.id, item.pantryBase) {
+        mutableStateOf(
+            formatDisplayNumber(
+                unit.fromBase(suggestedBase)
+            )
+        )
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Til lager") },
+        text = {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Text(
+                    ingredient.name,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                OutlinedTextField(
+                    value = amountText,
+                    onValueChange = { value ->
+                        amountText = value.filter {
+                            it.isDigit() || it == ',' || it == '.'
+                        }
+                    },
+                    label = { Text("Købt mængde") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                SimpleSelector(
+                    label = unit.selectorLabel(),
+                    options = MeasurementUnit.compatibleWith(
+                        ingredient.quantityType
+                    ),
+                    optionText = { it.selectorLabel() },
+                    onSelected = { selected ->
+                        val current = parseDanishDecimal(amountText)
+                        val base = current?.let(unit::toBase)
+                        unit = selected
+                        if (base != null) {
+                            amountText = formatDisplayNumber(
+                                selected.fromBase(base)
+                            )
+                        }
+                    }
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val amount = parseDanishDecimal(amountText)
+                    if (amount != null && amount > 0.0) {
+                        state.addPantryAmount(
+                            ingredientId = ingredient.id,
+                            amount = amount,
+                            unit = unit
+                        )
+                        onDismiss()
+                    }
+                }
+            ) {
+                Text("Tilføj")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Annuller")
+            }
+        }
+    )
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
