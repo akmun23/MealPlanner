@@ -448,6 +448,81 @@ class WeeklyPlannerTest {
     }
 
     @Test
+    fun proteinVarietyUsesTaggedIngredientIds() {
+        val chickenA = Recipe(
+            id = "chicken-a",
+            name = "Chicken A",
+            categoryTag = "A",
+            ingredients = listOf(
+                RecipeIngredient("chicken", 100.0)
+            )
+        )
+        val chickenB = Recipe(
+            id = "chicken-b",
+            name = "Chicken B",
+            categoryTag = "B",
+            ingredients = listOf(
+                RecipeIngredient("chicken", 100.0)
+            )
+        )
+        val beef = Recipe(
+            id = "beef",
+            name = "Beef",
+            categoryTag = "C",
+            ingredients = listOf(
+                RecipeIngredient("beef", 100.0)
+            )
+        )
+        val modes = orderedWeekDays.associateWith { day ->
+            if (
+                day == DayOfWeek.MONDAY ||
+                day == DayOfWeek.TUESDAY
+            ) {
+                DayMode.AUTO
+            } else {
+                DayMode.AWAY
+            }
+        }
+        val weights = PlannerWeights(
+            pantryCoverage = 0.0,
+            ingredientReuse = 0.0,
+            duplicateRecipe = 1000.0,
+            repeatedProtein = 1000.0,
+            adjacentProtein = 1000.0,
+            repeatedCategory = 0.0,
+            adjacentCategory = 0.0,
+            recency7Days = 0.0,
+            recency14Days = 0.0,
+            recency30Days = 0.0,
+            keepSameDay = 0.0,
+            jitter = 0.0
+        )
+
+        val result = WeeklyPlanner.generate(
+            recipes = listOf(chickenA, chickenB, beef),
+            pantry = emptyMap(),
+            dayModes = modes,
+            weeklySandwichRecipeId = null,
+            currentPlan = orderedWeekDays.associateWith { null },
+            currentSandwichDay = null,
+            proteinIngredientIds = setOf("chicken", "beef"),
+            weights = weights,
+            random = Random(10)
+        )
+
+        val selected = listOfNotNull(
+            result.plan[DayOfWeek.MONDAY],
+            result.plan[DayOfWeek.TUESDAY]
+        ).toSet()
+
+        assertTrue(
+            "planner should avoid two chicken recipes when beef is available",
+            !(selected.contains(chickenA.id) &&
+                selected.contains(chickenB.id))
+        )
+    }
+
+    @Test
     fun recentlyEatenRecipeIsStronglyDisfavoured() {
         val recent = recipe("recent")
         val fresh = recipe("fresh")
