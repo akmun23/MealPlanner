@@ -39,7 +39,7 @@ class WeeklyPlannerTest {
         val modes = allHome().toMutableMap().apply {
             this[DayOfWeek.TUESDAY] = DayMode.AWAY
         }
-        val current = orderedWeekDays.associateWith<String?, DayOfWeek> { null }
+        val current = orderedWeekDays.associateWith { null as String? }
             .toMutableMap()
             .apply {
                 this[DayOfWeek.TUESDAY] = tuesday.id
@@ -99,7 +99,7 @@ class WeeklyPlannerTest {
         val a = recipe("a")
         val b = recipe("b")
         val c = recipe("c")
-        val current = orderedWeekDays.associateWith<String?, DayOfWeek> { null }
+        val current = orderedWeekDays.associateWith { null as String? }
             .toMutableMap()
             .apply {
                 this[DayOfWeek.MONDAY] = a.id
