@@ -1,11 +1,13 @@
 name: Android build
 
 on:
+  push:
+    branches: [ master ]
   pull_request:
     branches: [ master ]
 
 concurrency:
-  group: android-build-${{ github.event.pull_request.number }}
+  group: android-build-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
