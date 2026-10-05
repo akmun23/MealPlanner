@@ -58,11 +58,17 @@ private data class RecipeRow(
     @SerialName("household_id") val householdId: String,
     val name: String,
     @SerialName("meal_type") val mealType: String = "DINNER",
-    @SerialName("auto_rotation_enabled") val autoRotationEnabled: Boolean = true,
     @SerialName("protein_tag") val proteinTag: String = "",
     @SerialName("category_tag") val categoryTag: String = "OTHER",
     val notes: String = "",
     @SerialName("image_path") val imagePath: String? = null
+)
+
+@Serializable
+private data class RecipeRotationRow(
+    @SerialName("household_id") val householdId: String,
+    @SerialName("recipe_id") val recipeId: String,
+    @SerialName("auto_rotation_enabled") val autoRotationEnabled: Boolean = true
 )
 
 @Serializable
@@ -190,6 +196,11 @@ class CloudMealRepository(
                     filter { eq("household_id", householdId) }
                 }.decodeList<RecipeRow>()
             }
+            val rotationDeferred = async {
+                supabase.from("recipe_rotation_settings").select {
+                    filter { eq("household_id", householdId) }
+                }.decodeList<RecipeRotationRow>()
+            }
             val recipeIngredientsDeferred = async {
                 supabase.from("recipe_ingredients").select {
                     filter { eq("household_id", householdId) }
@@ -217,6 +228,7 @@ class CloudMealRepository(
             val ingredientRows = ingredientsDeferred.await()
             val categoryRows = categoriesDeferred.await()
             val recipeRows = recipesDeferred.await()
+            val rotationRows = rotationDeferred.await()
             val recipeIngredientRows = recipeIngredientsDeferred.await()
             val pantryRows = pantryDeferred.await()
             val settings = settingsDeferred.await()
@@ -285,6 +297,7 @@ class CloudMealRepository(
             }
 
             val requirements = recipeIngredientRows.groupBy { it.recipeId }
+            val rotationByRecipe = rotationRows.associateBy { it.recipeId }
             val recipes = recipeRows.map { row ->
                 Recipe(
                     id = row.id,
@@ -292,7 +305,8 @@ class CloudMealRepository(
                     mealType = runCatching {
                         MealType.valueOf(row.mealType)
                     }.getOrDefault(MealType.DINNER),
-                    autoRotationEnabled = row.autoRotationEnabled,
+                    autoRotationEnabled =
+                        rotationByRecipe[row.id]?.autoRotationEnabled ?: true,
                     proteinTag = row.proteinTag,
                     categoryTag = row.categoryTag,
                     notes = row.notes,
@@ -537,7 +551,6 @@ class CloudMealRepository(
                 householdId = householdId,
                 name = recipe.name,
                 mealType = recipe.mealType.name,
-                autoRotationEnabled = recipe.autoRotationEnabled,
                 proteinTag = recipe.proteinTag,
                 categoryTag = recipe.categoryTag,
                 notes = recipe.notes,
@@ -545,6 +558,16 @@ class CloudMealRepository(
             )
         ) {
             onConflict = "id"
+        }
+
+        supabase.from("recipe_rotation_settings").upsert(
+            RecipeRotationRow(
+                householdId = householdId,
+                recipeId = recipe.id,
+                autoRotationEnabled = recipe.autoRotationEnabled
+            )
+        ) {
+            onConflict = "household_id,recipe_id"
         }
 
         supabase.from("recipe_ingredients").delete {
@@ -713,6 +736,7 @@ class CloudMealRepository(
             "ingredients",
             "shopping_categories",
             "recipes",
+            "recipe_rotation_settings",
             "recipe_ingredients",
             "pantry_items",
             "household_settings",
