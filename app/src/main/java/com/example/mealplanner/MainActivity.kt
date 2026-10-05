@@ -342,9 +342,71 @@ private fun ScreenColumn(
 }
 
 @Composable
-fun WeekScreen(state: MealPlannerState) {
+fun WeekScreen(
+    state: MealPlannerState,
+    onNewLunchRecipe: () -> Unit
+) {
     val sandwichDay = state.sandwichDay()
     val homeCount = orderedWeekDays.count { state.dayModes[it] != DayMode.AWAY }
+    val selectedLunch = state.lunchRecipes()
+    val lunchOptions = state.recipes.filter { it.mealType == MealType.LUNCH }
+    var showLunchPicker by remember { mutableStateOf(false) }
+
+    if (showLunchPicker) {
+        AlertDialog(
+            onDismissRequest = { showLunchPicker = false },
+            title = { Text("Frokost") },
+            text = {
+                if (lunchOptions.isEmpty()) {
+                    Text("Ingen frokostopskrifter")
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 420.dp)
+                    ) {
+                        items(
+                            items = lunchOptions,
+                            key = { it.id }
+                        ) { recipe ->
+                            val selected = recipe.id in state.selectedLunchRecipeIds
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        if (selected) {
+                                            state.removeLunchRecipe(recipe.id)
+                                        } else {
+                                            state.addLunchRecipe(recipe.id)
+                                        }
+                                    }
+                                    .padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = selected,
+                                    onCheckedChange = {
+                                        if (selected) {
+                                            state.removeLunchRecipe(recipe.id)
+                                        } else {
+                                            state.addLunchRecipe(recipe.id)
+                                        }
+                                    }
+                                )
+                                Text(
+                                    recipe.name,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showLunchPicker = false }) {
+                    Text("Færdig")
+                }
+            }
+        )
+    }
 
     ScreenColumn {
         Text(
@@ -371,6 +433,53 @@ fun WeekScreen(state: MealPlannerState) {
             NoticeCard("Vælg ugens sandwich under Opskrifter.")
             Spacer(Modifier.height(12.dp))
         }
+
+        SectionCard("Frokost") {
+            selectedLunch.forEach { recipe ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 3.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        recipe.name,
+                        modifier = Modifier.weight(1f),
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    IconButton(
+                        onClick = { state.removeLunchRecipe(recipe.id) },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            Icons.Filled.Clear,
+                            contentDescription = "Fjern frokost"
+                        )
+                    }
+                }
+            }
+
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                OutlinedButton(
+                    onClick = { showLunchPicker = true },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text("Vælg")
+                }
+
+                TextButton(
+                    onClick = onNewLunchRecipe,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Ny opskrift")
+                }
+            }
+        }
+
+        Spacer(Modifier.height(14.dp))
 
         orderedWeekDays.forEach { day ->
             DayCard(day, state)
