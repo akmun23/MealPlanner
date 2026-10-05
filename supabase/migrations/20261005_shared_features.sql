@@ -363,3 +363,9 @@ begin
     end if;
 end
 $$;
+
+
+-- Recipes can remain available for manual planning while being excluded
+-- from automatic week generation and day rerolls.
+alter table public.recipes
+    add column if not exists auto_rotation_enabled boolean not null default true;
