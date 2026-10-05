@@ -39,6 +39,7 @@ class LocalStorage(context: Context) {
                 put(JSONObject().apply {
                     put("id", recipe.id)
                     put("name", recipe.name)
+                    put("mealType", recipe.mealType.name)
                     put("proteinTag", recipe.proteinTag)
                     put("categoryTag", recipe.categoryTag)
                     put("notes", recipe.notes)
@@ -125,8 +126,16 @@ class LocalStorage(context: Context) {
                         Recipe(
                             id = obj.getString("id"),
                             name = obj.getString("name"),
+                            mealType = runCatching {
+                                MealType.valueOf(
+                                    obj.optString("mealType", MealType.DINNER.name)
+                                )
+                            }.getOrDefault(MealType.DINNER),
                             proteinTag = obj.optString("proteinTag", ""),
-                            categoryTag = obj.optString("categoryTag", ""),
+                            categoryTag = obj
+                                .optString("categoryTag", RecipeCategory.OTHER.name)
+                                .toRecipeCategory()
+                                .name,
                             notes = obj.optString("notes", ""),
                             imageUri = obj.nullableString("imageUri"),
                             ingredients = requirements
