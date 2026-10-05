@@ -147,7 +147,6 @@ enum class AppTab(val label: String, val icon: ImageVector) {
 
 private sealed interface AppPage {
     data object Settings : AppPage
-    data object IngredientLibrary : AppPage
     data class IngredientEditor(val ingredientId: String?) : AppPage
     data class RecipeDetail(val recipeId: String) : AppPage
     data class RecipeEditor(
@@ -185,8 +184,7 @@ fun MealPlannerApp(
     fun navigateBack() {
         page = when (val current = page) {
             AppPage.Settings -> null
-            AppPage.IngredientLibrary -> null
-            is AppPage.IngredientEditor -> AppPage.IngredientLibrary
+            is AppPage.IngredientEditor -> null
             is AppPage.RecipeDetail -> null
             is AppPage.RecipeEditor ->
                 current.recipeId?.let { AppPage.RecipeDetail(it) }
@@ -219,18 +217,11 @@ fun MealPlannerApp(
             onLogout = onLogout
         )
 
-        AppPage.IngredientLibrary -> IngredientLibraryScreen(
-            state = state,
-            onBack = { navigateBack() },
-            onAdd = { page = AppPage.IngredientEditor(null) },
-            onOpen = { page = AppPage.IngredientEditor(it) }
-        )
-
         is AppPage.IngredientEditor -> IngredientEditorScreen(
             state = state,
             ingredientId = current.ingredientId,
             onBack = { navigateBack() },
-            onSaved = { page = AppPage.IngredientLibrary }
+            onSaved = { page = null }
         )
 
         is AppPage.RecipeDetail -> RecipeDetailScreen(
@@ -304,10 +295,17 @@ fun MealPlannerApp(
                         AppTab.RECIPES -> RecipesScreen(
                             state = state,
                             onAddRecipe = { page = AppPage.RecipeEditor(null) },
-                            onIngredients = { page = AppPage.IngredientLibrary },
                             onOpenRecipe = { page = AppPage.RecipeDetail(it) }
                         )
-                        AppTab.PANTRY -> PantryScreen(state)
+                        AppTab.PANTRY -> PantryScreen(
+                            state = state,
+                            onAddIngredient = {
+                                page = AppPage.IngredientEditor(null)
+                            },
+                            onEditIngredient = {
+                                page = AppPage.IngredientEditor(it)
+                            }
+                        )
                         AppTab.SHOPPING -> ShoppingScreen(state)
                     }
                     }
@@ -444,9 +442,17 @@ fun WeekScreen(
 
         Spacer(Modifier.height(16.dp))
 
-        if (state.weeklySandwichRecipeId == null) {
-            NoticeCard("Vælg ugens sandwich under Opskrifter.")
-            Spacer(Modifier.height(12.dp))
+        if (state.weeklySandwichRecipeId != null) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                TextButton(
+                    onClick = { state.removeSandwichThisWeek() }
+                ) {
+                    Text("Ingen sandwich denne uge")
+                }
+            }
         }
 
         SectionCard("Frokost") {
@@ -503,8 +509,7 @@ fun WeekScreen(
 
         Button(
             onClick = { state.generateWeek() },
-            enabled = state.recipes.isNotEmpty() &&
-                state.weeklySandwichRecipeId != null &&
+            enabled = state.recipes.any { it.mealType == MealType.DINNER } &&
                 homeCount > 0 &&
                 !state.isPlanning,
             modifier = Modifier
@@ -801,7 +806,6 @@ private fun StatusPill(
 fun RecipesScreen(
     state: MealPlannerState,
     onAddRecipe: () -> Unit,
-    onIngredients: () -> Unit,
     onOpenRecipe: (String) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
@@ -847,27 +851,26 @@ fun RecipesScreen(
         }
 
         item {
-            Row(
+            Button(
+                onClick = onAddRecipe,
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                shape = RoundedCornerShape(14.dp)
             ) {
-                Button(
-                    onClick = onAddRecipe,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Icon(Icons.Filled.Add, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("Ny opskrift")
-                }
+                Icon(Icons.Filled.Add, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text("Ny opskrift")
+            }
+        }
 
-                OutlinedButton(
-                    onClick = onIngredients,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Text("Ingredienser")
-                }
+        item {
+            Button(
+                onClick = onAddIngredient,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Icon(Icons.Filled.Add, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text("Ny ingrediens")
             }
         }
 
@@ -1164,62 +1167,12 @@ private fun RecipeEditorScreen(
     var notes by remember(recipeId) { mutableStateOf(existing?.notes ?: "") }
     var imageUri by remember(recipeId) { mutableStateOf(existing?.imageUri) }
     var ingredientSearch by remember { mutableStateOf("") }
-    var showNewIngredient by remember { mutableStateOf(false) }
-    var newIngredientName by remember { mutableStateOf("") }
-    var newIngredientType by remember { mutableStateOf(QuantityType.MASS) }
-
-    if (showNewIngredient) {
-        AlertDialog(
-            onDismissRequest = { showNewIngredient = false },
-            title = { Text("Ny ingrediens") },
-            text = {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(12.dp)
-                ) {
-                    OutlinedTextField(
-                        value = newIngredientName,
-                        onValueChange = { newIngredientName = it },
-                        label = { Text("Navn") },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true
-                    )
-
-                    SelectorChips(
-                        items = QuantityType.entries,
-                        selected = newIngredientType,
-                        label = { it.danishName() },
-                        onSelected = { newIngredientType = it }
-                    )
-                }
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        val clean = newIngredientName.trim()
-                        state.addIngredient(
-                            name = clean,
-                            type = newIngredientType,
-                            preferredUnit = MeasurementUnit.defaultFor(newIngredientType)
-                        )
-                        ingredientSearch = clean
-                        newIngredientName = ""
-                        newIngredientType = QuantityType.MASS
-                        showNewIngredient = false
-                    },
-                    enabled = newIngredientName.isNotBlank()
-                ) {
-                    Text("Tilføj")
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showNewIngredient = false }
-                ) {
-                    Text("Annuller")
-                }
-            }
-        )
-    }
+    val recipeNameAvailable =
+        name.isBlank() ||
+            state.isRecipeNameAvailable(
+                name,
+                excludingId = existing?.id
+            )
 
     val drafts = remember(recipeId) {
         mutableStateListOf<DraftRequirement>().apply {
@@ -1278,7 +1231,13 @@ private fun RecipeEditorScreen(
                     onValueChange = { name = it },
                     label = { Text("Navn") },
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
+                    singleLine = true,
+                    isError = !recipeNameAvailable,
+                    supportingText = {
+                        if (!recipeNameAvailable) {
+                            Text("Navnet findes allerede")
+                        }
+                    }
                 )
             }
 
@@ -1361,26 +1320,6 @@ private fun RecipeEditorScreen(
                 )
             }
 
-            if (
-                ingredientSearch.isNotBlank() &&
-                matches.isEmpty()
-            ) {
-                item {
-                    OutlinedButton(
-                        onClick = {
-                            newIngredientName = ingredientSearch.trim()
-                            showNewIngredient = true
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Icon(Icons.Filled.Add, contentDescription = null)
-                        Spacer(Modifier.width(6.dp))
-                        Text("Ny ingrediens")
-                    }
-                }
-            }
-
             items(matches, key = { it.id }) { ingredient ->
                 OutlinedCard(
                     modifier = Modifier
@@ -1423,7 +1362,7 @@ private fun RecipeEditorScreen(
                 Button(
                     onClick = {
                         if (existing == null) {
-                            state.addRecipe(
+                            val savedId = state.addRecipe(
                                 name = name,
                                 mealType = mealType,
                                 protein = protein,
@@ -1433,13 +1372,11 @@ private fun RecipeEditorScreen(
                                 requirements = drafts.toList()
                             )
 
-                            val saved = state.recipes
-                                .lastOrNull { it.name == name.trim() }
-                                ?.id
-
-                            onSaved(saved)
+                            if (savedId != null) {
+                                onSaved(savedId)
+                            }
                         } else {
-                            state.updateRecipe(
+                            val saved = state.updateRecipe(
                                 id = existing.id,
                                 name = name,
                                 mealType = mealType,
@@ -1449,10 +1386,13 @@ private fun RecipeEditorScreen(
                                 imageUri = imageUri,
                                 requirements = drafts.toList()
                             )
-                            onSaved(existing.id)
+                            if (saved) {
+                                onSaved(existing.id)
+                            }
                         }
                     },
                     enabled = name.isNotBlank() &&
+                        recipeNameAvailable &&
                         drafts.isNotEmpty() &&
                         drafts.all { it.amount > 0.0 },
                     modifier = Modifier.fillMaxWidth(),
@@ -1657,6 +1597,13 @@ private fun IngredientEditorScreen(
         mutableStateOf(existing?.imageUri)
     }
 
+    val ingredientNameAvailable =
+        name.isBlank() ||
+            state.isIngredientNameAvailable(
+                name,
+                excludingId = existing?.id
+            )
+
     SubpageScaffold(
         title = if (existing == null) "Ny ingrediens" else "Rediger ingrediens",
         onBack = onBack
@@ -1684,7 +1631,13 @@ private fun IngredientEditorScreen(
                     onValueChange = { name = it },
                     label = { Text("Navn") },
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
+                    singleLine = true,
+                    isError = !ingredientNameAvailable,
+                    supportingText = {
+                        if (!ingredientNameAvailable) {
+                            Text("Navnet findes allerede")
+                        }
+                    }
                 )
             }
 
@@ -1722,7 +1675,7 @@ private fun IngredientEditorScreen(
             item {
                 Button(
                     onClick = {
-                        if (existing == null) {
+                        val saved = if (existing == null) {
                             state.addIngredient(
                                 name = name,
                                 type = type,
@@ -1738,9 +1691,12 @@ private fun IngredientEditorScreen(
                                 imageUri = imageUri
                             )
                         }
-                        onSaved()
+
+                        if (saved) {
+                            onSaved()
+                        }
                     },
-                    enabled = name.isNotBlank(),
+                    enabled = name.isNotBlank() && ingredientNameAvailable,
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp)
                 ) {
@@ -1774,7 +1730,11 @@ private fun IngredientEditorScreen(
 }
 
 @Composable
-fun PantryScreen(state: MealPlannerState) {
+fun PantryScreen(
+    state: MealPlannerState,
+    onAddIngredient: () -> Unit,
+    onEditIngredient: (String) -> Unit
+) {
     var searchQuery by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf<Ingredient?>(null) }
 
@@ -1853,7 +1813,14 @@ fun PantryScreen(state: MealPlannerState) {
                         )
                     }
 
-                    Text("›")
+                    IconButton(
+                        onClick = { onEditIngredient(ingredient.id) }
+                    ) {
+                        Icon(
+                            Icons.Filled.Settings,
+                            contentDescription = "Rediger ingrediens"
+                        )
+                    }
                 }
             }
         }
