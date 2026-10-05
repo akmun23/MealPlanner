@@ -42,6 +42,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
@@ -859,18 +860,6 @@ fun RecipesScreen(
                 Icon(Icons.Filled.Add, contentDescription = null)
                 Spacer(Modifier.width(6.dp))
                 Text("Ny opskrift")
-            }
-        }
-
-        item {
-            Button(
-                onClick = onAddIngredient,
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Icon(Icons.Filled.Add, contentDescription = null)
-                Spacer(Modifier.width(6.dp))
-                Text("Ny ingrediens")
             }
         }
 
@@ -1767,6 +1756,18 @@ fun PantryScreen(
         }
 
         item {
+            Button(
+                onClick = onAddIngredient,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp)
+            ) {
+                Icon(Icons.Filled.Add, contentDescription = null)
+                Spacer(Modifier.width(6.dp))
+                Text("Ny ingrediens")
+            }
+        }
+
+        item {
             SearchField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
@@ -1817,7 +1818,7 @@ fun PantryScreen(
                         onClick = { onEditIngredient(ingredient.id) }
                     ) {
                         Icon(
-                            Icons.Filled.Settings,
+                            Icons.Filled.Edit,
                             contentDescription = "Rediger ingrediens"
                         )
                     }
