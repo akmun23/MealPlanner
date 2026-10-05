@@ -104,6 +104,11 @@ data class MealHistoryEntry(
     val eatenOn: LocalDate
 )
 
+data class PlannerResult(
+    val plan: Map<DayOfWeek, String?>,
+    val sandwichDay: DayOfWeek?
+)
+
 data class PlannerWeights(
     val pantryCoverage: Double = 20.0,
     val ingredientReuse: Double = 12.0,
