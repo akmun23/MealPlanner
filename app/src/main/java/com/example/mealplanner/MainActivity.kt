@@ -448,7 +448,7 @@ fun DayCard(
                     )
                     Text(
                         when {
-                            away -> "Spiser ude"
+                            away -> "Ikke hjemme"
                             recipe != null -> recipe.name
                             else -> "Ingen ret"
                         },
@@ -1322,10 +1322,6 @@ private fun IngredientEditorScreen(
 
     var imageUri by remember(ingredientId) {
         mutableStateOf(existing?.imageUri)
-    }
-
-    if (preferredUnit.quantityType != type) {
-        preferredUnit = MeasurementUnit.defaultFor(type)
     }
 
     SubpageScaffold(
