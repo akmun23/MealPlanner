@@ -44,6 +44,7 @@ class LocalStorage(context: Context) {
                     put("id", recipe.id)
                     put("name", recipe.name)
                     put("mealType", recipe.mealType.name)
+                    put("autoRotationEnabled", recipe.autoRotationEnabled)
                     put("proteinTag", recipe.proteinTag)
                     put("categoryTag", recipe.categoryTag)
                     put("notes", recipe.notes)
@@ -136,6 +137,10 @@ class LocalStorage(context: Context) {
                                     obj.optString("mealType", MealType.DINNER.name)
                                 )
                             }.getOrDefault(MealType.DINNER),
+                            autoRotationEnabled = obj.optBoolean(
+                                "autoRotationEnabled",
+                                true
+                            ),
                             proteinTag = obj.optString("proteinTag", ""),
                             categoryTag = obj
                                 .optString("categoryTag", RecipeCategory.OTHER.name)

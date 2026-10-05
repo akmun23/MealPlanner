@@ -363,3 +363,51 @@ begin
     end if;
 end
 $$;
+
+
+-- Recipes can remain available for manual planning while being excluded
+-- from automatic week generation and day rerolls. This lives in a side
+-- table so older installed APKs can continue decoding public.recipes.
+create table if not exists public.recipe_rotation_settings (
+    household_id uuid not null,
+    recipe_id uuid not null,
+    auto_rotation_enabled boolean not null default true,
+    primary key (household_id, recipe_id),
+    foreign key (recipe_id, household_id)
+        references public.recipes(id, household_id)
+        on delete cascade
+);
+
+create index if not exists idx_recipe_rotation_recipe_household
+    on public.recipe_rotation_settings(recipe_id, household_id);
+
+alter table public.recipe_rotation_settings enable row level security;
+
+drop policy if exists recipe_rotation_settings_member_all
+on public.recipe_rotation_settings;
+
+create policy recipe_rotation_settings_member_all
+on public.recipe_rotation_settings
+for all
+to authenticated
+using (private.is_household_member(household_id))
+with check (private.is_household_member(household_id));
+
+grant select, insert, update, delete
+on public.recipe_rotation_settings
+to authenticated;
+
+do $
+begin
+    if not exists (
+        select 1
+        from pg_publication_tables
+        where pubname = 'supabase_realtime'
+          and schemaname = 'public'
+          and tablename = 'recipe_rotation_settings'
+    ) then
+        alter publication supabase_realtime
+            add table public.recipe_rotation_settings;
+    end if;
+end
+$;

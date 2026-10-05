@@ -1042,6 +1042,12 @@ private fun RecipeListCard(
                 val meta = buildList {
                     add(recipe.mealType.danishName())
                     add(recipe.categoryTag.toRecipeCategory().danishName())
+                    if (
+                        recipe.mealType == MealType.DINNER &&
+                        !recipe.autoRotationEnabled
+                    ) {
+                        add("Kun manuelt")
+                    }
                     if (recipe.proteinTag.isNotBlank()) add(recipe.proteinTag)
                 }
 
@@ -1116,6 +1122,12 @@ private fun RecipeDetailScreen(
                     buildList {
                         add(recipe.mealType.danishName())
                         add(recipe.categoryTag.toRecipeCategory().danishName())
+                        if (
+                            recipe.mealType == MealType.DINNER &&
+                            !recipe.autoRotationEnabled
+                        ) {
+                            add("Kun manuelt")
+                        }
                         if (recipe.proteinTag.isNotBlank()) add(recipe.proteinTag)
                     }.joinToString(" · "),
                     color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -1231,6 +1243,9 @@ private fun RecipeEditorScreen(
     var name by remember(recipeId) { mutableStateOf(existing?.name ?: "") }
     var mealType by remember(recipeId) {
         mutableStateOf(existing?.mealType ?: initialMealType)
+    }
+    var autoRotationEnabled by remember(recipeId) {
+        mutableStateOf(existing?.autoRotationEnabled ?: true)
     }
     var protein by remember(recipeId) { mutableStateOf(existing?.proteinTag ?: "") }
     var category by remember(recipeId) {
@@ -1351,6 +1366,24 @@ private fun RecipeEditorScreen(
                 }
             }
 
+            if (mealType == MealType.DINNER) {
+                item {
+                    Text(
+                        "Planlægning",
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    SelectorChips(
+                        items = listOf(true, false),
+                        selected = autoRotationEnabled,
+                        label = {
+                            if (it) "Automatisk" else "Kun manuelt"
+                        },
+                        onSelected = { autoRotationEnabled = it }
+                    )
+                }
+            }
+
             item {
                 OutlinedTextField(
                     value = protein,
@@ -1440,6 +1473,7 @@ private fun RecipeEditorScreen(
                             val savedId = state.addRecipe(
                                 name = name,
                                 mealType = mealType,
+                                autoRotationEnabled = autoRotationEnabled,
                                 protein = protein,
                                 category = category,
                                 notes = notes,
@@ -1455,6 +1489,7 @@ private fun RecipeEditorScreen(
                                 id = existing.id,
                                 name = name,
                                 mealType = mealType,
+                                autoRotationEnabled = autoRotationEnabled,
                                 protein = protein,
                                 category = category,
                                 notes = notes,

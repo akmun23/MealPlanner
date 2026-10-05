@@ -31,7 +31,8 @@ object WeeklyPlanner {
         random: Random = Random.Default
     ): PlannerResult {
         val dinnerRecipes = recipes.filter {
-            it.mealType == MealType.DINNER
+            it.mealType == MealType.DINNER &&
+                it.autoRotationEnabled
         }
 
         if (dinnerRecipes.isEmpty() && weeklySandwichRecipeId == null) {
@@ -159,7 +160,8 @@ object WeeklyPlanner {
         if (dayModes[day] == DayMode.AWAY || day == sandwichDay) return currentPlan
 
         val dinnerRecipes = recipes.filter {
-            it.mealType == MealType.DINNER
+            it.mealType == MealType.DINNER &&
+                it.autoRotationEnabled
         }
         val recipesById = recipes.associateBy { it.id }
         val oldId = currentPlan[day]
