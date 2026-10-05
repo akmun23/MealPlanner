@@ -366,6 +366,55 @@ fun WeekScreen(
     val selectedLunch = state.lunchRecipes()
     val lunchOptions = state.recipes.filter { it.mealType == MealType.LUNCH }
     var showLunchPicker by remember { mutableStateOf(false) }
+    var showSandwichPicker by remember { mutableStateOf(false) }
+
+    if (showSandwichPicker) {
+        val sandwichOptions = state.recipes.filter {
+            it.mealType == MealType.DINNER
+        }
+
+        AlertDialog(
+            onDismissRequest = { showSandwichPicker = false },
+            title = { Text("Sandwich") },
+            text = {
+                if (sandwichOptions.isEmpty()) {
+                    Text("Ingen aftensmadsopskrifter")
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.heightIn(max = 420.dp)
+                    ) {
+                        items(
+                            items = sandwichOptions,
+                            key = { it.id }
+                        ) { recipe ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        state.setWeeklySandwichRecipe(recipe.id)
+                                        showSandwichPicker = false
+                                    }
+                                    .padding(vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    recipe.name,
+                                    modifier = Modifier.weight(1f)
+                                )
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = { showSandwichPicker = false }
+                ) {
+                    Text("Annuller")
+                }
+            }
+        )
+    }
 
     if (showLunchPicker) {
         AlertDialog(
@@ -444,15 +493,21 @@ fun WeekScreen(
 
         Spacer(Modifier.height(16.dp))
 
-        if (state.weeklySandwichRecipeId != null) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.End
-            ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End
+        ) {
+            if (state.weeklySandwichRecipeId != null) {
                 TextButton(
                     onClick = { state.removeSandwichThisWeek() }
                 ) {
                     Text("Ingen sandwich denne uge")
+                }
+            } else {
+                TextButton(
+                    onClick = { showSandwichPicker = true }
+                ) {
+                    Text("Tilføj sandwich")
                 }
             }
         }
