@@ -947,9 +947,9 @@ private fun RecipeListCard(
                 )
 
                 val meta = buildList {
-                    if (recipe.categoryTag.isNotBlank()) add(recipe.categoryTag)
+                    add(recipe.mealType.danishName())
+                    add(recipe.categoryTag.toRecipeCategory().danishName())
                     if (recipe.proteinTag.isNotBlank()) add(recipe.proteinTag)
-                    add("${recipe.ingredients.size} ingredienser")
                 }
 
                 Text(
@@ -1018,18 +1018,21 @@ private fun RecipeDetailScreen(
                 )
             }
 
-            if (recipe.categoryTag.isNotBlank() || recipe.proteinTag.isNotBlank()) {
-                item {
-                    Text(
-                        listOf(recipe.categoryTag, recipe.proteinTag)
-                            .filter { it.isNotBlank() }
-                            .joinToString(" · "),
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+            item {
+                Text(
+                    buildList {
+                        add(recipe.mealType.danishName())
+                        add(recipe.categoryTag.toRecipeCategory().danishName())
+                        if (recipe.proteinTag.isNotBlank()) add(recipe.proteinTag)
+                    }.joinToString(" · "),
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
 
-            if (state.weeklySandwichRecipeId != recipe.id) {
+            if (
+                recipe.mealType == MealType.DINNER &&
+                state.weeklySandwichRecipeId != recipe.id
+            ) {
                 item {
                     OutlinedButton(
                         onClick = { state.setWeeklySandwichRecipe(recipe.id) },
@@ -1039,7 +1042,10 @@ private fun RecipeDetailScreen(
                         Text("Vælg som ugens sandwich")
                     }
                 }
-            } else {
+            } else if (
+                recipe.mealType == MealType.DINNER &&
+                state.weeklySandwichRecipeId == recipe.id
+            ) {
                 item {
                     Surface(
                         shape = RoundedCornerShape(14.dp),
