@@ -112,7 +112,7 @@ object WeeklyPlanner {
                                     proteinIngredientIds = proteinIngredientIds,
                                     targetDate = weekStart.plusDays(day.value.toLong() - 1),
                                     weights = weights
-                                ) + random.nextDouble(0.0, weights.jitter)
+                                ) + randomJitter(weights.jitter, random)
                             )
                         }
                         .sortedByDescending { it.second }
@@ -227,7 +227,7 @@ object WeeklyPlanner {
                     weekStart = weekStart,
                     previousPlan = currentPlan,
                     weights = weights
-                ) + random.nextDouble(0.0, weights.jitter)
+                ) + randomJitter(weights.jitter, random)
 
                 recipe to score
             }
@@ -513,6 +513,16 @@ object WeeklyPlanner {
             else -> 0.0
         }
     }
+
+    private fun randomJitter(
+        maximum: Double,
+        random: Random
+    ): Double =
+        if (maximum > 0.0) {
+            random.nextDouble(0.0, maximum)
+        } else {
+            0.0
+        }
 
     private fun weightedPick(
         ranked: List<Pair<Recipe, Double>>,
