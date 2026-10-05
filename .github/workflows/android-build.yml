@@ -1,0 +1,30 @@
+name: Android build
+
+on:
+  pull_request:
+    branches: [ master ]
+  push:
+    branches: [ ux/stabilize-and-polish ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Create local properties
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          echo "SUPABASE_URL=https://example.supabase.co" >> local.properties
+          echo "SUPABASE_PUBLISHABLE_KEY=sb_publishable_build_check" >> local.properties
+
+      - name: Build debug APK
+        run: ./gradlew :app:assembleDebug --stacktrace
