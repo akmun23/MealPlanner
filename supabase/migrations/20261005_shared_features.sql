@@ -253,3 +253,113 @@ alter table public.ingredients
             'OTHER'
         )
     );
+
+
+-- Household-managed shopping categories. Keep the legacy shopping_category
+-- text column during rollout so older APKs remain compatible.
+create table if not exists public.shopping_categories (
+    id uuid primary key default gen_random_uuid(),
+    household_id uuid not null references public.households(id) on delete cascade,
+    name text not null check (length(btrim(name)) between 1 and 60),
+    position smallint not null default 0 check (position >= 0),
+    created_at timestamptz not null default now(),
+    unique (id, household_id)
+);
+
+create unique index if not exists uq_shopping_categories_household_name
+    on public.shopping_categories (household_id, lower(btrim(name)));
+
+alter table public.shopping_categories enable row level security;
+
+drop policy if exists shopping_categories_member_all
+on public.shopping_categories;
+
+create policy shopping_categories_member_all
+on public.shopping_categories
+for all
+to authenticated
+using (private.is_household_member(household_id))
+with check (private.is_household_member(household_id));
+
+grant select, insert, update, delete
+on public.shopping_categories
+to authenticated;
+
+alter table public.ingredients
+    add column if not exists shopping_category_id uuid;
+
+do $$
+begin
+    if not exists (
+        select 1
+        from pg_constraint
+        where conname = 'ingredients_shopping_category_household_fkey'
+    ) then
+        alter table public.ingredients
+            add constraint ingredients_shopping_category_household_fkey
+            foreign key (shopping_category_id, household_id)
+            references public.shopping_categories(id, household_id)
+            on delete set null (shopping_category_id);
+    end if;
+end
+$$;
+
+create index if not exists idx_ingredients_shopping_category_household
+    on public.ingredients(shopping_category_id, household_id);
+
+insert into public.shopping_categories (household_id, name, position)
+select
+    h.id,
+    defaults.name,
+    defaults.position
+from public.households h
+cross join (
+    values
+        ('Frugt & grønt', 0),
+        ('Kød & fisk', 1),
+        ('Mejeri & køl', 2),
+        ('Brød & bager', 3),
+        ('Kolonial', 4),
+        ('Krydderier', 5),
+        ('Frost', 6),
+        ('Drikkevarer', 7),
+        ('Andet', 8)
+) as defaults(name, position)
+where not exists (
+    select 1
+    from public.shopping_categories existing
+    where existing.household_id = h.id
+      and lower(btrim(existing.name)) = lower(btrim(defaults.name))
+);
+
+update public.ingredients ingredient
+set shopping_category_id = category.id
+from public.shopping_categories category
+where category.household_id = ingredient.household_id
+  and ingredient.shopping_category_id is null
+  and category.name = case ingredient.shopping_category
+      when 'PRODUCE' then 'Frugt & grønt'
+      when 'MEAT_FISH' then 'Kød & fisk'
+      when 'DAIRY_CHILLED' then 'Mejeri & køl'
+      when 'BREAD_BAKERY' then 'Brød & bager'
+      when 'PANTRY' then 'Kolonial'
+      when 'SPICES' then 'Krydderier'
+      when 'FROZEN' then 'Frost'
+      when 'DRINKS' then 'Drikkevarer'
+      else 'Andet'
+  end;
+
+do $$
+begin
+    if not exists (
+        select 1
+        from pg_publication_tables
+        where pubname = 'supabase_realtime'
+          and schemaname = 'public'
+          and tablename = 'shopping_categories'
+    ) then
+        alter publication supabase_realtime
+            add table public.shopping_categories;
+    end if;
+end
+$$;
