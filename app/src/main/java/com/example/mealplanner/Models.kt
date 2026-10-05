@@ -73,6 +73,7 @@ data class Ingredient(
     val quantityType: QuantityType,
     val preferredUnit: MeasurementUnit,
     val shoppingCategoryId: String? = null,
+    val isProtein: Boolean = false,
     val imageUri: String? = null,
     val imagePath: String? = null
 )
@@ -152,6 +153,7 @@ data class Recipe(
     val autoRotationEnabled: Boolean = true,
     val prepMinutes: Int? = null,
     val proteinTag: String = "",
+    val proteinIngredientIds: Set<String> = emptySet(),
     val categoryTag: String = RecipeCategory.OTHER.name,
     val notes: String = "",
     val imageUri: String? = null,
