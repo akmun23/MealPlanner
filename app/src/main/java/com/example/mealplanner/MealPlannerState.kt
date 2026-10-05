@@ -442,24 +442,19 @@ class MealPlannerState(
     }
 
     fun toggleEatingAtHome(day: DayOfWeek) {
-        val turningAway = dayModes[day] != DayMode.AWAY
+        val result = WeekRules.toggleHome(
+            day = day,
+            modes = dayModes.toMap(),
+            currentSandwichDay = sandwichDay,
+            hasSandwichRecipe = weeklySandwichRecipeId != null
+        )
 
-        if (turningAway) {
-            dayModes[day] = DayMode.AWAY
+        dayModes.clear()
+        dayModes.putAll(result.modes)
+        sandwichDay = result.sandwichDay
+
+        if (dayModes[day] == DayMode.AWAY) {
             lockedDays.remove(day)
-
-            if (sandwichDay == day) {
-                sandwichDay = WeeklyPlanner.preferredSandwichDay(dayModes)
-            }
-        } else {
-            dayModes[day] = DayMode.AUTO
-
-            if (
-                weeklySandwichRecipeId != null &&
-                sandwichDay == null
-            ) {
-                sandwichDay = WeeklyPlanner.preferredSandwichDay(dayModes)
-            }
         }
 
         shoppingChecked.clear()
@@ -583,22 +578,10 @@ class MealPlannerState(
     fun moveSandwich() {
         if (weeklySandwichRecipeId == null) return
 
-        val homeDays = orderedWeekDays.filter {
-            dayModes[it] != DayMode.AWAY
-        }
-        if (homeDays.isEmpty()) {
-            sandwichDay = null
-            persistWeek(clearChecks = true)
-            return
-        }
-
-        val current = sandwichDay
-        sandwichDay = if (current == null || current !in homeDays) {
-            homeDays.first()
-        } else {
-            val index = homeDays.indexOf(current)
-            homeDays[(index + 1) % homeDays.size]
-        }
+        sandwichDay = WeekRules.nextSandwichDay(
+            current = sandwichDay,
+            modes = dayModes.toMap()
+        )
 
         shoppingChecked.clear()
         persistWeek(clearChecks = true)
