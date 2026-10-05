@@ -45,6 +45,13 @@ private data class IngredientRow(
 )
 
 @Serializable
+private data class IngredientProteinRow(
+    @SerialName("household_id") val householdId: String,
+    @SerialName("ingredient_id") val ingredientId: String,
+    @SerialName("is_protein") val isProtein: Boolean = false
+)
+
+@Serializable
 private data class IngredientCategoryRow(
     val id: String,
     @SerialName("household_id") val householdId: String,
@@ -202,6 +209,11 @@ class CloudMealRepository(
                     filter { eq("household_id", householdId) }
                 }.decodeList<IngredientRow>()
             }
+            val proteinSettingsDeferred = async {
+                supabase.from("ingredient_protein_settings").select {
+                    filter { eq("household_id", householdId) }
+                }.decodeList<IngredientProteinRow>()
+            }
             val categoriesDeferred = async {
                 supabase.from("shopping_categories").select {
                     filter { eq("household_id", householdId) }
@@ -247,6 +259,8 @@ class CloudMealRepository(
             }
 
             val ingredientRows = ingredientsDeferred.await()
+            val proteinSettings = proteinSettingsDeferred.await()
+                .associateBy { it.ingredientId }
             val categoryRows = categoriesDeferred.await()
             val recipeRows = recipesDeferred.await()
             val rotationRows = rotationDeferred.await()
@@ -322,11 +336,13 @@ class CloudMealRepository(
                     quantityType = type,
                     preferredUnit = unit,
                     shoppingCategoryId = row.shoppingCategoryId,
+                    isProtein = proteinSettings[row.id]?.isProtein == true,
                     imageUri = row.imagePath?.let(urls::get),
                     imagePath = row.imagePath
                 )
             }
 
+            val ingredientsById = ingredients.associateBy { it.id }
             val requirements = recipeIngredientRows.groupBy { it.recipeId }
             val rotationByRecipe = rotationRows.associateBy { it.recipeId }
             val timeByRecipe = recipeTimeRows.associateBy { it.recipeId }
@@ -341,6 +357,13 @@ class CloudMealRepository(
                         rotationByRecipe[row.id]?.autoRotationEnabled ?: true,
                     prepMinutes = timeByRecipe[row.id]?.prepMinutes,
                     proteinTag = row.proteinTag,
+                    proteinIngredientIds = requirements[row.id]
+                        .orEmpty()
+                        .map { it.ingredientId }
+                        .filter { ingredientId ->
+                            ingredientsById[ingredientId]?.isProtein == true
+                        }
+                        .toSet(),
                     categoryTag = row.categoryTag,
                     notes = row.notes,
                     imageUri = row.imagePath?.let(urls::get),
@@ -519,6 +542,16 @@ class CloudMealRepository(
             )
         ) {
             onConflict = "id"
+        }
+
+        supabase.from("ingredient_protein_settings").upsert(
+            IngredientProteinRow(
+                householdId = householdId,
+                ingredientId = ingredient.id,
+                isProtein = ingredient.isProtein
+            )
+        ) {
+            onConflict = "household_id,ingredient_id"
         }
 
         ingredient.copy(
@@ -809,6 +842,7 @@ class CloudMealRepository(
 
         val watchedTables = listOf(
             "ingredients",
+            "ingredient_protein_settings",
             "shopping_categories",
             "recipes",
             "recipe_rotation_settings",
