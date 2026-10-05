@@ -200,18 +200,29 @@ class MealPlannerState(
         persistWeek(clearChecks = true)
     }
 
+    fun isIngredientNameAvailable(
+        name: String,
+        excludingId: String? = null
+    ): Boolean {
+        val clean = name.trim()
+        return clean.isNotBlank() && ingredients.none {
+            it.id != excludingId &&
+                it.name.trim().equals(clean, ignoreCase = true)
+        }
+    }
+
     fun addIngredient(
         name: String,
         type: QuantityType,
         imageUri: String? = null,
         preferredUnit: MeasurementUnit = MeasurementUnit.defaultFor(type)
-    ) {
+    ): Boolean {
         val clean = name.trim()
-        if (
-            clean.isBlank() ||
-            preferredUnit.quantityType != type ||
-            ingredients.any { it.name.equals(clean, ignoreCase = true) }
-        ) return
+        if (clean.isBlank() || preferredUnit.quantityType != type) return false
+        if (!isIngredientNameAvailable(clean)) {
+            lastError = "Ingrediensen findes allerede."
+            return false
+        }
 
         val ingredient = Ingredient(
             id = UUID.randomUUID().toString(),
@@ -228,6 +239,7 @@ class MealPlannerState(
             val index = ingredients.indexOfFirst { it.id == saved.id }
             if (index >= 0) ingredients[index] = saved
         }
+        return true
     }
 
     fun updateIngredient(
@@ -236,13 +248,18 @@ class MealPlannerState(
         type: QuantityType,
         preferredUnit: MeasurementUnit,
         imageUri: String? = null
-    ) {
+    ): Boolean {
         val index = ingredients.indexOfFirst { it.id == id }
         if (
             index < 0 ||
             name.isBlank() ||
             preferredUnit.quantityType != type
-        ) return
+        ) return false
+
+        if (!isIngredientNameAvailable(name, excludingId = id)) {
+            lastError = "Ingrediensen findes allerede."
+            return false
+        }
 
         val updated = ingredients[index].copy(
             name = name.trim(),
@@ -257,6 +274,7 @@ class MealPlannerState(
             val current = ingredients.indexOfFirst { it.id == id }
             if (current >= 0) ingredients[current] = saved
         }
+        return true
     }
 
     fun deleteIngredient(ingredientId: String) {
@@ -281,6 +299,17 @@ class MealPlannerState(
         }
     }
 
+    fun isRecipeNameAvailable(
+        name: String,
+        excludingId: String? = null
+    ): Boolean {
+        val clean = name.trim()
+        return clean.isNotBlank() && recipes.none {
+            it.id != excludingId &&
+                it.name.trim().equals(clean, ignoreCase = true)
+        }
+    }
+
     fun addRecipe(
         name: String,
         mealType: MealType,
@@ -289,7 +318,12 @@ class MealPlannerState(
         notes: String = "",
         imageUri: String? = null,
         requirements: List<DraftRequirement>
-    ) {
+    ): String? {
+        if (!isRecipeNameAvailable(name)) {
+            lastError = "Opskriften findes allerede."
+            return null
+        }
+
         val recipe = buildRecipe(
             id = UUID.randomUUID().toString(),
             name = name,
@@ -300,7 +334,7 @@ class MealPlannerState(
             imageUri = imageUri,
             imagePath = null,
             requirements = requirements
-        ) ?: return
+        ) ?: return null
 
         recipes += recipe
 
@@ -309,6 +343,7 @@ class MealPlannerState(
             val index = recipes.indexOfFirst { it.id == saved.id }
             if (index >= 0) recipes[index] = saved
         }
+        return recipe.id
     }
 
     fun updateRecipe(
@@ -320,9 +355,14 @@ class MealPlannerState(
         notes: String = "",
         imageUri: String? = null,
         requirements: List<DraftRequirement>
-    ) {
+    ): Boolean {
         val index = recipes.indexOfFirst { it.id == id }
-        if (index < 0) return
+        if (index < 0) return false
+
+        if (!isRecipeNameAvailable(name, excludingId = id)) {
+            lastError = "Opskriften findes allerede."
+            return false
+        }
 
         val existing = recipes[index]
         val updated = buildRecipe(
@@ -335,7 +375,7 @@ class MealPlannerState(
             imageUri = imageUri,
             imagePath = existing.imagePath,
             requirements = requirements
-        ) ?: return
+        ) ?: return false
 
         recipes[index] = updated
 
@@ -391,6 +431,7 @@ class MealPlannerState(
                 )
             }
         }
+        return true
     }
 
     private fun buildRecipe(
@@ -470,6 +511,27 @@ class MealPlannerState(
                     sandwichDay = sandwichDay
                 )
             }
+        }
+    }
+
+    fun removeSandwichThisWeek() {
+        if (weeklySandwichRecipeId == null && sandwichDay == null) return
+
+        weeklySandwichRecipeId = null
+        sandwichDay = null
+        shoppingChecked.clear()
+
+        val id = weeklyPlanId ?: return
+        runMutation {
+            repository.clearShoppingChecks(id)
+            repository.saveWeekState(
+                weeklyPlanId = id,
+                plan = plan.toMap(),
+                dayModes = dayModes.toMap(),
+                lockedDays = lockedDays.toSet(),
+                sandwichRecipeId = null,
+                sandwichDay = null
+            )
         }
     }
 
