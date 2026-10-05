@@ -235,6 +235,96 @@ class WeeklyPlannerTest {
     }
 
     @Test
+    fun manualOnlyDinnerIsExcludedFromAutomaticGeneration() {
+        val automatic = Recipe(
+            id = "automatic",
+            name = "Automatic",
+            mealType = MealType.DINNER,
+            autoRotationEnabled = true,
+            ingredients = emptyList()
+        )
+        val manualOnly = Recipe(
+            id = "manual",
+            name = "Manual",
+            mealType = MealType.DINNER,
+            autoRotationEnabled = false,
+            ingredients = emptyList()
+        )
+        val modes = orderedWeekDays.associateWith {
+            if (it == DayOfWeek.MONDAY) DayMode.AUTO else DayMode.AWAY
+        }
+
+        repeat(20) { seed ->
+            val result = WeeklyPlanner.generate(
+                recipes = listOf(automatic, manualOnly),
+                pantry = emptyMap(),
+                dayModes = modes,
+                weeklySandwichRecipeId = null,
+                currentPlan = orderedWeekDays.associateWith { null },
+                currentSandwichDay = null,
+                random = Random(seed)
+            )
+
+            assertEquals(
+                automatic.id,
+                result.plan[DayOfWeek.MONDAY]
+            )
+        }
+    }
+
+    @Test
+    fun manualOnlyDinnerIsExcludedFromDayReroll() {
+        val current = Recipe(
+            id = "current",
+            name = "Current",
+            ingredients = emptyList()
+        )
+        val automatic = Recipe(
+            id = "automatic",
+            name = "Automatic",
+            ingredients = emptyList()
+        )
+        val manualOnly = Recipe(
+            id = "manual",
+            name = "Manual",
+            autoRotationEnabled = false,
+            ingredients = emptyList()
+        )
+
+        val plan = orderedWeekDays.associateWith { null as String? }
+            .toMutableMap()
+            .apply {
+                this[DayOfWeek.MONDAY] = current.id
+            }
+
+        val result = WeeklyPlanner.rerollDay(
+            day = DayOfWeek.MONDAY,
+            recipes = listOf(current, automatic, manualOnly),
+            pantry = emptyMap(),
+            dayModes = allHome(),
+            weeklySandwichRecipeId = null,
+            sandwichDay = null,
+            currentPlan = plan,
+            random = Random(2)
+        )
+
+        assertEquals(
+            automatic.id,
+            result[DayOfWeek.MONDAY]
+        )
+    }
+
+    @Test
+    fun proteinRepeatPenaltyIsASecondaryPreference() {
+        val weights = PlannerWeights()
+
+        assertEquals(3.0, weights.repeatedProtein, 0.0001)
+        assertEquals(6.0, weights.adjacentProtein, 0.0001)
+        assertTrue(weights.repeatedProtein < weights.repeatedCategory)
+        assertTrue(weights.adjacentProtein < weights.adjacentCategory)
+    }
+
+    @Test
     fun recentlyEatenRecipeIsStronglyDisfavoured() {
         val recent = recipe("recent")
         val fresh = recipe("fresh")
