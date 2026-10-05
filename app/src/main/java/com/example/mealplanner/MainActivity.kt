@@ -677,7 +677,10 @@ fun DayCard(
                     ) {
                         if (isSandwich) StatusPill("Ugens sandwich", true)
                         if (recipe.categoryTag.isNotBlank()) {
-                            StatusPill(recipe.categoryTag, false)
+                            StatusPill(
+                                recipe.categoryTag.toRecipeCategory().danishName(),
+                                false
+                            )
                         }
                     }
                 }
@@ -720,7 +723,10 @@ fun DayCard(
                                 )
 
                                 state.recipes
-                                    .filter { it.id != state.weeklySandwichRecipeId }
+                                    .filter {
+                                        it.mealType == MealType.DINNER &&
+                                            it.id != state.weeklySandwichRecipeId
+                                    }
                                     .forEach { candidate ->
                                         DropdownMenuItem(
                                             text = { Text(candidate.name) },
