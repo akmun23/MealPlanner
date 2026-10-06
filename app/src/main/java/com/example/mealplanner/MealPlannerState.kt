@@ -46,6 +46,13 @@ class MealPlannerState(
     private var cachePersistJob: Job? = null
     private val syncTracker = SyncGenerationTracker()
     private var syncStatusClearJob: Job? = null
+    private val amountFormatter = NumberFormat
+        .getNumberInstance(Locale.forLanguageTag("da-DK"))
+        .apply {
+            maximumFractionDigits = 2
+            minimumFractionDigits = 0
+            isGroupingUsed = false
+        }
 
     val ingredients = mutableStateListOf<Ingredient>()
     val ingredientCategories = mutableStateListOf<IngredientCategory>()
@@ -136,7 +143,8 @@ class MealPlannerState(
                     SyncIndicator.OFFLINE
                 }
             } else {
-                lastError = e.message ?: "Kunne ikke hente data."
+                lastError =
+                    "Data kunne ikke hentes lige nu. Tjek forbindelsen og prøv igen."
             }
         } finally {
             isLoading = false
@@ -651,8 +659,7 @@ class MealPlannerState(
                     )
                 } catch (e: Exception) {
                     lastError =
-                        e.message
-                            ?: "Ændringen kunne ikke gemmes lokalt."
+                        "Ændringen kunne ikke gemmes på telefonen. Prøv igen."
                     syncIndicator = SyncIndicator.ERROR
                 }
             }
@@ -1410,7 +1417,8 @@ class MealPlannerState(
 
                 persistWeek(clearChecks = true)
             } catch (e: Exception) {
-                lastError = e.message ?: "Madplanen kunne ikke opdateres."
+                lastError =
+                    "Madplanen kunne ikke opdateres. Prøv igen."
             } finally {
                 isPlanning = false
             }
@@ -1459,7 +1467,8 @@ class MealPlannerState(
                 shoppingIncluded.clear()
                 persistWeek(clearChecks = true)
             } catch (e: Exception) {
-                lastError = e.message ?: "Retten kunne ikke skiftes."
+                lastError =
+                    "Retten kunne ikke skiftes. Prøv igen."
             }
         }
     }
@@ -1667,7 +1676,8 @@ class MealPlannerState(
                 repository.submitFeedback(clean)
                 onResult(true)
             } catch (e: Exception) {
-                lastError = e.message ?: "Forslaget kunne ikke sendes."
+                lastError =
+                    "Forslaget kunne ikke sendes. Prøv igen senere."
                 onResult(false)
             }
         }
@@ -1693,15 +1703,6 @@ class MealPlannerState(
             TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)
         )
 
-    private fun formatNumber(value: Double): String {
-        val formatter = NumberFormat
-            .getNumberInstance(Locale.forLanguageTag("da-DK"))
-            .apply {
-                maximumFractionDigits = 2
-                minimumFractionDigits = 0
-                isGroupingUsed = false
-            }
-
-        return formatter.format(value)
-    }
+    private fun formatNumber(value: Double): String =
+        amountFormatter.format(value)
 }
