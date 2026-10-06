@@ -54,4 +54,9 @@ internal class SyncGenerationTracker {
 
     fun isPending(key: SyncMutationKey): Boolean =
         (pendingKeys[key] ?: 0) > 0
+
+    fun isDomainPending(domain: CloudSyncDomain): Boolean =
+        pendingKeys.any { (key, count) ->
+            key.domain == domain && count > 0
+        }
 }
