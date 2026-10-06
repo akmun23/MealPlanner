@@ -120,19 +120,24 @@ private data class CachedRecipeIngredient(
 )
 
 @Serializable
+private data class CachedPantryPrerequisite(
+    val ingredientId: String,
+    val minimumAmountBase: Double
+)
+
+@Serializable
 private data class CachedRecipe(
     val id: String,
     val name: String,
     val mealType: String,
     val autoRotationEnabled: Boolean,
     val prepMinutes: Int?,
-    val proteinTag: String,
-    val categoryTag: String,
     val categoryId: String?,
     val notes: String,
     val imageUri: String?,
     val imagePath: String?,
-    val ingredients: List<CachedRecipeIngredient>
+    val ingredients: List<CachedRecipeIngredient>,
+    val pantryPrerequisites: List<CachedPantryPrerequisite>
 )
 
 @Serializable
@@ -221,8 +226,6 @@ internal object RoomSnapshotCodec {
                 mealType = recipe.mealType.name,
                 autoRotationEnabled = recipe.autoRotationEnabled,
                 prepMinutes = recipe.prepMinutes,
-                proteinTag = recipe.proteinTag,
-                categoryTag = recipe.categoryTag,
                 categoryId = recipe.categoryId,
                 notes = recipe.notes,
                 imageUri = recipe.imageUri,
@@ -231,6 +234,12 @@ internal object RoomSnapshotCodec {
                     CachedRecipeIngredient(
                         ingredientId = it.ingredientId,
                         amountBase = it.amountBase
+                    )
+                },
+                pantryPrerequisites = recipe.pantryPrerequisites.map {
+                    CachedPantryPrerequisite(
+                        ingredientId = it.ingredientId,
+                        minimumAmountBase = it.minimumAmountBase
                     )
                 }
             )
@@ -294,8 +303,6 @@ internal object RoomSnapshotCodec {
                     autoRotationEnabled =
                         recipe.autoRotationEnabled,
                     prepMinutes = recipe.prepMinutes,
-                    proteinTag = recipe.proteinTag,
-                    categoryTag = recipe.categoryTag,
                     categoryId = recipe.categoryId,
                     notes = recipe.notes,
                     imageUri = recipe.imageUri,
@@ -305,7 +312,14 @@ internal object RoomSnapshotCodec {
                             ingredientId = it.ingredientId,
                             amountBase = it.amountBase
                         )
-                    }
+                    },
+                    pantryPrerequisites =
+                        recipe.pantryPrerequisites.map {
+                            RecipePantryPrerequisite(
+                                ingredientId = it.ingredientId,
+                                minimumAmountBase = it.minimumAmountBase
+                            )
+                        }
                 )
             },
             pantry = pantry,
