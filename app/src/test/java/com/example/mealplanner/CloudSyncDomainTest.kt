@@ -21,7 +21,8 @@ class CloudSyncDomainTest {
             "recipe_ingredients",
             "recipe_rotation_settings",
             "recipe_time_settings",
-            "recipe_category_assignments"
+            "recipe_category_assignments",
+            "recipe_pantry_prerequisites"
         ).forEach { table ->
             assertEquals(
                 CloudSyncDomain.RECIPES,
