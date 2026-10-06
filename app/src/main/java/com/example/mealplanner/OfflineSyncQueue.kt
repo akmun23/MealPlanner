@@ -467,7 +467,7 @@ internal class OfflineSyncQueue(
 
         WorkManager.getInstance(context).enqueueUniqueWork(
             "mealplanner-sync-$householdId",
-            ExistingWorkPolicy.REPLACE,
+            ExistingWorkPolicy.KEEP,
             request
         )
     }
