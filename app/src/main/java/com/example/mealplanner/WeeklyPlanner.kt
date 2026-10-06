@@ -502,8 +502,7 @@ object WeeklyPlanner {
             .toSet()
 
     private fun categoryKey(recipe: Recipe): String =
-        recipe.categoryId
-            ?: recipe.categoryTag.trim().lowercase()
+        recipe.categoryId.orEmpty()
 
     private fun recencyPenalty(
         recipeId: String,

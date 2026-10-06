@@ -6,6 +6,9 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.query.Columns
+import io.github.jan.supabase.realtime.HasOldRecord
+import io.github.jan.supabase.realtime.HasRecord
 import io.github.jan.supabase.realtime.PostgresAction
 import io.github.jan.supabase.realtime.channel
 import io.github.jan.supabase.realtime.RealtimeChannel
@@ -25,6 +28,11 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.ByteArrayOutputStream
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -39,7 +47,6 @@ private data class IngredientRow(
     val name: String,
     @SerialName("quantity_type") val quantityType: String,
     @SerialName("preferred_unit") val preferredUnit: String,
-    @SerialName("shopping_category") val shoppingCategory: String = "OTHER",
     @SerialName("shopping_category_id") val shoppingCategoryId: String? = null,
     @SerialName("image_path") val imagePath: String? = null
 )
@@ -80,8 +87,6 @@ internal data class RecipeRow(
     @SerialName("household_id") val householdId: String,
     val name: String,
     @SerialName("meal_type") val mealType: String = "DINNER",
-    @SerialName("protein_tag") val proteinTag: String = "",
-    @SerialName("category_tag") val categoryTag: String = "OTHER",
     val notes: String,
     @SerialName("image_path") val imagePath: String? = null
 )
@@ -134,9 +139,7 @@ private data class PantryRow(
 @Serializable
 private data class SettingsRow(
     @SerialName("household_id") val householdId: String,
-    @SerialName("sandwich_recipe_id") val sandwichRecipeId: String? = null,
-    @SerialName("preferred_sandwich_day") val preferredSandwichDay: Int = 5,
-    @SerialName("local_import_completed") val localImportCompleted: Boolean = false
+    @SerialName("sandwich_recipe_id") val sandwichRecipeId: String? = null
 )
 
 @Serializable
@@ -217,6 +220,188 @@ data class CloudSnapshot(
     val history: List<MealHistoryEntry>
 )
 
+internal enum class CloudSyncDomain {
+    INGREDIENTS,
+    RECIPES,
+    PANTRY,
+    WEEK,
+    SHOPPING,
+    HISTORY
+}
+
+internal fun syncDomainForTable(table: String): CloudSyncDomain? =
+    when (table) {
+        "ingredients",
+        "ingredient_protein_flags",
+        "shopping_categories" -> CloudSyncDomain.INGREDIENTS
+
+        "recipe_categories",
+        "recipe_category_assignments",
+        "recipes",
+        "recipe_rotation_settings",
+        "recipe_time_settings",
+        "recipe_ingredients",
+        "recipe_pantry_prerequisites" -> CloudSyncDomain.RECIPES
+
+        "pantry_items" -> CloudSyncDomain.PANTRY
+
+        "household_settings",
+        "weekly_plans",
+        "planned_meals",
+        "weekly_day_constraints",
+        "weekly_lunch_recipes" -> CloudSyncDomain.WEEK
+
+        "shopping_checks",
+        "shopping_inclusions" -> CloudSyncDomain.SHOPPING
+
+        "meal_history" -> CloudSyncDomain.HISTORY
+        else -> null
+    }
+
+internal data class CloudIngredientsSnapshot(
+    val ingredients: List<Ingredient>,
+    val ingredientCategories: List<IngredientCategory>
+)
+
+internal data class CloudRecipesSnapshot(
+    val recipeCategories: List<RecipeCategoryOption>,
+    val recipes: List<Recipe>
+)
+
+internal data class CloudWeekSnapshot(
+    val dayModes: Map<DayOfWeek, DayMode>,
+    val dayMaxPrepMinutes: Map<DayOfWeek, Int?>,
+    val plan: Map<DayOfWeek, String?>,
+    val lockedDays: Set<DayOfWeek>,
+    val selectedLunchRecipeIds: List<String>,
+    val weeklyPlanId: String,
+    val weeklySandwichRecipeId: String?,
+    val sandwichDay: DayOfWeek?
+)
+
+internal data class CloudShoppingSnapshot(
+    val checked: Map<String, Boolean>,
+    val included: Map<String, Boolean>
+)
+
+internal sealed interface CloudRealtimeEvent {
+    val domain: CloudSyncDomain
+
+    data class DomainChanged(
+        override val domain: CloudSyncDomain
+    ) : CloudRealtimeEvent
+
+    data class PantryChanged(
+        val ingredientId: String,
+        val amountBase: Double?
+    ) : CloudRealtimeEvent {
+        override val domain = CloudSyncDomain.PANTRY
+    }
+
+    data class ShoppingCheckedChanged(
+        val weeklyPlanId: String,
+        val ingredientId: String,
+        val checked: Boolean?
+    ) : CloudRealtimeEvent {
+        override val domain = CloudSyncDomain.SHOPPING
+    }
+
+    data class ShoppingIncludedChanged(
+        val weeklyPlanId: String,
+        val ingredientId: String,
+        val included: Boolean?
+    ) : CloudRealtimeEvent {
+        override val domain = CloudSyncDomain.SHOPPING
+    }
+}
+
+private fun PostgresAction.recordOrNull(): JsonObject? =
+    (this as? HasRecord)?.record
+
+private fun PostgresAction.oldRecordOrNull(): JsonObject? =
+    (this as? HasOldRecord)?.oldRecord
+
+private fun JsonObject.stringValue(name: String): String? =
+    get(name)?.jsonPrimitive?.contentOrNull
+
+private fun JsonObject.doubleValue(name: String): Double? =
+    get(name)?.jsonPrimitive?.doubleOrNull
+
+private fun JsonObject.booleanValue(name: String): Boolean? =
+    get(name)?.jsonPrimitive?.booleanOrNull
+
+internal fun realtimeEventFor(
+    table: String,
+    action: PostgresAction,
+    expectedHouseholdId: String
+): CloudRealtimeEvent? =
+    realtimeEventForPayload(
+        table = table,
+        record = action.recordOrNull(),
+        oldRecord = action.oldRecordOrNull(),
+        expectedHouseholdId = expectedHouseholdId
+    )
+
+internal fun realtimeEventForPayload(
+    table: String,
+    record: JsonObject?,
+    oldRecord: JsonObject?,
+    expectedHouseholdId: String
+): CloudRealtimeEvent? {
+    val source = record ?: oldRecord
+    val eventHouseholdId =
+        source?.stringValue("household_id")
+
+    if (
+        eventHouseholdId != null &&
+        eventHouseholdId != expectedHouseholdId
+    ) {
+        return null
+    }
+
+    return when (table) {
+        "pantry_items" -> {
+            val ingredientId =
+                source?.stringValue("ingredient_id") ?: return null
+
+            CloudRealtimeEvent.PantryChanged(
+                ingredientId = ingredientId,
+                amountBase = record?.doubleValue("amount_base")
+            )
+        }
+
+        "shopping_checks" -> {
+            val planId =
+                source?.stringValue("weekly_plan_id") ?: return null
+            val ingredientId =
+                source.stringValue("ingredient_id") ?: return null
+
+            CloudRealtimeEvent.ShoppingCheckedChanged(
+                weeklyPlanId = planId,
+                ingredientId = ingredientId,
+                checked = record?.booleanValue("checked")
+            )
+        }
+
+        "shopping_inclusions" -> {
+            val planId =
+                source?.stringValue("weekly_plan_id") ?: return null
+            val ingredientId =
+                source.stringValue("ingredient_id") ?: return null
+
+            CloudRealtimeEvent.ShoppingIncludedChanged(
+                weeklyPlanId = planId,
+                ingredientId = ingredientId,
+                included = record?.booleanValue("included")
+            )
+        }
+
+        else -> syncDomainForTable(table)?.let {
+            CloudRealtimeEvent.DomainChanged(it)
+        }
+    }
+}
+
 class CloudMealRepository(
     private val context: Context,
     private val householdId: String
@@ -238,366 +423,402 @@ class CloudMealRepository(
 
         coroutineScope {
             val ingredientsDeferred = async {
-                supabase.from("ingredients").select {
-                    filter { eq("household_id", householdId) }
-                }.decodeList<IngredientRow>()
-            }
-            val categoriesDeferred = async {
-                supabase.from("shopping_categories").select {
-                    filter { eq("household_id", householdId) }
-                }.decodeList<IngredientCategoryRow>()
-            }
-            val proteinFlagsDeferred = async {
-                supabase.from("ingredient_protein_flags").select {
-                    filter { eq("household_id", householdId) }
-                }.decodeList<IngredientProteinRow>()
-            }
-            val recipeCategoriesDeferred = async {
-                supabase.from("recipe_categories").select {
-                    filter { eq("household_id", householdId) }
-                }.decodeList<RecipeCategoryRow>()
-            }
-            val categoryAssignmentsDeferred = async {
-                supabase.from("recipe_category_assignments").select {
-                    filter { eq("household_id", householdId) }
-                }.decodeList<RecipeCategoryAssignmentRow>()
+                loadIngredientsSnapshot()
             }
             val recipesDeferred = async {
-                supabase.from("recipes").select {
-                    filter { eq("household_id", householdId) }
-                }.decodeList<RecipeRow>()
-            }
-            val rotationDeferred = async {
-                supabase.from("recipe_rotation_settings").select {
-                    filter { eq("household_id", householdId) }
-                }.decodeList<RecipeRotationRow>()
-            }
-            val recipeTimeDeferred = async {
-                supabase.from("recipe_time_settings").select {
-                    filter { eq("household_id", householdId) }
-                }.decodeList<RecipeTimeRow>()
-            }
-            val recipeIngredientsDeferred = async {
-                supabase.from("recipe_ingredients").select {
-                    filter { eq("household_id", householdId) }
-                }.decodeList<RecipeIngredientRow>()
-            }
-            val recipePantryPrerequisitesDeferred = async {
-                supabase.from("recipe_pantry_prerequisites").select {
-                    filter { eq("household_id", householdId) }
-                }.decodeList<RecipePantryPrerequisiteRow>()
+                loadRecipesSnapshot()
             }
             val pantryDeferred = async {
-                supabase.from("pantry_items").select {
-                    filter { eq("household_id", householdId) }
-                }.decodeList<PantryRow>()
+                loadPantrySnapshot()
             }
-            val settingsDeferred = async {
-                supabase.from("household_settings").select {
-                    filter { eq("household_id", householdId) }
-                }.decodeList<SettingsRow>().firstOrNull()
+            val weekDeferred = async {
+                loadWeekSnapshot()
             }
             val historyDeferred = async {
-                supabase.from("meal_history").select {
-                    filter {
-                        eq("household_id", householdId)
-                        gte("eaten_on", LocalDate.now().minusDays(90).toString())
-                    }
-                }.decodeList<MealHistoryRow>()
+                loadHistorySnapshot()
             }
 
-            val ingredientRows = ingredientsDeferred.await()
-            val categoryRows = categoriesDeferred.await()
-            val proteinFlagRows = proteinFlagsDeferred.await()
-            val recipeCategoryRows = recipeCategoriesDeferred.await()
-            val categoryAssignmentRows = categoryAssignmentsDeferred.await()
-            val recipeRows = recipesDeferred.await()
-            val rotationRows = rotationDeferred.await()
-            val recipeTimeRows = recipeTimeDeferred.await()
-            val recipeIngredientRows = recipeIngredientsDeferred.await()
-            val recipePantryPrerequisiteRows =
-                recipePantryPrerequisitesDeferred.await()
-            val pantryRows = pantryDeferred.await()
-            val settings = settingsDeferred.await()
-            val historyRows = historyDeferred.await()
+            val ingredients = ingredientsDeferred.await()
+            val recipes = recipesDeferred.await()
+            val pantry = pantryDeferred.await()
+            val week = weekDeferred.await()
+            val history = historyDeferred.await()
+            val shopping = loadShoppingSnapshot(
+                week.weeklyPlanId
+            )
+
+            CloudSnapshot(
+                ingredients = ingredients.ingredients,
+                ingredientCategories =
+                    ingredients.ingredientCategories,
+                recipeCategories =
+                    recipes.recipeCategories,
+                recipes = recipes.recipes,
+                pantry = pantry,
+                dayModes = week.dayModes,
+                dayMaxPrepMinutes =
+                    week.dayMaxPrepMinutes,
+                plan = week.plan,
+                lockedDays = week.lockedDays,
+                shoppingChecked = shopping.checked,
+                shoppingIncluded = shopping.included,
+                selectedLunchRecipeIds =
+                    week.selectedLunchRecipeIds,
+                weeklyPlanId = week.weeklyPlanId,
+                weeklySandwichRecipeId =
+                    week.weeklySandwichRecipeId,
+                sandwichDay = week.sandwichDay,
+                history = history
+            )
+        }
+    }
+
+    internal suspend fun loadIngredientsSnapshot(): CloudIngredientsSnapshot =
+        withContext(Dispatchers.IO) {
+            coroutineScope {
+                val ingredientsDeferred = async {
+                    supabase.from("ingredients").select {
+                        filter { eq("household_id", householdId) }
+                    }.decodeList<IngredientRow>()
+                }
+                val categoriesDeferred = async {
+                    supabase.from("shopping_categories").select {
+                        filter { eq("household_id", householdId) }
+                    }.decodeList<IngredientCategoryRow>()
+                }
+                val proteinFlagsDeferred = async {
+                    supabase.from("ingredient_protein_flags").select {
+                        filter { eq("household_id", householdId) }
+                    }.decodeList<IngredientProteinRow>()
+                }
+
+                val ingredientRows = ingredientsDeferred.await()
+                val categoryRows = categoriesDeferred.await()
+                val proteinRows = proteinFlagsDeferred.await()
+                val urls = ingredientRows
+                    .mapNotNull { it.imagePath }
+                    .distinct()
+                    .map { path ->
+                        async { path to signedImageUrl(path) }
+                    }
+                    .awaitAll()
+                    .toMap()
+
+                val proteinByIngredient =
+                    proteinRows.associateBy { it.ingredientId }
+
+                CloudIngredientsSnapshot(
+                    ingredients = ingredientRows.mapNotNull { row ->
+                        val type = runCatching {
+                            QuantityType.valueOf(row.quantityType)
+                        }.getOrNull() ?: return@mapNotNull null
+                        val unit = runCatching {
+                            MeasurementUnit.valueOf(row.preferredUnit)
+                        }.getOrNull() ?: return@mapNotNull null
+
+                        Ingredient(
+                            id = row.id,
+                            name = row.name,
+                            quantityType = type,
+                            preferredUnit = unit,
+                            shoppingCategoryId = row.shoppingCategoryId,
+                            isProtein =
+                                proteinByIngredient[row.id]?.isProtein == true,
+                            imageUri = row.imagePath?.let(urls::get),
+                            imagePath = row.imagePath
+                        )
+                    },
+                    ingredientCategories = categoryRows
+                        .sortedWith(
+                            compareBy<IngredientCategoryRow> { it.position }
+                                .thenBy { it.name.lowercase() }
+                        )
+                        .map {
+                            IngredientCategory(
+                                id = it.id,
+                                name = it.name,
+                                position = it.position
+                            )
+                        }
+                )
+            }
+        }
+
+    internal suspend fun loadRecipesSnapshot(): CloudRecipesSnapshot =
+        withContext(Dispatchers.IO) {
+            coroutineScope {
+                val categoriesDeferred = async {
+                    supabase.from("recipe_categories").select {
+                        filter { eq("household_id", householdId) }
+                    }.decodeList<RecipeCategoryRow>()
+                }
+                val assignmentsDeferred = async {
+                    supabase.from("recipe_category_assignments").select {
+                        filter { eq("household_id", householdId) }
+                    }.decodeList<RecipeCategoryAssignmentRow>()
+                }
+                val recipesDeferred = async {
+                    supabase.from("recipes").select(
+                        columns = Columns.list(
+                            "id",
+                            "household_id",
+                            "name",
+                            "meal_type",
+                            "notes",
+                            "image_path"
+                        )
+                    ) {
+                        filter { eq("household_id", householdId) }
+                    }.decodeList<RecipeRow>()
+                }
+                val rotationDeferred = async {
+                    supabase.from("recipe_rotation_settings").select {
+                        filter { eq("household_id", householdId) }
+                    }.decodeList<RecipeRotationRow>()
+                }
+                val timeDeferred = async {
+                    supabase.from("recipe_time_settings").select {
+                        filter { eq("household_id", householdId) }
+                    }.decodeList<RecipeTimeRow>()
+                }
+                val ingredientsDeferred = async {
+                    supabase.from("recipe_ingredients").select {
+                        filter { eq("household_id", householdId) }
+                    }.decodeList<RecipeIngredientRow>()
+                }
+                val pantryPrerequisitesDeferred = async {
+                    supabase.from("recipe_pantry_prerequisites").select {
+                        filter { eq("household_id", householdId) }
+                    }.decodeList<RecipePantryPrerequisiteRow>()
+                }
+
+                val categoryRows = categoriesDeferred.await()
+                val assignmentRows = assignmentsDeferred.await()
+                val recipeRows = recipesDeferred.await()
+                val rotationRows = rotationDeferred.await()
+                val timeRows = timeDeferred.await()
+                val ingredientRows = ingredientsDeferred.await()
+                val pantryPrerequisiteRows =
+                    pantryPrerequisitesDeferred.await()
+
+                val urls = recipeRows
+                    .mapNotNull { it.imagePath }
+                    .distinct()
+                    .map { path ->
+                        async { path to signedImageUrl(path) }
+                    }
+                    .awaitAll()
+                    .toMap()
+
+                val requirements = ingredientRows.groupBy { it.recipeId }
+                val pantryPrerequisites =
+                    pantryPrerequisiteRows.groupBy { it.recipeId }
+                val categoryByRecipe =
+                    assignmentRows.associateBy { it.recipeId }
+                val rotationByRecipe =
+                    rotationRows.associateBy { it.recipeId }
+                val timeByRecipe =
+                    timeRows.associateBy { it.recipeId }
+
+                CloudRecipesSnapshot(
+                    recipeCategories = categoryRows
+                        .sortedWith(
+                            compareBy<RecipeCategoryRow> { it.position }
+                                .thenBy { it.name.lowercase() }
+                        )
+                        .map {
+                            RecipeCategoryOption(
+                                id = it.id,
+                                name = it.name,
+                                position = it.position
+                            )
+                        },
+                    recipes = recipeRows.map { row ->
+                        Recipe(
+                            id = row.id,
+                            name = row.name,
+                            mealType = runCatching {
+                                MealType.valueOf(row.mealType)
+                            }.getOrDefault(MealType.DINNER),
+                            autoRotationEnabled =
+                                rotationByRecipe[row.id]
+                                    ?.autoRotationEnabled
+                                    ?: true,
+                            prepMinutes =
+                                timeByRecipe[row.id]?.prepMinutes,
+                            categoryId =
+                                categoryByRecipe[row.id]?.categoryId,
+                            notes = row.notes,
+                            imageUri = row.imagePath?.let(urls::get),
+                            imagePath = row.imagePath,
+                            ingredients =
+                                requirements[row.id].orEmpty().map {
+                                    RecipeIngredient(
+                                        ingredientId = it.ingredientId,
+                                        amountBase = it.amountBase
+                                    )
+                                },
+                            pantryPrerequisites =
+                                pantryPrerequisites[row.id].orEmpty().map {
+                                    RecipePantryPrerequisite(
+                                        ingredientId = it.ingredientId,
+                                        minimumAmountBase = it.minimumAmountBase
+                                    )
+                                }
+                        )
+                    }
+                )
+            }
+        }
+
+    internal suspend fun loadPantrySnapshot(): Map<String, Double> =
+        withContext(Dispatchers.IO) {
+            supabase.from("pantry_items").select {
+                filter { eq("household_id", householdId) }
+            }.decodeList<PantryRow>()
+                .associate { it.ingredientId to it.amountBase }
+        }
+
+    internal suspend fun loadWeekSnapshot(): CloudWeekSnapshot =
+        withContext(Dispatchers.IO) {
+            val settings = supabase.from("household_settings").select {
+                filter { eq("household_id", householdId) }
+            }.decodeList<SettingsRow>().firstOrNull()
 
             val weeklyPlan = ensureWeek(
                 weekStart = currentWeekStart(),
                 sandwichRecipeId = settings?.sandwichRecipeId
             )
 
-            val mealsDeferred = async {
-                supabase.from("planned_meals").select {
-                    filter {
-                        eq("household_id", householdId)
-                        eq("weekly_plan_id", weeklyPlan.id)
-                    }
-                }.decodeList<PlannedMealRow>()
-            }
-            val shoppingDeferred = async {
-                supabase.from("shopping_checks").select {
-                    filter {
-                        eq("household_id", householdId)
-                        eq("weekly_plan_id", weeklyPlan.id)
-                    }
-                }.decodeList<ShoppingCheckRow>()
-            }
-            val shoppingInclusionDeferred = async {
-                supabase.from("shopping_inclusions").select {
-                    filter {
-                        eq("household_id", householdId)
-                        eq("weekly_plan_id", weeklyPlan.id)
-                    }
-                }.decodeList<ShoppingInclusionRow>()
-            }
-            val lunchDeferred = async {
-                supabase.from("weekly_lunch_recipes").select {
-                    filter {
-                        eq("household_id", householdId)
-                        eq("weekly_plan_id", weeklyPlan.id)
-                    }
-                }.decodeList<WeeklyLunchRecipeRow>()
-            }
-            val constraintsDeferred = async {
-                supabase.from("weekly_day_constraints").select {
-                    filter {
-                        eq("household_id", householdId)
-                        eq("weekly_plan_id", weeklyPlan.id)
-                    }
-                }.decodeList<DayConstraintRow>()
-            }
-
-            val mealRows = mealsDeferred.await()
-            val shoppingRows = shoppingDeferred.await()
-            val shoppingInclusionRows = shoppingInclusionDeferred.await()
-            val lunchRows = lunchDeferred.await()
-            val constraintRows = constraintsDeferred.await()
-
-            val imagePaths = buildSet {
-                ingredientRows.mapNotNullTo(this) { it.imagePath }
-                recipeRows.mapNotNullTo(this) { it.imagePath }
-            }
-            val urls = imagePaths
-                .map { path ->
-                    async { path to signedImageUrl(path) }
+            coroutineScope {
+                val mealsDeferred = async {
+                    supabase.from("planned_meals").select {
+                        filter {
+                            eq("household_id", householdId)
+                            eq("weekly_plan_id", weeklyPlan.id)
+                        }
+                    }.decodeList<PlannedMealRow>()
                 }
-                .awaitAll()
-                .toMap()
+                val lunchDeferred = async {
+                    supabase.from("weekly_lunch_recipes").select {
+                        filter {
+                            eq("household_id", householdId)
+                            eq("weekly_plan_id", weeklyPlan.id)
+                        }
+                    }.decodeList<WeeklyLunchRecipeRow>()
+                }
+                val constraintsDeferred = async {
+                    supabase.from("weekly_day_constraints").select {
+                        filter {
+                            eq("household_id", householdId)
+                            eq("weekly_plan_id", weeklyPlan.id)
+                        }
+                    }.decodeList<DayConstraintRow>()
+                }
 
-            val proteinByIngredient = proteinFlagRows.associateBy { it.ingredientId }
+                val mealRows = mealsDeferred.await()
+                val lunchRows = lunchDeferred.await()
+                val constraintRows = constraintsDeferred.await()
 
-            val ingredients = ingredientRows.mapNotNull { row ->
-                val type = runCatching { QuantityType.valueOf(row.quantityType) }.getOrNull()
-                    ?: return@mapNotNull null
-                val unit = runCatching { MeasurementUnit.valueOf(row.preferredUnit) }.getOrNull()
-                    ?: return@mapNotNull null
+                val modes = orderedWeekDays
+                    .associateWith { DayMode.AUTO }
+                    .toMutableMap()
+                val plan = orderedWeekDays
+                    .associateWith { null as String? }
+                    .toMutableMap()
+                val locked = mutableSetOf<DayOfWeek>()
 
-                Ingredient(
-                    id = row.id,
-                    name = row.name,
-                    quantityType = type,
-                    preferredUnit = unit,
-                    shoppingCategoryId = row.shoppingCategoryId,
-                    isProtein = proteinByIngredient[row.id]?.isProtein == true,
-                    imageUri = row.imagePath?.let(urls::get),
-                    imagePath = row.imagePath
+                mealRows.forEach { row ->
+                    val day = DayOfWeek.of(row.dayOfWeek)
+                    modes[day] =
+                        if (row.mode == DayMode.AWAY.name) {
+                            DayMode.AWAY
+                        } else {
+                            DayMode.AUTO
+                        }
+                    plan[day] = row.recipeId
+                    if (row.locked) locked += day
+                }
+
+                CloudWeekSnapshot(
+                    dayModes = modes,
+                    dayMaxPrepMinutes =
+                        orderedWeekDays.associateWith { day ->
+                            constraintRows
+                                .firstOrNull {
+                                    it.dayOfWeek == day.value
+                                }
+                                ?.maxPrepMinutes
+                        },
+                    plan = plan,
+                    lockedDays = locked,
+                    selectedLunchRecipeIds =
+                        lunchRows.sortedBy { it.position }
+                            .map { it.recipeId },
+                    weeklyPlanId = weeklyPlan.id,
+                    weeklySandwichRecipeId =
+                        weeklyPlan.sandwichRecipeId,
+                    sandwichDay =
+                        weeklyPlan.sandwichDay?.let(DayOfWeek::of)
                 )
             }
+        }
 
-            val requirements = recipeIngredientRows.groupBy { it.recipeId }
-            val pantryPrerequisites =
-                recipePantryPrerequisiteRows.groupBy { it.recipeId }
-            val categoryByRecipe = categoryAssignmentRows.associateBy { it.recipeId }
-            val rotationByRecipe = rotationRows.associateBy { it.recipeId }
-            val timeByRecipe = recipeTimeRows.associateBy { it.recipeId }
-            val recipes = recipeRows.map { row ->
-                Recipe(
-                    id = row.id,
-                    name = row.name,
-                    mealType = runCatching {
-                        MealType.valueOf(row.mealType)
-                    }.getOrDefault(MealType.DINNER),
-                    autoRotationEnabled =
-                        rotationByRecipe[row.id]?.autoRotationEnabled ?: true,
-                    prepMinutes = timeByRecipe[row.id]?.prepMinutes,
-                    proteinTag = row.proteinTag,
-                    categoryTag = row.categoryTag,
-                    categoryId = categoryByRecipe[row.id]?.categoryId,
-                    notes = row.notes,
-                    imageUri = row.imagePath?.let(urls::get),
-                    imagePath = row.imagePath,
-                    ingredients = requirements[row.id].orEmpty().map {
-                        RecipeIngredient(
-                            ingredientId = it.ingredientId,
-                            amountBase = it.amountBase
-                        )
-                    },
-                    pantryPrerequisites =
-                        pantryPrerequisites[row.id].orEmpty().map {
-                            RecipePantryPrerequisite(
-                                ingredientId = it.ingredientId,
-                                minimumAmountBase = it.minimumAmountBase
-                            )
+    internal suspend fun loadShoppingSnapshot(
+        weeklyPlanId: String
+    ): CloudShoppingSnapshot =
+        withContext(Dispatchers.IO) {
+            coroutineScope {
+                val checksDeferred = async {
+                    supabase.from("shopping_checks").select {
+                        filter {
+                            eq("household_id", householdId)
+                            eq("weekly_plan_id", weeklyPlanId)
+                        }
+                    }.decodeList<ShoppingCheckRow>()
+                }
+                val inclusionDeferred = async {
+                    supabase.from("shopping_inclusions").select {
+                        filter {
+                            eq("household_id", householdId)
+                            eq("weekly_plan_id", weeklyPlanId)
+                        }
+                    }.decodeList<ShoppingInclusionRow>()
+                }
+
+                CloudShoppingSnapshot(
+                    checked = checksDeferred.await()
+                        .associate {
+                            it.ingredientId to it.checked
+                        },
+                    included = inclusionDeferred.await()
+                        .associate {
+                            it.ingredientId to it.included
                         }
                 )
             }
+        }
 
-            val modes = orderedWeekDays.associateWith { DayMode.AUTO }.toMutableMap()
-            val plan = orderedWeekDays.associateWith { null as String? }.toMutableMap()
-            val locked = mutableSetOf<DayOfWeek>()
-
-            mealRows.forEach { row ->
-                val day = DayOfWeek.of(row.dayOfWeek)
-                modes[day] = if (row.mode == DayMode.AWAY.name) DayMode.AWAY else DayMode.AUTO
-                plan[day] = row.recipeId
-                if (row.locked) locked += day
-            }
-
-            CloudSnapshot(
-                ingredients = ingredients,
-                ingredientCategories = categoryRows
-                    .sortedWith(compareBy<IngredientCategoryRow> { it.position }.thenBy { it.name.lowercase() })
-                    .map {
-                        IngredientCategory(
-                            id = it.id,
-                            name = it.name,
-                            position = it.position
-                        )
-                    },
-                recipeCategories = recipeCategoryRows
-                    .sortedWith(compareBy<RecipeCategoryRow> { it.position }.thenBy { it.name.lowercase() })
-                    .map {
-                        RecipeCategoryOption(
-                            id = it.id,
-                            name = it.name,
-                            position = it.position
-                        )
-                    },
-                recipes = recipes,
-                pantry = pantryRows.associate { it.ingredientId to it.amountBase },
-                dayModes = modes,
-                dayMaxPrepMinutes = orderedWeekDays.associateWith { day ->
-                    constraintRows
-                        .firstOrNull { it.dayOfWeek == day.value }
-                        ?.maxPrepMinutes
-                },
-                plan = plan,
-                lockedDays = locked,
-                shoppingChecked = shoppingRows.associate { it.ingredientId to it.checked },
-                shoppingIncluded = shoppingInclusionRows.associate {
-                    it.ingredientId to it.included
-                },
-                selectedLunchRecipeIds = lunchRows
-                    .sortedBy { it.position }
-                    .map { it.recipeId },
-                weeklyPlanId = weeklyPlan.id,
-                weeklySandwichRecipeId = weeklyPlan.sandwichRecipeId,
-                sandwichDay = weeklyPlan.sandwichDay?.let(DayOfWeek::of),
-                history = historyRows.map {
+    internal suspend fun loadHistorySnapshot(): List<MealHistoryEntry> =
+        withContext(Dispatchers.IO) {
+            supabase.from("meal_history").select {
+                filter {
+                    eq("household_id", householdId)
+                    gte(
+                        "eaten_on",
+                        LocalDate.now()
+                            .minusDays(90)
+                            .toString()
+                    )
+                }
+            }.decodeList<MealHistoryRow>()
+                .map {
                     MealHistoryEntry(
                         recipeId = it.recipeId,
                         eatenOn = LocalDate.parse(it.eatenOn)
                     )
                 }
-            )
         }
-    }
-
-    suspend fun needsLocalImport(): Boolean = withContext(Dispatchers.IO) {
-        val settings = supabase.from("household_settings").select {
-            filter { eq("household_id", householdId) }
-            limit(1)
-        }.decodeList<SettingsRow>().firstOrNull()
-
-        settings?.localImportCompleted != true
-    }
-
-    suspend fun markLocalImportCompleted() = withContext(Dispatchers.IO) {
-        supabase.from("household_settings").update(
-            {
-                set("local_import_completed", true)
-            }
-        ) {
-            filter { eq("household_id", householdId) }
-        }
-    }
-
-    suspend fun importLocal(snapshot: LocalStorage.Snapshot) = withContext(Dispatchers.IO) {
-
-        snapshot.ingredients.forEach { ingredient ->
-            upsertIngredient(ingredient)
-        }
-
-        snapshot.recipes.forEach { recipe ->
-            upsertRecipe(recipe)
-        }
-
-        if (snapshot.pantry.isNotEmpty()) {
-            supabase.from("pantry_items").upsert(
-                snapshot.pantry.map { (ingredientId, amount) ->
-                    PantryRow(householdId, ingredientId, amount)
-                }
-            ) {
-                onConflict = "household_id,ingredient_id"
-            }
-        }
-
-        supabase.from("household_settings").upsert(
-            SettingsRow(
-                householdId = householdId,
-                sandwichRecipeId = snapshot.weeklySandwichRecipeId,
-                localImportCompleted = false
-            )
-        ) {
-            onConflict = "household_id"
-        }
-
-        val week = ensureWeek(
-            currentWeekStart(),
-            snapshot.weeklySandwichRecipeId
-        )
-
-        val activeSandwichDay = orderedWeekDays.firstOrNull { day ->
-            snapshot.dayModes[day] != DayMode.AWAY &&
-                snapshot.plan[day] == snapshot.weeklySandwichRecipeId
-        } ?: WeeklyPlanner.preferredSandwichDay(snapshot.dayModes)
-
-        val meals = orderedWeekDays.map { day ->
-            PlannedMealRow(
-                householdId = householdId,
-                weeklyPlanId = week.id,
-                dayOfWeek = day.value,
-                mode = if (snapshot.dayModes[day] == DayMode.AWAY) "AWAY" else "AUTO",
-                recipeId = if (day == activeSandwichDay) null else snapshot.plan[day],
-                locked = false
-            )
-        }
-        supabase.from("planned_meals").upsert(meals) {
-            onConflict = "weekly_plan_id,day_of_week"
-        }
-
-        saveWeekHeader(
-            weeklyPlanId = week.id,
-            sandwichRecipeId = snapshot.weeklySandwichRecipeId,
-            sandwichDay = activeSandwichDay
-        )
-
-        val checks = snapshot.shoppingChecked.map { (ingredientId, checked) ->
-            ShoppingCheckRow(
-                householdId = householdId,
-                weeklyPlanId = week.id,
-                ingredientId = ingredientId,
-                checked = checked
-            )
-        }
-        if (checks.isNotEmpty()) {
-            supabase.from("shopping_checks").upsert(checks) {
-                onConflict = "weekly_plan_id,ingredient_id"
-            }
-        }
-
-        markLocalImportCompleted()
-    }
 
     suspend fun upsertIngredient(ingredient: Ingredient): Ingredient = withContext(Dispatchers.IO) {
         val finalImage = resolveImage(
@@ -699,8 +920,6 @@ class CloudMealRepository(
                 householdId = householdId,
                 name = recipe.name,
                 mealType = recipe.mealType.name,
-                proteinTag = recipe.proteinTag,
-                categoryTag = recipe.categoryTag,
                 notes = recipe.notes,
                 imagePath = finalImage.first
             )
@@ -1026,15 +1245,16 @@ class CloudMealRepository(
         )
     }
 
-    suspend fun startRealtime(
+    internal suspend fun startRealtime(
         scope: CoroutineScope,
-        onChanged: suspend () -> Unit
+        onEvent: suspend (CloudRealtimeEvent) -> Unit
     ) {
         stopRealtime()
 
         val channel = supabase.realtime.channel("household-$householdId")
-        val changes = MutableSharedFlow<Unit>(extraBufferCapacity = 32)
-
+        val domainSignals = CloudSyncDomain.entries.associateWith {
+            MutableSharedFlow<Unit>(extraBufferCapacity = 32)
+        }
         val watchedTables = listOf(
             "ingredients",
             "ingredient_protein_flags",
@@ -1057,17 +1277,47 @@ class CloudMealRepository(
             "meal_history"
         )
 
-        realtimeJobs = watchedTables.map { table ->
-            channel.postgresChangeFlow<PostgresAction>(schema = "public") {
-                this.table = table
-            }.onEach {
-                changes.tryEmit(Unit)
-            }.launchIn(scope)
-        } + changes
-            .debounce(250)
-            .onEach { onChanged() }
-            .launchIn(scope)
+        val watcherJobs = watchedTables.mapNotNull { table ->
+            val domain = syncDomainForTable(table)
+                ?: return@mapNotNull null
 
+            channel.postgresChangeFlow<PostgresAction>(
+                schema = "public"
+            ) {
+                this.table = table
+            }.onEach { action ->
+                when (
+                    val event = realtimeEventFor(
+                        table = table,
+                        action = action,
+                        expectedHouseholdId = householdId
+                    )
+                ) {
+                    is CloudRealtimeEvent.PantryChanged,
+                    is CloudRealtimeEvent.ShoppingCheckedChanged,
+                    is CloudRealtimeEvent.ShoppingIncludedChanged ->
+                        onEvent(event)
+
+                    is CloudRealtimeEvent.DomainChanged ->
+                        domainSignals.getValue(domain).tryEmit(Unit)
+
+                    null -> Unit
+                }
+            }.launchIn(scope)
+        }
+
+        val reconciliationJobs = domainSignals.map { (domain, signal) ->
+            signal
+                .debounce(250)
+                .onEach {
+                    onEvent(
+                        CloudRealtimeEvent.DomainChanged(domain)
+                    )
+                }
+                .launchIn(scope)
+        }
+
+        realtimeJobs = watcherJobs + reconciliationJobs
         realtimeChannel = channel
         channel.subscribe()
     }
