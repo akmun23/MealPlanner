@@ -1159,29 +1159,7 @@ class MealPlannerState(
         shoppingChecked.clear()
         shoppingIncluded.clear()
 
-        val id = weeklyPlanId ?: return
-        runMutation(
-            domains = setOf(
-                CloudSyncDomain.WEEK,
-                CloudSyncDomain.SHOPPING
-            ),
-            keys = setOf(
-                SyncMutationKey(
-                    domain = CloudSyncDomain.WEEK,
-                    entityId = "week:" + id
-                )
-            )
-        ) {
-            repository.clearShoppingChecks(id)
-            repository.saveWeekState(
-                weeklyPlanId = id,
-                plan = plan.toMap(),
-                dayModes = dayModes.toMap(),
-                lockedDays = lockedDays.toSet(),
-                sandwichRecipeId = null,
-                sandwichDay = null
-            )
-        }
+        persistWeek(clearChecks = true)
     }
 
     fun setWeeklySandwichRecipe(recipeId: String) {
@@ -1197,26 +1175,7 @@ class MealPlannerState(
 
         shoppingChecked.clear()
         shoppingIncluded.clear()
-
-        runMutation(
-            domains = setOf(
-                CloudSyncDomain.WEEK,
-                CloudSyncDomain.SHOPPING
-            )
-        ) {
-            repository.setHouseholdSandwich(recipeId)
-            weeklyPlanId?.let {
-                repository.clearShoppingChecks(it)
-                repository.saveWeekState(
-                    weeklyPlanId = it,
-                    plan = plan.toMap(),
-                    dayModes = dayModes.toMap(),
-                    lockedDays = lockedDays.toSet(),
-                    sandwichRecipeId = weeklySandwichRecipeId,
-                    sandwichDay = sandwichDay
-                )
-            }
-        }
+        persistWeek(clearChecks = true)
     }
 
     fun toggleEatingAtHome(day: DayOfWeek) {
@@ -1250,22 +1209,13 @@ class MealPlannerState(
         dayMaxPrepMinutes[day] = normalized
 
         val planId = weeklyPlanId ?: return
-        scheduleMutation(
-            coalesceKey = "day-prep:" + day.value,
-            domains = setOf(CloudSyncDomain.WEEK),
-            keys = setOf(
-                SyncMutationKey(
-                    domain = CloudSyncDomain.WEEK,
-                    entityId = "day-prep:" + day.value
-                )
-            )
-        ) {
-            repository.setDayPrepLimit(
+        enqueueMutation(
+            QueuedMutation.SetDayPrep(
                 weeklyPlanId = planId,
-                day = day,
+                day = day.name,
                 maxPrepMinutes = normalized
             )
-        }
+        )
     }
 
     fun setPantry(
@@ -1279,18 +1229,12 @@ class MealPlannerState(
         val base = unit.toBase(amount.coerceAtLeast(0.0))
         pantry[ingredientId] = base
 
-        scheduleMutation(
-            coalesceKey = "pantry:" + ingredientId,
-            domains = setOf(CloudSyncDomain.PANTRY),
-            keys = setOf(
-                SyncMutationKey(
-                    domain = CloudSyncDomain.PANTRY,
-                    entityId = "pantry:" + ingredientId
-                )
+        enqueueMutation(
+            QueuedMutation.SetPantry(
+                ingredientId = ingredientId,
+                amountBase = base
             )
-        ) {
-            repository.setPantry(ingredientId, base)
-        }
+        )
     }
 
     fun addPantryAmount(
@@ -1305,18 +1249,12 @@ class MealPlannerState(
         val next = (pantry[ingredientId] ?: 0.0) + addedBase
         pantry[ingredientId] = next
 
-        scheduleMutation(
-            coalesceKey = "pantry:" + ingredientId,
-            domains = setOf(CloudSyncDomain.PANTRY),
-            keys = setOf(
-                SyncMutationKey(
-                    domain = CloudSyncDomain.PANTRY,
-                    entityId = "pantry:" + ingredientId
-                )
+        enqueueMutation(
+            QueuedMutation.SetPantry(
+                ingredientId = ingredientId,
+                amountBase = next
             )
-        ) {
-            repository.setPantry(ingredientId, next)
-        }
+        )
     }
 
     fun consumeRecipeIngredients(recipeId: String) {
@@ -1331,17 +1269,14 @@ class MealPlannerState(
             pantry[ingredientId] = amountBase
         }
 
-        runMutation(
-            domains = setOf(CloudSyncDomain.PANTRY),
-            keys = updates.keys.mapTo(mutableSetOf()) {
-                SyncMutationKey(
-                    domain = CloudSyncDomain.PANTRY,
-                    entityId = "pantry:" + it
+        enqueueMutations(
+            updates.map { (ingredientId, amountBase) ->
+                QueuedMutation.SetPantry(
+                    ingredientId = ingredientId,
+                    amountBase = amountBase
                 )
             }
-        ) {
-            repository.setPantryBatch(updates)
-        }
+        )
     }
 
     fun generateWeek() {
@@ -1386,29 +1321,7 @@ class MealPlannerState(
                 shoppingChecked.clear()
                 shoppingIncluded.clear()
 
-                val id = weeklyPlanId ?: return@launch
-                runMutation(
-                    domains = setOf(
-                        CloudSyncDomain.WEEK,
-                        CloudSyncDomain.SHOPPING
-                    ),
-                    keys = setOf(
-                        SyncMutationKey(
-                            domain = CloudSyncDomain.WEEK,
-                            entityId = "week:" + id
-                        )
-                    )
-                ) {
-                    repository.clearShoppingChecks(id)
-                    repository.saveWeekState(
-                        weeklyPlanId = id,
-                        plan = plan.toMap(),
-                        dayModes = dayModes.toMap(),
-                        lockedDays = lockedDays.toSet(),
-                        sandwichRecipeId = weeklySandwichRecipeId,
-                        sandwichDay = sandwichDay
-                    )
-                }
+                persistWeek(clearChecks = true)
             } catch (e: Exception) {
                 lastError = e.message ?: "Madplanen kunne ikke opdateres."
             } finally {
@@ -1457,29 +1370,7 @@ class MealPlannerState(
                 plan.putAll(updated)
                 shoppingChecked.clear()
                 shoppingIncluded.clear()
-                val id = weeklyPlanId ?: return@launch
-                runMutation(
-                    domains = setOf(
-                        CloudSyncDomain.WEEK,
-                        CloudSyncDomain.SHOPPING
-                    ),
-                    keys = setOf(
-                        SyncMutationKey(
-                            domain = CloudSyncDomain.WEEK,
-                            entityId = "week:" + id
-                        )
-                    )
-                ) {
-                    repository.clearShoppingChecks(id)
-                    repository.saveWeekState(
-                        weeklyPlanId = id,
-                        plan = plan.toMap(),
-                        dayModes = dayModes.toMap(),
-                        lockedDays = lockedDays.toSet(),
-                        sandwichRecipeId = weeklySandwichRecipeId,
-                        sandwichDay = sandwichDay
-                    )
-                }
+                persistWeek(clearChecks = true)
             } catch (e: Exception) {
                 lastError = e.message ?: "Retten kunne ikke skiftes."
             }
