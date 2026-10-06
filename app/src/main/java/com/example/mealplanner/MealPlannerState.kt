@@ -82,6 +82,9 @@ class MealPlannerState(
     internal var syncIndicator by mutableStateOf(SyncIndicator.IDLE)
         private set
 
+    internal var syncConflictCount by mutableStateOf(0)
+        private set
+
     init {
         orderedWeekDays.forEach { day ->
             dayModes[day] = DayMode.AUTO
@@ -145,11 +148,19 @@ class MealPlannerState(
 
         combine(
             offlineSyncQueue.observePendingCount(),
-            offlineSyncQueue.observeFailedCount()
-        ) { count, failedCount ->
-            count to failedCount
-        }.collectLatest { (count, failedCount) ->
+            offlineSyncQueue.observeFailedCount(),
+            offlineSyncQueue.observeConflictCount()
+        ) { count, failedCount, conflictCount ->
+            Triple(count, failedCount, conflictCount)
+        }.collectLatest { (count, failedCount, conflictCount) ->
+            syncConflictCount = conflictCount
+
             when {
+                conflictCount > 0 -> {
+                    syncStatusClearJob?.cancel()
+                    syncIndicator = SyncIndicator.CONFLICT
+                }
+
                 failedCount > 0 -> {
                     syncStatusClearJob?.cancel()
                     syncIndicator = SyncIndicator.DELAYED
@@ -208,6 +219,30 @@ class MealPlannerState(
             if (offlineSyncQueue.hasPendingMutations()) {
                 syncIndicator = SyncIndicator.PENDING
                 offlineSyncQueue.schedule()
+            }
+        }
+    }
+
+    fun keepMyConflictingChanges() {
+        scope.launch {
+            offlineSyncQueue.forceConflicts()
+            syncIndicator = SyncIndicator.PENDING
+        }
+    }
+
+    fun useSharedConflictingChanges() {
+        scope.launch {
+            val domains =
+                offlineSyncQueue.discardConflicts()
+
+            domains.forEach { domain ->
+                runCatching {
+                    reload(domain)
+                }
+            }
+
+            if (!offlineSyncQueue.hasPendingMutations()) {
+                syncIndicator = SyncIndicator.SAVED
             }
         }
     }
