@@ -77,6 +77,33 @@ class OfflineSyncDrainTest {
         assertNull(store.pending)
     }
 
+    @Test
+    fun detectedSharedConflictIsPausedWithoutApplyingLocalWrite() =
+        runBlocking {
+            val store = FakePendingMutationStore(
+                pending = pendingPantry(
+                    revision = "r1",
+                    amount = 3.0
+                )
+            )
+            var applied = false
+
+            val drain = OfflineSyncDrain(
+                store = store,
+                hasConflict = { _, _ -> true },
+                applyMutation = {
+                    applied = true
+                }
+            )
+
+            assertEquals(
+                OfflineSyncDrainResult.EMPTY,
+                drain.drain("household")
+            )
+            assertTrue(store.pending?.conflict == true)
+            assertEquals(false, applied)
+        }
+
     private fun pendingPantry(
         revision: String,
         amount: Double
@@ -106,7 +133,10 @@ class OfflineSyncDrainTest {
         override suspend fun next(
             householdId: String
         ): PendingMutationEntity? =
-            pending?.takeIf { it.householdId == householdId }
+            pending?.takeIf {
+                it.householdId == householdId &&
+                    !it.conflict
+            }
 
         override suspend fun deleteIfCurrent(
             id: String,
@@ -136,6 +166,25 @@ class OfflineSyncDrainTest {
                 failureCount += 1
                 pending = current.copy(
                     attemptCount = current.attemptCount + 1,
+                    lastError = message
+                )
+                return 1
+            }
+            return 0
+        }
+
+        override suspend fun markConflict(
+            id: String,
+            revision: String,
+            message: String?
+        ): Int {
+            val current = pending
+            if (
+                current?.id == id &&
+                current.revision == revision
+            ) {
+                pending = current.copy(
+                    conflict = true,
                     lastError = message
                 )
                 return 1
