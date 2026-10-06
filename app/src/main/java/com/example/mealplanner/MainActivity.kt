@@ -337,6 +337,7 @@ fun MealPlannerApp(
                 }
             }
         }
+        }
 
         SyncStatusBadge(
             indicator = state.syncIndicator,
