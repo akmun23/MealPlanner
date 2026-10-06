@@ -85,6 +85,15 @@ internal interface PendingMutationDao {
         where household_id = :householdId
         """
     )
+    suspend fun count(householdId: String): Int
+
+    @Query(
+        """
+        select count(*)
+        from pending_mutations
+        where household_id = :householdId
+        """
+    )
     fun observeCount(householdId: String): Flow<Int>
 
     @Query(
@@ -338,6 +347,9 @@ internal class OfflineSyncQueue(
 
     fun observePendingCount(): Flow<Int> =
         dao.observeCount(householdId)
+
+    suspend fun hasPendingMutations(): Boolean =
+        dao.count(householdId) > 0
 
     suspend fun hasPending(
         key: SyncMutationKey
