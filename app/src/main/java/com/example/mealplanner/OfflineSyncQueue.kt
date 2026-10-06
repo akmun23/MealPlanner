@@ -49,7 +49,10 @@ internal data class PendingMutationEntity(
     val payload: String,
     @ColumnInfo(name = "updated_at_epoch_ms")
     val updatedAtEpochMs: Long,
-    @ColumnInfo(name = "attempt_count")
+    @ColumnInfo(
+        name = "attempt_count",
+        defaultValue = "0"
+    )
     val attemptCount: Int = 0,
     @ColumnInfo(name = "last_error")
     val lastError: String? = null
