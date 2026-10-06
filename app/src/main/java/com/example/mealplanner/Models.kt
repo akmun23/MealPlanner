@@ -117,67 +117,12 @@ fun MealType.danishName(): String = when (this) {
     MealType.LUNCH -> "Frokost"
 }
 
-enum class RecipeCategory {
-    PASTA,
-    CURRY,
-    STEW,
-    OVEN,
-    BURGER,
-    TACOS,
-    SANDWICH_WRAP,
-    RICE,
-    SOUP,
-    SALAD_BOWL,
-    PIZZA_PIE,
-    OTHER
-}
-
-fun RecipeCategory.danishName(): String = when (this) {
-    RecipeCategory.PASTA -> "Pasta"
-    RecipeCategory.CURRY -> "Karry"
-    RecipeCategory.STEW -> "Gryderet"
-    RecipeCategory.OVEN -> "Ovnret"
-    RecipeCategory.BURGER -> "Burger"
-    RecipeCategory.TACOS -> "Tacos"
-    RecipeCategory.SANDWICH_WRAP -> "Sandwich/wrap"
-    RecipeCategory.RICE -> "Risret"
-    RecipeCategory.SOUP -> "Suppe"
-    RecipeCategory.SALAD_BOWL -> "Salat/bowl"
-    RecipeCategory.PIZZA_PIE -> "Pizza/tærte"
-    RecipeCategory.OTHER -> "Andet"
-}
-
-fun String.toRecipeCategory(): RecipeCategory {
-    val normalized = trim().uppercase()
-
-    return runCatching {
-        RecipeCategory.valueOf(normalized)
-    }.getOrElse {
-        when (trim().lowercase()) {
-            "pasta" -> RecipeCategory.PASTA
-            "karry" -> RecipeCategory.CURRY
-            "gryderet" -> RecipeCategory.STEW
-            "ovnret" -> RecipeCategory.OVEN
-            "burger" -> RecipeCategory.BURGER
-            "tacos" -> RecipeCategory.TACOS
-            "sandwich", "sandwich/wrap", "wrap" -> RecipeCategory.SANDWICH_WRAP
-            "ris", "risret" -> RecipeCategory.RICE
-            "suppe" -> RecipeCategory.SOUP
-            "salat", "bowl", "salat/bowl" -> RecipeCategory.SALAD_BOWL
-            "pizza", "tærte", "pizza/tærte" -> RecipeCategory.PIZZA_PIE
-            else -> RecipeCategory.OTHER
-        }
-    }
-}
-
 data class Recipe(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
     val mealType: MealType = MealType.DINNER,
     val autoRotationEnabled: Boolean = true,
     val prepMinutes: Int? = null,
-    val proteinTag: String = "",
-    val categoryTag: String = RecipeCategory.OTHER.name,
     val categoryId: String? = null,
     val notes: String = "",
     val imageUri: String? = null,
@@ -188,8 +133,7 @@ data class Recipe(
 
 enum class DayMode {
     AUTO,
-    AWAY,
-    FIXED
+    AWAY
 }
 
 data class DraftRequirement(
