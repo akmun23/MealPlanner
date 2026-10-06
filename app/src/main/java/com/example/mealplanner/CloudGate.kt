@@ -625,6 +625,17 @@ private fun LoginScreen(
             )
         }
 
+        if (isBusy) {
+            Spacer(
+                modifier = Modifier.height(10.dp)
+            )
+            Text(
+                text = "Arbejder…",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
         Spacer(
             modifier = Modifier.height(20.dp)
         )
@@ -819,6 +830,7 @@ private fun HouseholdSetupScreen(
 
         TextButton(
             onClick = onLogout,
+            enabled = !isBusy,
             modifier = Modifier.align(
                 Alignment.CenterHorizontally
             )
