@@ -596,22 +596,25 @@ class MealPlannerState(
         }
     }
 
+    private fun weekStateMutation(
+        weeklyPlanId: String
+    ): QueuedMutation.SetWeekState =
+        QueuedMutation.SetWeekState(
+            weeklyPlanId = weeklyPlanId,
+            plan = plan.mapKeys { it.key.name },
+            dayModes = dayModes
+                .mapKeys { it.key.name }
+                .mapValues { it.value.name },
+            lockedDays = lockedDays.map { it.name },
+            sandwichRecipeId = weeklySandwichRecipeId,
+            sandwichDay = sandwichDay?.name
+        )
+
     private fun persistWeek(clearChecks: Boolean = false) {
         val id = weeklyPlanId ?: return
 
         val mutations = buildList {
-            add(
-                QueuedMutation.SetWeekState(
-                    weeklyPlanId = id,
-                    plan = plan.mapKeys { it.key.name },
-                    dayModes = dayModes
-                        .mapKeys { it.key.name }
-                        .mapValues { it.value.name },
-                    lockedDays = lockedDays.map { it.name },
-                    sandwichRecipeId = weeklySandwichRecipeId,
-                    sandwichDay = sandwichDay?.name
-                )
-            )
+            add(weekStateMutation(id))
 
             if (clearChecks) {
                 shoppingChecked.clear()
