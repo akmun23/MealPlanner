@@ -558,11 +558,10 @@ class MealPlannerState(
         syncTracker.markLocalChange(domains)
         syncIndicator = SyncIndicator.SAVING
 
+        val snapshot = currentSnapshot() ?: return
+
         scope.launch {
             mutationQueueMutex.withLock {
-                val snapshot = currentSnapshot()
-                    ?: return@withLock
-
                 try {
                     offlineSyncQueue.enqueue(
                         snapshot = snapshot,
