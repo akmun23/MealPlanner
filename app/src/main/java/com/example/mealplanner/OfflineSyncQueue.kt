@@ -907,9 +907,44 @@ internal suspend fun QueuedMutation.hasRemoteConflict(
                 remote.selectedLunchRecipeIds
         }
 
+        is QueuedMutation.SetShoppingIncluded -> {
+            val remote = repository.loadShoppingSnapshot(
+                weeklyPlanId
+            )
+            val baseIncluded =
+                baseSnapshot.shoppingIncluded[ingredientId]
+                    ?: true
+            val remoteIncluded =
+                remote.included[ingredientId]
+                    ?: true
+            val checkedChanged =
+                !included &&
+                    (
+                        baseSnapshot.shoppingChecked[ingredientId]
+                            ?: false
+                    ) != (
+                        remote.checked[ingredientId]
+                            ?: false
+                    )
+
+            baseIncluded != remoteIncluded ||
+                checkedChanged
+        }
+
+        is QueuedMutation.SetShoppingChecked -> {
+            val remote = repository.loadShoppingSnapshot(
+                weeklyPlanId
+            )
+            (
+                baseSnapshot.shoppingChecked[ingredientId]
+                    ?: false
+            ) != (
+                remote.checked[ingredientId]
+                    ?: false
+            )
+        }
+
         is QueuedMutation.SetHouseholdSandwich,
-        is QueuedMutation.SetShoppingIncluded,
-        is QueuedMutation.SetShoppingChecked,
         is QueuedMutation.ClearShopping ->
             false
     }
