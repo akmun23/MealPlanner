@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Entity
+import androidx.room.Index
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
@@ -29,7 +30,10 @@ import kotlinx.serialization.json.Json
 import java.time.DayOfWeek
 import java.util.concurrent.TimeUnit
 
-@Entity(tableName = "pending_mutations")
+@Entity(
+    tableName = "pending_mutations",
+    indices = [Index("household_id")]
+)
 internal data class PendingMutationEntity(
     @PrimaryKey
     val id: String,
@@ -61,9 +65,6 @@ internal interface PendingMutationDao {
         """
     )
     suspend fun next(householdId: String): PendingMutationEntity?
-
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(entity: PendingMutationEntity)
 
     @Query("delete from pending_mutations where id = :id")
     suspend fun delete(id: String)
@@ -453,7 +454,7 @@ internal class OfflineSyncWorker(
             it != SessionStatus.Initializing
         }
         if (status !is SessionStatus.Authenticated) {
-            return Result.retry()
+            return Result.success()
         }
 
         val database =
@@ -481,7 +482,11 @@ internal class OfflineSyncWorker(
                     id = pending.id,
                     message = e.message
                 )
-                return Result.retry()
+                return if (runAttemptCount >= 5) {
+                    Result.failure()
+                } else {
+                    Result.retry()
+                }
             }
         }
     }
