@@ -2464,12 +2464,17 @@ fun PantryScreen(
         )
     }
 
-    val filtered = filterPantryIngredients(
-        ingredients = state.ingredients.toList(),
-        categories = state.ingredientCategories.toList(),
-        searchQuery = searchQuery,
-        selectedCategoryId = selectedCategoryId
-    )
+    val filtered by remember {
+        derivedStateOf {
+            filterPantryIngredients(
+                ingredients = state.ingredients.toList(),
+                categories =
+                    state.ingredientCategories.toList(),
+                searchQuery = searchQuery,
+                selectedCategoryId = selectedCategoryId
+            )
+        }
+    }
 
     LazyColumn(
         state = listState,
