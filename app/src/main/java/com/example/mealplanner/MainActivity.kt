@@ -1291,6 +1291,32 @@ private fun RecipeDetailScreen(
         return
     }
 
+    val ingredientIndex by remember {
+        derivedStateOf {
+            state.ingredients.associateBy { it.id }
+        }
+    }
+    val sortedRecipeIngredients by remember(recipe) {
+        derivedStateOf {
+            sortByIngredientCategory(
+                items = recipe.ingredients,
+                ingredientId = RecipeIngredient::ingredientId,
+                ingredients = state.ingredients.toList(),
+                categories = state.ingredientCategories.toList()
+            )
+        }
+    }
+    val sortedPantryPrerequisites by remember(recipe) {
+        derivedStateOf {
+            sortByIngredientCategory(
+                items = recipe.pantryPrerequisites,
+                ingredientId = RecipePantryPrerequisite::ingredientId,
+                ingredients = state.ingredients.toList(),
+                categories = state.ingredientCategories.toList()
+            )
+        }
+    }
+
     if (showConsumeConfirm) {
         AlertDialog(
             onDismissRequest = { showConsumeConfirm = false },
@@ -1396,10 +1422,9 @@ private fun RecipeDetailScreen(
             if (recipe.pantryPrerequisites.isNotEmpty()) {
                 item {
                     SectionCard("Kræver på lager") {
-                        recipe.pantryPrerequisites.forEach { prerequisite ->
-                            val ingredient = state.ingredients.find {
-                                it.id == prerequisite.ingredientId
-                            }
+                        sortedPantryPrerequisites.forEach { prerequisite ->
+                            val ingredient =
+                                ingredientIndex[prerequisite.ingredientId]
 
                             if (ingredient != null) {
                                 Row(
@@ -1429,10 +1454,9 @@ private fun RecipeDetailScreen(
 
             item {
                 SectionCard("Ingredienser") {
-                    recipe.ingredients.forEach { requirement ->
-                        val ingredient = state.ingredients.find {
-                            it.id == requirement.ingredientId
-                        }
+                    sortedRecipeIngredients.forEach { requirement ->
+                        val ingredient =
+                            ingredientIndex[requirement.ingredientId]
 
                         if (ingredient != null) {
                             Row(
@@ -1593,26 +1617,72 @@ private fun RecipeEditorScreen(
         }
     }
 
-    val prerequisiteMatches = state.ingredients
-        .filter { ingredient ->
-            prerequisiteSearch.isNotBlank() &&
-                ingredient.name.contains(
-                    prerequisiteSearch,
-                    ignoreCase = true
-                ) &&
-                prerequisiteDrafts.none {
-                    it.ingredientId == ingredient.id
-                }
+    val sortedPrerequisiteDrafts by remember {
+        derivedStateOf {
+            sortByIngredientCategory(
+                items = prerequisiteDrafts
+                    .withIndex()
+                    .toList(),
+                ingredientId = { it.value.ingredientId },
+                ingredients = state.ingredients.toList(),
+                categories = state.ingredientCategories.toList()
+            )
         }
-        .take(8)
+    }
+    val sortedDrafts by remember {
+        derivedStateOf {
+            sortByIngredientCategory(
+                items = drafts.withIndex().toList(),
+                ingredientId = { it.value.ingredientId },
+                ingredients = state.ingredients.toList(),
+                categories = state.ingredientCategories.toList()
+            )
+        }
+    }
 
-    val matches = state.ingredients
-        .filter { ingredient ->
-            ingredientSearch.isNotBlank() &&
-                ingredient.name.contains(ingredientSearch, ignoreCase = true) &&
-                drafts.none { it.ingredientId == ingredient.id }
+    val prerequisiteMatches by remember {
+        derivedStateOf {
+            sortByIngredientCategory(
+                items = state.ingredients
+                    .filter { ingredient ->
+                        prerequisiteSearch.isNotBlank() &&
+                            ingredient.name.contains(
+                                prerequisiteSearch,
+                                ignoreCase = true
+                            ) &&
+                            prerequisiteDrafts.none {
+                                it.ingredientId == ingredient.id
+                            }
+                    }
+                    .take(8),
+                ingredientId = Ingredient::id,
+                ingredients = state.ingredients.toList(),
+                categories = state.ingredientCategories.toList()
+            )
         }
-        .take(8)
+    }
+
+    val matches by remember {
+        derivedStateOf {
+            sortByIngredientCategory(
+                items = state.ingredients
+                    .filter { ingredient ->
+                        ingredientSearch.isNotBlank() &&
+                            ingredient.name.contains(
+                                ingredientSearch,
+                                ignoreCase = true
+                            ) &&
+                            drafts.none {
+                                it.ingredientId == ingredient.id
+                            }
+                    }
+                    .take(8),
+                ingredientId = Ingredient::id,
+                ingredients = state.ingredients.toList(),
+                categories = state.ingredientCategories.toList()
+            )
+        }
+    }
 
     SubpageScaffold(
         title = if (existing == null) "Ny opskrift" else "Rediger opskrift",
@@ -1736,12 +1806,13 @@ private fun RecipeEditorScreen(
                     )
                 }
 
-                itemsIndexed(
-                    items = prerequisiteDrafts,
-                    key = { _, item ->
-                        "prerequisite-${item.ingredientId}"
+                items(
+                    items = sortedPrerequisiteDrafts,
+                    key = {
+                        "prerequisite-${it.value.ingredientId}"
                     }
-                ) { index, draft ->
+                ) { indexed ->
+                    val draft = indexed.value
                     val ingredient = state.ingredients.find {
                         it.id == draft.ingredientId
                     }
@@ -1751,10 +1822,10 @@ private fun RecipeEditorScreen(
                             ingredient = ingredient,
                             draft = draft,
                             onChange = {
-                                prerequisiteDrafts[index] = it
+                                prerequisiteDrafts[indexed.index] = it
                             },
                             onRemove = {
-                                prerequisiteDrafts.removeAt(index)
+                                prerequisiteDrafts.removeAt(indexed.index)
                             }
                         )
                     }
@@ -1808,10 +1879,11 @@ private fun RecipeEditorScreen(
                 )
             }
 
-            itemsIndexed(
-                items = drafts,
-                key = { _, item -> item.ingredientId }
-            ) { index, draft ->
+            items(
+                items = sortedDrafts,
+                key = { it.value.ingredientId }
+            ) { indexed ->
+                val draft = indexed.value
                 val ingredient = state.ingredients.find {
                     it.id == draft.ingredientId
                 }
@@ -1820,8 +1892,12 @@ private fun RecipeEditorScreen(
                     RequirementEditor(
                         ingredient = ingredient,
                         draft = draft,
-                        onChange = { drafts[index] = it },
-                        onRemove = { drafts.removeAt(index) }
+                        onChange = {
+                            drafts[indexed.index] = it
+                        },
+                        onRemove = {
+                            drafts.removeAt(indexed.index)
+                        }
                     )
                 }
             }
