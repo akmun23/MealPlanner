@@ -955,8 +955,17 @@ internal suspend fun QueuedMutation.hasRemoteConflict(
             )
         }
 
-        is QueuedMutation.SetHouseholdSandwich,
-        is QueuedMutation.ClearShopping ->
+        is QueuedMutation.ClearShopping -> {
+            val remote = repository.loadShoppingSnapshot(
+                weeklyPlanId
+            )
+            baseSnapshot.shoppingChecked !=
+                remote.checked ||
+                baseSnapshot.shoppingIncluded !=
+                    remote.included
+        }
+
+        is QueuedMutation.SetHouseholdSandwich ->
             false
     }
 
