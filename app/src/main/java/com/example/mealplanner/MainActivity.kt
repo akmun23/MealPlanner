@@ -217,7 +217,8 @@ fun MealPlannerApp(
         )
     }
 
-    when (val current = page) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        when (val current = page) {
         AppPage.Settings -> SettingsScreen(
             household = household,
             state = state,
@@ -336,6 +337,43 @@ fun MealPlannerApp(
                 }
             }
         }
+
+        SyncStatusBadge(
+            indicator = state.syncIndicator,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = 86.dp)
+        )
+    }
+}
+
+@Composable
+private fun SyncStatusBadge(
+    indicator: SyncIndicator,
+    modifier: Modifier = Modifier
+) {
+    val text = when (indicator) {
+        SyncIndicator.IDLE -> null
+        SyncIndicator.SAVING -> "Gemmer…"
+        SyncIndicator.SAVED -> "Gemt"
+        SyncIndicator.ERROR -> "Ikke gemt"
+    } ?: return
+
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(12.dp),
+        tonalElevation = 2.dp,
+        shadowElevation = 2.dp
+    ) {
+        Text(
+            text = text,
+            modifier = Modifier.padding(
+                horizontal = 12.dp,
+                vertical = 7.dp
+            ),
+            style = MaterialTheme.typography.labelMedium,
+            fontWeight = FontWeight.SemiBold
+        )
     }
 }
 
