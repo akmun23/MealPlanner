@@ -592,10 +592,21 @@ class MealPlannerState(
             sandwichDay = sandwichDay?.name
         )
 
-    private fun persistWeek(clearChecks: Boolean = false) {
+    private fun persistWeek(
+        clearChecks: Boolean = false,
+        updateHouseholdSandwich: Boolean = false
+    ) {
         val id = weeklyPlanId ?: return
 
         val mutations = buildList {
+            if (updateHouseholdSandwich) {
+                add(
+                    QueuedMutation.SetHouseholdSandwich(
+                        weeklySandwichRecipeId
+                    )
+                )
+            }
+
             add(weekStateMutation(id))
 
             if (clearChecks) {
@@ -1002,6 +1013,11 @@ class MealPlannerState(
             }
 
             if (weekChanged && currentPlanId != null) {
+                add(
+                    QueuedMutation.SetHouseholdSandwich(
+                        weeklySandwichRecipeId
+                    )
+                )
                 add(weekStateMutation(currentPlanId))
                 add(QueuedMutation.ClearShopping(currentPlanId))
             }
@@ -1118,6 +1134,11 @@ class MealPlannerState(
                         recipeIds = selectedLunchRecipeIds.toList()
                     )
                 )
+                add(
+                    QueuedMutation.SetHouseholdSandwich(
+                        weeklySandwichRecipeId
+                    )
+                )
                 add(weekStateMutation(planId))
                 add(QueuedMutation.ClearShopping(planId))
             }
@@ -1157,7 +1178,10 @@ class MealPlannerState(
 
         shoppingChecked.clear()
         shoppingIncluded.clear()
-        persistWeek(clearChecks = true)
+        persistWeek(
+            clearChecks = true,
+            updateHouseholdSandwich = true
+        )
     }
 
     fun toggleEatingAtHome(day: DayOfWeek) {
