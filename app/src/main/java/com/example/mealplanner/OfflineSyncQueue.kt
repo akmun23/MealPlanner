@@ -30,6 +30,7 @@ import kotlinx.serialization.json.Json
 import java.time.DayOfWeek
 import java.util.UUID
 import java.util.concurrent.TimeUnit
+import kotlin.math.abs
 
 @Entity(
     tableName = "pending_mutations",
@@ -735,7 +736,26 @@ private fun Ingredient.conflictComparable(): Ingredient =
     copy(imageUri = null)
 
 private fun Recipe.conflictComparable(): Recipe =
-    copy(imageUri = null)
+    copy(
+        imageUri = null,
+        ingredients = ingredients.sortedBy {
+            it.ingredientId
+        },
+        pantryPrerequisites =
+            pantryPrerequisites.sortedBy {
+                it.ingredientId
+            }
+    )
+
+private fun sameAmount(
+    first: Double?,
+    second: Double?
+): Boolean =
+    when {
+        first == null && second == null -> true
+        first == null || second == null -> false
+        else -> abs(first - second) < 0.00001
+    }
 
 internal suspend fun QueuedMutation.hasRemoteConflict(
     repository: CloudMealRepository,
@@ -800,8 +820,10 @@ internal suspend fun QueuedMutation.hasRemoteConflict(
 
         is QueuedMutation.SetPantry -> {
             val remote = repository.loadPantrySnapshot()
-            baseSnapshot.pantry[ingredientId] !=
+            !sameAmount(
+                baseSnapshot.pantry[ingredientId],
                 remote[ingredientId]
+            )
         }
 
         is QueuedMutation.SetWeekState -> {
