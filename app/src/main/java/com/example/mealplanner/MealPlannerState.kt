@@ -88,8 +88,8 @@ class MealPlannerState(
             }
 
             reload(syncHistory = true)
-            repository.startRealtime(scope) {
-                reload()
+            repository.startRealtime(scope) { domain ->
+                reload(domain)
             }
         } catch (e: Exception) {
             lastError = e.message ?: "Kunne ikke hente data."
@@ -116,55 +116,211 @@ class MealPlannerState(
         }
     }
 
+    private suspend fun reload(domain: CloudSyncDomain) {
+        reloadMutex.withLock {
+            when (domain) {
+                CloudSyncDomain.INGREDIENTS -> {
+                    applyIngredientsSnapshot(
+                        repository.loadIngredientsSnapshot()
+                    )
+                }
+
+                CloudSyncDomain.RECIPES -> {
+                    applyRecipesSnapshot(
+                        repository.loadRecipesSnapshot()
+                    )
+                }
+
+                CloudSyncDomain.PANTRY -> {
+                    syncMap(
+                        target = pantry,
+                        incoming = repository.loadPantrySnapshot()
+                    )
+                }
+
+                CloudSyncDomain.WEEK -> {
+                    val week = repository.loadWeekSnapshot()
+                    applyWeekSnapshot(week)
+                    applyShoppingSnapshot(
+                        repository.loadShoppingSnapshot(
+                            week.weeklyPlanId
+                        )
+                    )
+                }
+
+                CloudSyncDomain.SHOPPING -> {
+                    val planId = weeklyPlanId
+                        ?: return@withLock
+
+                    applyShoppingSnapshot(
+                        repository.loadShoppingSnapshot(planId)
+                    )
+                }
+
+                CloudSyncDomain.HISTORY -> {
+                    syncListByKey(
+                        target = history,
+                        incoming = repository.loadHistorySnapshot(),
+                        key = {
+                            it.recipeId to it.eatenOn
+                        }
+                    )
+                }
+            }
+        }
+    }
+
     private fun applySnapshot(snapshot: CloudSnapshot) {
-        ingredients.clear()
-        ingredients.addAll(snapshot.ingredients)
+        syncListByKey(
+            target = ingredients,
+            incoming = snapshot.ingredients,
+            key = Ingredient::id
+        )
+        syncListByKey(
+            target = ingredientCategories,
+            incoming = snapshot.ingredientCategories,
+            key = IngredientCategory::id
+        )
+        syncListByKey(
+            target = recipeCategories,
+            incoming = snapshot.recipeCategories,
+            key = RecipeCategoryOption::id
+        )
+        syncListByKey(
+            target = recipes,
+            incoming = snapshot.recipes,
+            key = Recipe::id
+        )
 
-        ingredientCategories.clear()
-        ingredientCategories.addAll(snapshot.ingredientCategories)
-
-        recipeCategories.clear()
-        recipeCategories.addAll(snapshot.recipeCategories)
-
-        recipes.clear()
-        recipes.addAll(snapshot.recipes)
-
-        pantry.clear()
-        pantry.putAll(snapshot.pantry)
-
-        dayModes.clear()
-        orderedWeekDays.forEach { day ->
-            dayModes[day] = snapshot.dayModes[day] ?: DayMode.AUTO
-        }
-
-        dayMaxPrepMinutes.clear()
-        orderedWeekDays.forEach { day ->
-            dayMaxPrepMinutes[day] = snapshot.dayMaxPrepMinutes[day]
-        }
-
-        plan.clear()
-        orderedWeekDays.forEach { day ->
-            plan[day] = snapshot.plan[day]
-        }
-
-        lockedDays.clear()
-        lockedDays.addAll(snapshot.lockedDays)
-
-        shoppingChecked.clear()
-        shoppingChecked.putAll(snapshot.shoppingChecked)
-
-        shoppingIncluded.clear()
-        shoppingIncluded.putAll(snapshot.shoppingIncluded)
-
-        selectedLunchRecipeIds.clear()
-        selectedLunchRecipeIds.addAll(snapshot.selectedLunchRecipeIds)
-
-        history.clear()
-        history.addAll(snapshot.history)
+        syncMap(
+            target = pantry,
+            incoming = snapshot.pantry
+        )
+        syncMap(
+            target = dayModes,
+            incoming = orderedWeekDays.associateWith { day ->
+                snapshot.dayModes[day] ?: DayMode.AUTO
+            }
+        )
+        syncMap(
+            target = dayMaxPrepMinutes,
+            incoming = orderedWeekDays.associateWith { day ->
+                snapshot.dayMaxPrepMinutes[day]
+            }
+        )
+        syncMap(
+            target = plan,
+            incoming = orderedWeekDays.associateWith { day ->
+                snapshot.plan[day]
+            }
+        )
+        syncSet(
+            target = lockedDays,
+            incoming = snapshot.lockedDays
+        )
+        syncMap(
+            target = shoppingChecked,
+            incoming = snapshot.shoppingChecked
+        )
+        syncMap(
+            target = shoppingIncluded,
+            incoming = snapshot.shoppingIncluded
+        )
+        syncListByKey(
+            target = selectedLunchRecipeIds,
+            incoming = snapshot.selectedLunchRecipeIds,
+            key = { it }
+        )
+        syncListByKey(
+            target = history,
+            incoming = snapshot.history,
+            key = {
+                it.recipeId to it.eatenOn
+            }
+        )
 
         weeklyPlanId = snapshot.weeklyPlanId
         weeklySandwichRecipeId = snapshot.weeklySandwichRecipeId
         sandwichDay = snapshot.sandwichDay
+    }
+
+    private fun applyIngredientsSnapshot(
+        snapshot: CloudIngredientsSnapshot
+    ) {
+        syncListByKey(
+            target = ingredients,
+            incoming = snapshot.ingredients,
+            key = Ingredient::id
+        )
+        syncListByKey(
+            target = ingredientCategories,
+            incoming = snapshot.ingredientCategories,
+            key = IngredientCategory::id
+        )
+    }
+
+    private fun applyRecipesSnapshot(
+        snapshot: CloudRecipesSnapshot
+    ) {
+        syncListByKey(
+            target = recipeCategories,
+            incoming = snapshot.recipeCategories,
+            key = RecipeCategoryOption::id
+        )
+        syncListByKey(
+            target = recipes,
+            incoming = snapshot.recipes,
+            key = Recipe::id
+        )
+    }
+
+    private fun applyWeekSnapshot(
+        snapshot: CloudWeekSnapshot
+    ) {
+        syncMap(
+            target = dayModes,
+            incoming = orderedWeekDays.associateWith { day ->
+                snapshot.dayModes[day] ?: DayMode.AUTO
+            }
+        )
+        syncMap(
+            target = dayMaxPrepMinutes,
+            incoming = orderedWeekDays.associateWith { day ->
+                snapshot.dayMaxPrepMinutes[day]
+            }
+        )
+        syncMap(
+            target = plan,
+            incoming = orderedWeekDays.associateWith { day ->
+                snapshot.plan[day]
+            }
+        )
+        syncSet(
+            target = lockedDays,
+            incoming = snapshot.lockedDays
+        )
+        syncListByKey(
+            target = selectedLunchRecipeIds,
+            incoming = snapshot.selectedLunchRecipeIds,
+            key = { it }
+        )
+
+        weeklyPlanId = snapshot.weeklyPlanId
+        weeklySandwichRecipeId = snapshot.weeklySandwichRecipeId
+        sandwichDay = snapshot.sandwichDay
+    }
+
+    private fun applyShoppingSnapshot(
+        snapshot: CloudShoppingSnapshot
+    ) {
+        syncMap(
+            target = shoppingChecked,
+            incoming = snapshot.checked
+        )
+        syncMap(
+            target = shoppingIncluded,
+            incoming = snapshot.included
+        )
     }
 
     private fun runMutation(block: suspend () -> Unit) {
