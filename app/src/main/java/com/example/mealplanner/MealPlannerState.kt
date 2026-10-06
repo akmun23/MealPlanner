@@ -12,6 +12,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -142,39 +143,60 @@ class MealPlannerState(
     private suspend fun observeSyncQueue() {
         var previousCount = 0
 
-        offlineSyncQueue.observePendingCount()
-            .collectLatest { count ->
-                when {
-                    count > 0 -> {
-                        syncStatusClearJob?.cancel()
-                        syncIndicator = SyncIndicator.PENDING
-                    }
+        combine(
+            offlineSyncQueue.observePendingCount(),
+            offlineSyncQueue.observeFailedCount()
+        ) { count, failedCount ->
+            count to failedCount
+        }.collectLatest { (count, failedCount) ->
+            when {
+                failedCount > 0 -> {
+                    syncStatusClearJob?.cancel()
+                    syncIndicator = SyncIndicator.ERROR
+                }
 
-                    previousCount > 0 -> {
-                        syncIndicator = SyncIndicator.SAVED
+                count > 0 -> {
+                    syncStatusClearJob?.cancel()
+                    syncIndicator = SyncIndicator.PENDING
+                }
+
+                previousCount > 0 -> {
+                    val generationSnapshot =
+                        CloudSyncDomain.entries
+                            .associateWith(syncTracker::generation)
+
+                    syncIndicator = SyncIndicator.SAVED
+                    delay(250L)
+
+                    if (
+                        !offlineSyncQueue.hasPendingMutations() &&
+                        syncTracker.isCurrent(generationSnapshot)
+                    ) {
                         runCatching {
                             reload(syncHistory = false)
                         }
-                        syncStatusClearJob?.cancel()
-                        syncStatusClearJob = scope.launch {
-                            delay(1200L)
-                            if (
-                                !offlineSyncQueue
-                                    .hasPendingMutations()
-                            ) {
-                                syncIndicator =
-                                    SyncIndicator.IDLE
-                            }
-                        }
                     }
 
-                    syncIndicator == SyncIndicator.PENDING -> {
-                        syncIndicator = SyncIndicator.IDLE
+                    syncStatusClearJob?.cancel()
+                    syncStatusClearJob = scope.launch {
+                        delay(1200L)
+                        if (
+                            !offlineSyncQueue
+                                .hasPendingMutations()
+                        ) {
+                            syncIndicator =
+                                SyncIndicator.IDLE
+                        }
                     }
                 }
 
-                previousCount = count
+                syncIndicator == SyncIndicator.PENDING -> {
+                    syncIndicator = SyncIndicator.IDLE
+                }
             }
+
+            previousCount = count
+        }
     }
 
     suspend fun close() {
