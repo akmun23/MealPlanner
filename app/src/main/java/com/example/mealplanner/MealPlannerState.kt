@@ -1363,8 +1363,10 @@ class MealPlannerState(
             hasSandwichRecipe = weeklySandwichRecipeId != null
         )
 
-        dayModes.clear()
-        dayModes.putAll(result.modes)
+        syncMap(
+            target = dayModes,
+            incoming = result.modes
+        )
         sandwichDay = result.sandwichDay
 
         if (dayModes[day] == DayMode.AWAY) {
