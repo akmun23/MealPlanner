@@ -113,8 +113,10 @@ internal object MealPlannerDatabaseProvider {
                     priority integer not null,
                     domain_mask integer not null,
                     payload text not null,
+                    base_snapshot_payload text,
                     updated_at_epoch_ms integer not null,
                     attempt_count integer not null default 0,
+                    conflict integer not null default 0,
                     last_error text
                 )
                 """.trimIndent()
