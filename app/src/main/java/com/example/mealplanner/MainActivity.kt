@@ -361,6 +361,7 @@ private fun SyncStatusBadge(
         SyncIndicator.IDLE -> null
         SyncIndicator.SAVING -> "Gemmer…"
         SyncIndicator.SAVED -> "Gemt"
+        SyncIndicator.PENDING -> "Venter på synk."
         SyncIndicator.ERROR -> "Ikke gemt"
         SyncIndicator.OFFLINE -> "Offline"
     } ?: return
