@@ -25,6 +25,11 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.ByteArrayOutputStream
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -1371,7 +1376,7 @@ class CloudMealRepository(
 
     internal suspend fun startRealtime(
         scope: CoroutineScope,
-        onChanged: suspend (CloudSyncDomain) -> Unit
+        onChanged: suspend (CloudRealtimeChange) -> Unit
     ) {
         stopRealtime()
 
@@ -1408,15 +1413,26 @@ class CloudMealRepository(
                 schema = "public"
             ) {
                 this.table = table
-            }.onEach {
-                domainSignals.getValue(domain).tryEmit(Unit)
+            }.onEach { action ->
+                val direct = directRealtimeChange(
+                    table = table,
+                    action = action
+                )
+
+                if (direct != null) {
+                    onChanged(direct)
+                } else {
+                    domainSignals.getValue(domain).tryEmit(Unit)
+                }
             }.launchIn(scope)
         }
 
         val reconciliationJobs = domainSignals.map { (domain, signal) ->
             signal
                 .debounce(250)
-                .onEach { onChanged(domain) }
+                .onEach {
+                    onChanged(CloudRealtimeChange.Domain(domain))
+                }
                 .launchIn(scope)
         }
 
@@ -1424,6 +1440,81 @@ class CloudMealRepository(
         realtimeChannel = channel
         channel.subscribe()
     }
+
+    private fun directRealtimeChange(
+        table: String,
+        action: PostgresAction
+    ): CloudRealtimeChange? {
+        val record = when (action) {
+            is PostgresAction.Insert -> action.record
+            is PostgresAction.Update -> action.record
+            is PostgresAction.Delete -> action.oldRecord
+            else -> null
+        } ?: return null
+
+        val deleted = action is PostgresAction.Delete
+
+        return when (table) {
+            "pantry_items" -> {
+                val ingredientId =
+                    record.stringValue("ingredient_id")
+                        ?: return null
+
+                CloudRealtimeChange.Pantry(
+                    ingredientId = ingredientId,
+                    amountBase = if (deleted) {
+                        null
+                    } else {
+                        record.doubleValue("amount_base")
+                            ?: return null
+                    }
+                )
+            }
+
+            "shopping_checks" -> {
+                val ingredientId =
+                    record.stringValue("ingredient_id")
+                        ?: return null
+
+                CloudRealtimeChange.ShoppingChecked(
+                    ingredientId = ingredientId,
+                    checked = if (deleted) {
+                        null
+                    } else {
+                        record.booleanValue("checked")
+                            ?: return null
+                    }
+                )
+            }
+
+            "shopping_inclusions" -> {
+                val ingredientId =
+                    record.stringValue("ingredient_id")
+                        ?: return null
+
+                CloudRealtimeChange.ShoppingIncluded(
+                    ingredientId = ingredientId,
+                    included = if (deleted) {
+                        null
+                    } else {
+                        record.booleanValue("included")
+                            ?: return null
+                    }
+                )
+            }
+
+            else -> null
+        }
+    }
+
+    private fun JsonObject.stringValue(name: String): String? =
+        get(name)?.jsonPrimitive?.contentOrNull
+
+    private fun JsonObject.doubleValue(name: String): Double? =
+        get(name)?.jsonPrimitive?.doubleOrNull
+
+    private fun JsonObject.booleanValue(name: String): Boolean? =
+        get(name)?.jsonPrimitive?.booleanOrNull
 
     suspend fun stopRealtime() {
         realtimeJobs.forEach { it.cancel() }
