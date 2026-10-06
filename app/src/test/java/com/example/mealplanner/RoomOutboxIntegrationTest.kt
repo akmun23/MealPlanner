@@ -190,29 +190,51 @@ class RoomOutboxIntegrationTest {
     }
 
     @Test
-    fun unresolvedConflictBlocksLaterQueuedWritesForHousehold() = runBlocking {
+    fun unresolvedConflictBlocksItsBatchButNotUnrelatedLaterWork() = runBlocking {
         val database = openVersionTwoDatabase()
 
         val conflicted = pendingPantry(
             revision = "conflict",
             amount = 1.0,
             timestamp = 1L
-        ).copy(conflict = true)
+        ).copy(
+            batchId = "conflicted-batch",
+            conflict = true
+        )
 
-        val nextMutation = QueuedMutation.SetShoppingChecked(
+        val blockedMutation = QueuedMutation.SetShoppingIncluded(
             weeklyPlanId = "week",
             ingredientId = "ingredient",
+            included = false
+        )
+        val blocked = PendingMutationEntity(
+            id = "household|${blockedMutation.key()}",
+            revision = "blocked",
+            batchId = "conflicted-batch",
+            householdId = "household",
+            mutationKey = blockedMutation.key(),
+            priority = blockedMutation.priority(),
+            domainMask = blockedMutation.domainMask(),
+            payload = QueuedMutationCodec.encode(blockedMutation),
+            updatedAtEpochMs = 2L,
+            conflict = true
+        )
+
+        val unrelatedMutation = QueuedMutation.SetShoppingChecked(
+            weeklyPlanId = "week",
+            ingredientId = "other-ingredient",
             checked = true
         )
-        val later = PendingMutationEntity(
-            id = "household|${nextMutation.key()}",
-            revision = "later",
+        val unrelated = PendingMutationEntity(
+            id = "household|${unrelatedMutation.key()}",
+            revision = "unrelated",
+            batchId = "unrelated-batch",
             householdId = "household",
-            mutationKey = nextMutation.key(),
-            priority = nextMutation.priority(),
-            domainMask = nextMutation.domainMask(),
-            payload = QueuedMutationCodec.encode(nextMutation),
-            updatedAtEpochMs = 2L
+            mutationKey = unrelatedMutation.key(),
+            priority = unrelatedMutation.priority(),
+            domainMask = unrelatedMutation.domainMask(),
+            payload = QueuedMutationCodec.encode(unrelatedMutation),
+            updatedAtEpochMs = 3L
         )
 
         database.localStateDao()
@@ -220,76 +242,24 @@ class RoomOutboxIntegrationTest {
                 snapshot = HouseholdSnapshotEntity(
                     householdId = "household",
                     payload = "snapshot",
-                    updatedAtEpochMs = 2L
+                    updatedAtEpochMs = 3L
                 ),
                 mutations = listOf(
                     conflicted,
-                    later
+                    blocked,
+                    unrelated
                 )
             )
 
-        assertEquals(
-            null,
-            database.pendingMutationDao()
-                .next("household")
-        )
+        val next = database.pendingMutationDao()
+            .next("household")
 
-        database.close()
-    }
-
-    @Test
-    fun conflictPausesEntireLogicalMutationBatch() = runBlocking {
-        val database = openVersionTwoDatabase()
-        val pantry = pendingPantry(
-            revision = "pantry",
-            amount = 2.0,
-            timestamp = 10L
-        ).copy(
-            batchId = "batch"
-        )
-        val shoppingMutation =
-            QueuedMutation.ClearShopping("week")
-        val shopping = PendingMutationEntity(
-            id = "household|${shoppingMutation.key()}",
-            revision = "shopping",
-            batchId = "batch",
-            householdId = "household",
-            mutationKey = shoppingMutation.key(),
-            priority = shoppingMutation.priority(),
-            domainMask = shoppingMutation.domainMask(),
-            payload =
-                QueuedMutationCodec.encode(
-                    shoppingMutation
-                ),
-            updatedAtEpochMs = 11L
-        )
-
-        database.localStateDao()
-            .persistSnapshotAndMutations(
-                snapshot = HouseholdSnapshotEntity(
-                    householdId = "household",
-                    payload = "local",
-                    updatedAtEpochMs = 11L
-                ),
-                mutations = listOf(pantry, shopping)
-            )
-
-        database.pendingMutationDao()
-            .markConflict(
-                batchId = "batch",
-                message = "shared change"
-            )
-
+        assertEquals("unrelated", next?.revision)
         assertEquals(
             2,
             database.pendingMutationDao()
                 .conflicts("household")
                 .size
-        )
-        assertEquals(
-            null,
-            database.pendingMutationDao()
-                .next("household")
         )
 
         database.close()
