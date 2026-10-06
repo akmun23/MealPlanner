@@ -731,6 +731,109 @@ internal class OfflineSyncWorker(
     }
 }
 
+private fun Ingredient.conflictComparable(): Ingredient =
+    copy(imageUri = null)
+
+private fun Recipe.conflictComparable(): Recipe =
+    copy(imageUri = null)
+
+internal suspend fun QueuedMutation.hasRemoteConflict(
+    repository: CloudMealRepository,
+    baseSnapshot: CloudSnapshot
+): Boolean =
+    when (this) {
+        is QueuedMutation.UpsertIngredient -> {
+            val remote = repository.loadIngredientsSnapshot()
+            baseSnapshot.ingredients
+                .find { it.id == ingredient.id }
+                ?.conflictComparable() !=
+                remote.ingredients
+                    .find { it.id == ingredient.id }
+                    ?.conflictComparable()
+        }
+
+        is QueuedMutation.DeleteIngredient -> {
+            val remote = repository.loadIngredientsSnapshot()
+            baseSnapshot.ingredients
+                .find { it.id == ingredientId }
+                ?.conflictComparable() !=
+                remote.ingredients
+                    .find { it.id == ingredientId }
+                    ?.conflictComparable()
+        }
+
+        is QueuedMutation.UpsertIngredientCategory -> {
+            val remote = repository.loadIngredientsSnapshot()
+            baseSnapshot.ingredientCategories
+                .find { it.id == category.id } !=
+                remote.ingredientCategories
+                    .find { it.id == category.id }
+        }
+
+        is QueuedMutation.UpsertRecipe -> {
+            val remote = repository.loadRecipesSnapshot()
+            baseSnapshot.recipes
+                .find { it.id == recipe.id }
+                ?.conflictComparable() !=
+                remote.recipes
+                    .find { it.id == recipe.id }
+                    ?.conflictComparable()
+        }
+
+        is QueuedMutation.DeleteRecipe -> {
+            val remote = repository.loadRecipesSnapshot()
+            baseSnapshot.recipes
+                .find { it.id == recipeId }
+                ?.conflictComparable() !=
+                remote.recipes
+                    .find { it.id == recipeId }
+                    ?.conflictComparable()
+        }
+
+        is QueuedMutation.UpsertRecipeCategory -> {
+            val remote = repository.loadRecipesSnapshot()
+            baseSnapshot.recipeCategories
+                .find { it.id == category.id } !=
+                remote.recipeCategories
+                    .find { it.id == category.id }
+        }
+
+        is QueuedMutation.SetPantry -> {
+            val remote = repository.loadPantrySnapshot()
+            baseSnapshot.pantry[ingredientId] !=
+                remote[ingredientId]
+        }
+
+        is QueuedMutation.SetWeekState -> {
+            val remote = repository.loadWeekSnapshot()
+            baseSnapshot.plan != remote.plan ||
+                baseSnapshot.dayModes != remote.dayModes ||
+                baseSnapshot.lockedDays != remote.lockedDays ||
+                baseSnapshot.weeklySandwichRecipeId !=
+                    remote.weeklySandwichRecipeId ||
+                baseSnapshot.sandwichDay != remote.sandwichDay
+        }
+
+        is QueuedMutation.SetDayPrep -> {
+            val remote = repository.loadWeekSnapshot()
+            val targetDay = DayOfWeek.valueOf(day)
+            baseSnapshot.dayMaxPrepMinutes[targetDay] !=
+                remote.dayMaxPrepMinutes[targetDay]
+        }
+
+        is QueuedMutation.ReplaceLunch -> {
+            val remote = repository.loadWeekSnapshot()
+            baseSnapshot.selectedLunchRecipeIds !=
+                remote.selectedLunchRecipeIds
+        }
+
+        is QueuedMutation.SetHouseholdSandwich,
+        is QueuedMutation.SetShoppingIncluded,
+        is QueuedMutation.SetShoppingChecked,
+        is QueuedMutation.ClearShopping ->
+            false
+    }
+
 private suspend fun applyQueuedMutation(
     repository: CloudMealRepository,
     mutation: QueuedMutation
