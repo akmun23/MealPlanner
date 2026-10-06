@@ -13,7 +13,6 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -248,6 +247,8 @@ private sealed interface CloudScreen {
     data class Ready(
         val household: HouseholdDto
     ) : CloudScreen
+
+    data object ConnectionIssue : CloudScreen
 }
 
 
@@ -270,13 +271,22 @@ fun CloudGate() {
         mutableStateOf<String?>(null)
     }
 
-    LaunchedEffect(Unit) {
+    var isBusy by remember {
+        mutableStateOf(false)
+    }
 
-        screen =
+    var loadAttempt by remember {
+        mutableStateOf(0)
+    }
+
+    LaunchedEffect(loadAttempt) {
+        screen = CloudScreen.Loading
+        message = null
+
+        screen = try {
             if (!repository.isLoggedIn()) {
                 CloudScreen.Login
             } else {
-
                 val household =
                     repository.currentHousehold()
 
@@ -286,6 +296,9 @@ fun CloudGate() {
                     CloudScreen.Ready(household)
                 }
             }
+        } catch (_: Exception) {
+            CloudScreen.ConnectionIssue
+        }
     }
 
     when (val current = screen) {
@@ -304,15 +317,15 @@ fun CloudGate() {
 
             LoginScreen(
                 message = message,
+                isBusy = isBusy,
 
                 onLogin = { email, password ->
 
                     message = null
 
+                    isBusy = true
                     scope.launch {
-
                         try {
-
                             repository.signIn(
                                 email = email,
                                 password = password
@@ -333,6 +346,8 @@ fun CloudGate() {
                                 error = e,
                                 action = AuthAction.SIGN_IN
                             )
+                        } finally {
+                            isBusy = false
                         }
                     }
                 },
@@ -341,10 +356,9 @@ fun CloudGate() {
 
                     message = null
 
+                    isBusy = true
                     scope.launch {
-
                         try {
-
                             repository.signUp(
                                 email = email,
                                 password = password
@@ -365,6 +379,8 @@ fun CloudGate() {
                                 error = e,
                                 action = AuthAction.SIGN_UP
                             )
+                        } finally {
+                            isBusy = false
                         }
                     }
                 }
@@ -376,15 +392,15 @@ fun CloudGate() {
 
             HouseholdSetupScreen(
                 message = message,
+                isBusy = isBusy,
 
                 onCreateHome = { name ->
 
                     message = null
 
+                    isBusy = true
                     scope.launch {
-
                         try {
-
                             val household =
                                 repository.createHousehold(name)
 
@@ -398,11 +414,11 @@ fun CloudGate() {
                                 message = "Kunne ikke indlæse hjemmet."
                             }
 
-                        } catch (e: Exception) {
-
+                        } catch (_: Exception) {
                             message =
-                                e.message
-                                    ?: "Kunne ikke oprette hjem."
+                                "Kunne ikke oprette hjemmet. Prøv igen."
+                        } finally {
+                            isBusy = false
                         }
                     }
                 },
@@ -411,10 +427,9 @@ fun CloudGate() {
 
                     message = null
 
+                    isBusy = true
                     scope.launch {
-
                         try {
-
                             val household =
                                 repository.joinHousehold(code)
 
@@ -429,11 +444,11 @@ fun CloudGate() {
                                     "Kunne ikke finde hjemmet."
                             }
 
-                        } catch (e: Exception) {
-
+                        } catch (_: Exception) {
                             message =
-                                e.message
-                                    ?: "Kunne ikke tilmelde dig hjemmet."
+                                "Kunne ikke tilmelde dig hjemmet. Tjek koden og prøv igen."
+                        } finally {
+                            isBusy = false
                         }
                     }
                 },
@@ -451,6 +466,47 @@ fun CloudGate() {
             )
         }
 
+
+        CloudScreen.ConnectionIssue -> {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    "Kunne ikke oprette forbindelse",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "Tjek forbindelsen og prøv igen. Dine data er ikke ændret.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Spacer(Modifier.height(20.dp))
+                Button(
+                    onClick = {
+                        loadAttempt += 1
+                    }
+                ) {
+                    Text("Prøv igen")
+                }
+                Spacer(Modifier.height(8.dp))
+                TextButton(
+                    onClick = {
+                        scope.launch {
+                            repository.signOut()
+                            message = null
+                            screen = CloudScreen.Login
+                        }
+                    }
+                ) {
+                    Text("Log ud")
+                }
+            }
+        }
 
         is CloudScreen.Ready -> {
             MealPlannerApp(
@@ -488,6 +544,7 @@ fun CloudGate() {
 @Composable
 private fun LoginScreen(
     message: String?,
+    isBusy: Boolean,
     onLogin: (String, String) -> Unit,
     onCreateAccount: (String, String) -> Unit
 ) {
@@ -561,14 +618,22 @@ private fun LoginScreen(
                 modifier = Modifier.height(14.dp)
             )
 
-            Card(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = message,
-                    modifier = Modifier.padding(14.dp)
-                )
-            }
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        if (isBusy) {
+            Spacer(
+                modifier = Modifier.height(10.dp)
+            )
+            Text(
+                text = "Arbejder…",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
 
         Spacer(
@@ -583,8 +648,9 @@ private fun LoginScreen(
                 )
             },
             enabled =
-                email.isNotBlank() &&
-                        password.length >= 6,
+                !isBusy &&
+                    email.isNotBlank() &&
+                    password.length >= 6,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp)
         ) {
@@ -603,8 +669,9 @@ private fun LoginScreen(
                 )
             },
             enabled =
-                email.isNotBlank() &&
-                        password.length >= 6,
+                !isBusy &&
+                    email.isNotBlank() &&
+                    password.length >= 6,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp)
         ) {
@@ -626,6 +693,7 @@ private fun LoginScreen(
 @Composable
 private fun HouseholdSetupScreen(
     message: String?,
+    isBusy: Boolean,
     onCreateHome: (String) -> Unit,
     onJoinHome: (String) -> Unit,
     onLogout: () -> Unit
@@ -693,7 +761,7 @@ private fun HouseholdSetupScreen(
             onClick = {
                 onCreateHome(homeName)
             },
-            enabled = homeName.isNotBlank(),
+            enabled = !isBusy && homeName.isNotBlank(),
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Opret hjem")
@@ -737,7 +805,7 @@ private fun HouseholdSetupScreen(
             onClick = {
                 onJoinHome(joinCode)
             },
-            enabled = joinCode.length == 8,
+            enabled = !isBusy && joinCode.length == 8,
             modifier = Modifier.fillMaxWidth()
         ) {
             Text("Tilmeld")
@@ -749,14 +817,22 @@ private fun HouseholdSetupScreen(
                 modifier = Modifier.height(14.dp)
             )
 
-            Card(
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = message,
-                    modifier = Modifier.padding(14.dp)
-                )
-            }
+            Text(
+                text = message,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
+        if (isBusy) {
+            Spacer(
+                modifier = Modifier.height(10.dp)
+            )
+            Text(
+                text = "Arbejder…",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
 
         Spacer(
@@ -765,6 +841,7 @@ private fun HouseholdSetupScreen(
 
         TextButton(
             onClick = onLogout,
+            enabled = !isBusy,
             modifier = Modifier.align(
                 Alignment.CenterHorizontally
             )
