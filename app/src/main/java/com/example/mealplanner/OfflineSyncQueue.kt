@@ -169,6 +169,12 @@ internal sealed interface QueuedMutation {
     ) : QueuedMutation
 
     @Serializable
+    @SerialName("set_household_sandwich")
+    data class SetHouseholdSandwich(
+        val recipeId: String?
+    ) : QueuedMutation
+
+    @Serializable
     @SerialName("set_day_prep")
     data class SetDayPrep(
         val weeklyPlanId: String,
@@ -237,6 +243,8 @@ internal fun QueuedMutation.key(): String = when (this) {
         "pantry:$ingredientId"
     is QueuedMutation.SetWeekState ->
         "week:$weeklyPlanId"
+    is QueuedMutation.SetHouseholdSandwich ->
+        "household-sandwich"
     is QueuedMutation.SetDayPrep ->
         "day-prep:$weeklyPlanId:$day"
     is QueuedMutation.ReplaceLunch ->
@@ -258,6 +266,7 @@ internal fun QueuedMutation.priority(): Int = when (this) {
 
     is QueuedMutation.SetPantry,
     is QueuedMutation.SetWeekState,
+    is QueuedMutation.SetHouseholdSandwich,
     is QueuedMutation.SetDayPrep,
     is QueuedMutation.ReplaceLunch -> 40
 
@@ -295,6 +304,7 @@ internal fun QueuedMutation.domains(): Set<CloudSyncDomain> = when (this) {
         setOf(CloudSyncDomain.PANTRY)
 
     is QueuedMutation.SetWeekState,
+    is QueuedMutation.SetHouseholdSandwich,
     is QueuedMutation.SetDayPrep,
     is QueuedMutation.ReplaceLunch ->
         setOf(CloudSyncDomain.WEEK)
@@ -326,6 +336,7 @@ internal fun QueuedMutation.domainMask(): Int = when (this) {
         domainMask(CloudSyncDomain.PANTRY)
 
     is QueuedMutation.SetWeekState,
+    is QueuedMutation.SetHouseholdSandwich,
     is QueuedMutation.SetDayPrep,
     is QueuedMutation.ReplaceLunch ->
         domainMask(CloudSyncDomain.WEEK)
@@ -528,9 +539,6 @@ private suspend fun applyQueuedMutation(
         }
 
         is QueuedMutation.SetWeekState -> {
-            repository.setHouseholdSandwich(
-                mutation.sandwichRecipeId
-            )
             repository.saveWeekState(
                 weeklyPlanId = mutation.weeklyPlanId,
                 plan = mutation.plan.mapKeys {
@@ -548,6 +556,12 @@ private suspend fun applyQueuedMutation(
                 sandwichDay = mutation.sandwichDay?.let(
                     DayOfWeek::valueOf
                 )
+            )
+        }
+
+        is QueuedMutation.SetHouseholdSandwich -> {
+            repository.setHouseholdSandwich(
+                mutation.recipeId
             )
         }
 
