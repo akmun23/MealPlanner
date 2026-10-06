@@ -75,14 +75,14 @@ private data class RecipeCategoryAssignmentRow(
 )
 
 @Serializable
-private data class RecipeRow(
+internal data class RecipeRow(
     val id: String,
     @SerialName("household_id") val householdId: String,
     val name: String,
     @SerialName("meal_type") val mealType: String = "DINNER",
     @SerialName("protein_tag") val proteinTag: String = "",
     @SerialName("category_tag") val categoryTag: String = "OTHER",
-    val notes: String = "",
+    val notes: String,
     @SerialName("image_path") val imagePath: String? = null
 )
 

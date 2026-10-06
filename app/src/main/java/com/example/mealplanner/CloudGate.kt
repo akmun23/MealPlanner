@@ -34,13 +34,71 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.Email
+import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.postgrest
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 private const val AUTH_REDIRECT_URL = "com.example.mealplanner://login-callback"
+
+internal enum class AuthAction {
+    SIGN_IN,
+    SIGN_UP
+}
+
+internal fun authErrorMessage(
+    error: Throwable,
+    action: AuthAction
+): String {
+    val raw = buildString {
+        var current: Throwable? = error
+        while (current != null) {
+            if (!current.message.isNullOrBlank()) {
+                if (isNotEmpty()) append(' ')
+                append(current.message)
+            }
+            current = current.cause
+        }
+    }.lowercase()
+
+    return when {
+        "invalid login credentials" in raw ||
+            "invalid credentials" in raw ->
+            "Forkert e-mail eller adgangskode."
+
+        "email not confirmed" in raw ||
+            "email_not_confirmed" in raw ->
+            "Bekræft din e-mail, før du logger ind."
+
+        "user already registered" in raw ||
+            "already been registered" in raw ->
+            "Der findes allerede en konto med denne e-mail."
+
+        "invalid email" in raw ||
+            "email address" in raw && "invalid" in raw ->
+            "Indtast en gyldig e-mailadresse."
+
+        "weak password" in raw ||
+            "password should be at least" in raw ->
+            "Adgangskoden skal være mindst 6 tegn."
+
+        "rate limit" in raw ||
+            "too many requests" in raw ->
+            "For mange forsøg. Prøv igen lidt senere."
+
+        "signup" in raw && "disabled" in raw ->
+            "Oprettelse af nye konti er ikke tilgængelig lige nu."
+
+        action == AuthAction.SIGN_IN ->
+            "Kunne ikke logge ind. Prøv igen."
+
+        else ->
+            "Kunne ikke oprette konto. Prøv igen."
+    }
+}
 
 
 @Serializable
@@ -66,8 +124,11 @@ class CloudAccountRepository {
 
     private val supabase = SupabaseProvider.client
 
-    fun isLoggedIn(): Boolean {
-        return supabase.auth.currentSessionOrNull() != null
+    suspend fun isLoggedIn(): Boolean {
+        val status = supabase.auth.sessionStatus.first {
+            it != SessionStatus.Initializing
+        }
+        return status is SessionStatus.Authenticated
     }
 
     suspend fun signIn(
@@ -268,10 +329,10 @@ fun CloudGate() {
                                 }
 
                         } catch (e: Exception) {
-
-                            message =
-                                e.message
-                                    ?: "Kunne ikke logge ind."
+                            message = authErrorMessage(
+                                error = e,
+                                action = AuthAction.SIGN_IN
+                            )
                         }
                     }
                 },
@@ -300,10 +361,10 @@ fun CloudGate() {
                             }
 
                         } catch (e: Exception) {
-
-                            message =
-                                e.message
-                                    ?: "Kunne ikke oprette konto."
+                            message = authErrorMessage(
+                                error = e,
+                                action = AuthAction.SIGN_UP
+                            )
                         }
                     }
                 }
