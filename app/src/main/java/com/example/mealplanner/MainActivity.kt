@@ -188,6 +188,9 @@ fun MealPlannerApp(
 
     var tab by remember { mutableStateOf(AppTab.WEEK) }
     var page by remember { mutableStateOf<AppPage?>(null) }
+    var showSyncConflictDialog by remember {
+        mutableStateOf(false)
+    }
     val pantryListState = rememberLazyListState()
 
     fun navigateBack() {
@@ -215,6 +218,49 @@ fun MealPlannerApp(
             confirmButton = {
                 TextButton(onClick = { state.clearError() }) {
                     Text("OK")
+                }
+            }
+        )
+    }
+
+    if (
+        showSyncConflictDialog &&
+        state.syncConflictCount > 0
+    ) {
+        AlertDialog(
+            onDismissRequest = {
+                showSyncConflictDialog = false
+            },
+            title = {
+                Text("Synkroniseringskonflikt")
+            },
+            text = {
+                Text(
+                    if (state.syncConflictCount == 1) {
+                        "En ændring findes også i en nyere fælles version. Ingen version overskrives, før du vælger."
+                    } else {
+                        "${state.syncConflictCount} ændringer findes også i nyere fælles versioner. Ingen version overskrives, før du vælger."
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showSyncConflictDialog = false
+                        state.useSharedConflictingChanges()
+                    }
+                ) {
+                    Text("Behold fælles")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showSyncConflictDialog = false
+                        state.keepMyConflictingChanges()
+                    }
+                ) {
+                    Text("Behold mine")
                 }
             }
         )
@@ -346,6 +392,9 @@ fun MealPlannerApp(
         SyncStatusBadge(
             indicator = state.syncIndicator,
             onRetry = state::retryPendingSync,
+            onConflict = {
+                showSyncConflictDialog = true
+            },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 86.dp)
@@ -357,6 +406,7 @@ fun MealPlannerApp(
 private fun SyncStatusBadge(
     indicator: SyncIndicator,
     onRetry: () -> Unit,
+    onConflict: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val text = when (indicator) {
@@ -365,17 +415,22 @@ private fun SyncStatusBadge(
         SyncIndicator.SAVED -> "Gemt"
         SyncIndicator.PENDING -> "Gemt lokalt · afventer synk."
         SyncIndicator.DELAYED -> "Synk. forsinket · Prøv igen"
+        SyncIndicator.CONFLICT -> "Synk.-konflikt · Gennemse"
         SyncIndicator.ERROR -> "Kunne ikke gemme lokalt"
         SyncIndicator.OFFLINE -> "Offline"
     } ?: return
 
+    val action = when (indicator) {
+        SyncIndicator.DELAYED -> onRetry
+        SyncIndicator.CONFLICT -> onConflict
+        else -> null
+    }
+
     Surface(
         modifier = modifier.then(
-            if (indicator == SyncIndicator.DELAYED) {
-                Modifier.clickable(onClick = onRetry)
-            } else {
-                Modifier
-            }
+            action?.let { onClick ->
+                Modifier.clickable(onClick = onClick)
+            } ?: Modifier
         ),
         shape = RoundedCornerShape(12.dp),
         tonalElevation = 2.dp,
