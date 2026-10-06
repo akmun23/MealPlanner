@@ -10,10 +10,9 @@ import org.junit.Test
 
 class WeeklyPlannerTest {
 
-    private fun recipe(id: String, protein: String = "") = Recipe(
+    private fun recipe(id: String) = Recipe(
         id = id,
         name = id,
-        proteinTag = protein,
         ingredients = emptyList()
     )
 
@@ -155,22 +154,6 @@ class WeeklyPlannerTest {
                 result.plan[DayOfWeek.MONDAY]
             )
         }
-    }
-
-    @Test
-    fun legacyCategoryNamesNormalizeToStructuredCategories() {
-        assertEquals(
-            RecipeCategory.PASTA,
-            "pasta".toRecipeCategory()
-        )
-        assertEquals(
-            RecipeCategory.SANDWICH_WRAP,
-            "sandwich".toRecipeCategory()
-        )
-        assertEquals(
-            RecipeCategory.OTHER,
-            "ukendt kategori".toRecipeCategory()
-        )
     }
 
     @Test
@@ -552,7 +535,7 @@ class WeeklyPlannerTest {
         val chickenA = Recipe(
             id = "chicken-a",
             name = "Chicken A",
-            categoryTag = "A",
+            categoryId = "category-a",
             ingredients = listOf(
                 RecipeIngredient("chicken", 100.0)
             )
@@ -560,7 +543,7 @@ class WeeklyPlannerTest {
         val chickenB = Recipe(
             id = "chicken-b",
             name = "Chicken B",
-            categoryTag = "B",
+            categoryId = "category-b",
             ingredients = listOf(
                 RecipeIngredient("chicken", 100.0)
             )
@@ -568,7 +551,7 @@ class WeeklyPlannerTest {
         val beef = Recipe(
             id = "beef",
             name = "Beef",
-            categoryTag = "C",
+            categoryId = "category-c",
             ingredients = listOf(
                 RecipeIngredient("beef", 100.0)
             )
