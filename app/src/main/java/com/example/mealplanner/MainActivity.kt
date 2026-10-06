@@ -234,32 +234,44 @@ fun MealPlannerApp(
                 Text("Synkroniseringskonflikt")
             },
             text = {
-                Text(
-                    if (state.syncConflictCount == 1) {
-                        "En ændring findes også i en nyere fælles version. Intet overskrives automatisk. Du kan lukke og vælge senere."
-                    } else {
-                        "${state.syncConflictCount} ændringer findes også i nyere fælles versioner. Intet overskrives automatisk. Du kan lukke og vælge senere."
+                Column(
+                    verticalArrangement =
+                        Arrangement.spacedBy(10.dp)
+                ) {
+                    Text(
+                        if (state.syncConflictCount == 1) {
+                            "En ændring findes også i en nyere fælles version. Intet overskrives automatisk."
+                        } else {
+                            "${state.syncConflictCount} ændringer findes også i nyere fælles versioner. Intet overskrives automatisk."
+                        }
+                    )
+                    Button(
+                        onClick = {
+                            showSyncConflictDialog = false
+                            state.useSharedConflictingChanges()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Behold fælles")
                     }
-                )
+                    OutlinedButton(
+                        onClick = {
+                            showSyncConflictDialog = false
+                            state.keepMyConflictingChanges()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Behold mine")
+                    }
+                }
             },
             confirmButton = {
                 TextButton(
                     onClick = {
                         showSyncConflictDialog = false
-                        state.useSharedConflictingChanges()
                     }
                 ) {
-                    Text("Behold fælles")
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = {
-                        showSyncConflictDialog = false
-                        state.keepMyConflictingChanges()
-                    }
-                ) {
-                    Text("Behold mine")
+                    Text("Senere")
                 }
             }
         )
