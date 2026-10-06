@@ -73,6 +73,9 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -192,6 +195,16 @@ fun MealPlannerApp(
         mutableStateOf(false)
     }
     val pantryListState = rememberLazyListState()
+    val messageHostState = remember { SnackbarHostState() }
+
+    LaunchedEffect(state.lastError) {
+        val message = state.lastError ?: return@LaunchedEffect
+        state.clearError()
+        messageHostState.showSnackbar(
+            message = message,
+            duration = SnackbarDuration.Long
+        )
+    }
 
     fun navigateBack() {
         page = when (val current = page) {
@@ -210,19 +223,6 @@ fun MealPlannerApp(
         navigateBack()
     }
 
-    state.lastError?.let { error ->
-        AlertDialog(
-            onDismissRequest = { state.clearError() },
-            title = { Text("Fejl") },
-            text = { Text(error) },
-            confirmButton = {
-                TextButton(onClick = { state.clearError() }) {
-                    Text("OK")
-                }
-            }
-        )
-    }
-
     if (
         showSyncConflictDialog &&
         state.syncConflictCount > 0
@@ -237,9 +237,9 @@ fun MealPlannerApp(
             text = {
                 Text(
                     if (state.syncConflictCount == 1) {
-                        "En ændring findes også i en nyere fælles version. Ingen version overskrives, før du vælger."
+                        "En ændring findes også i en nyere fælles version. Intet overskrives automatisk. Du kan lukke og vælge senere."
                     } else {
-                        "${state.syncConflictCount} ændringer findes også i nyere fælles versioner. Ingen version overskrives, før du vælger."
+                        "${state.syncConflictCount} ændringer findes også i nyere fælles versioner. Intet overskrives automatisk. Du kan lukke og vælge senere."
                     }
                 )
             },
@@ -388,6 +388,16 @@ fun MealPlannerApp(
             }
         }
         }
+
+        SnackbarHost(
+            hostState = messageHostState,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(
+                    horizontal = 16.dp,
+                    vertical = 126.dp
+                )
+        )
 
         SyncStatusBadge(
             indicator = state.syncIndicator,
