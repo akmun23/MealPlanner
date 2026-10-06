@@ -1054,6 +1054,12 @@ private fun StatusPill(
     }
 }
 
+private data class RecipeListUi(
+    val recipe: Recipe,
+    val categoryName: String,
+    val proteinNames: List<String>
+)
+
 @Composable
 fun RecipesScreen(
     state: MealPlannerState,
@@ -1072,21 +1078,50 @@ fun RecipesScreen(
 
     val filteredRecipes by remember {
         derivedStateOf {
-            state.recipes.filter { recipe ->
-                val categoryName = state.recipeCategoryName(recipe)
-                val proteinNames = state.recipeProteinNames(recipe)
+            val ingredientsById =
+                state.ingredients.associateBy { it.id }
+            val categoryNamesById =
+                state.recipeCategories.associate {
+                    it.id to it.name
+                }
+            val query = searchQuery.trim()
+
+            state.recipes.mapNotNull { recipe ->
+                val categoryName =
+                    categoryNamesById[recipe.categoryId]
+                        ?: "Andet"
+                val proteinNames = recipe.ingredients
+                    .asSequence()
+                    .mapNotNull {
+                        ingredientsById[it.ingredientId]
+                    }
+                    .filter { it.isProtein }
+                    .map { it.name }
+                    .distinct()
+                    .sortedBy { it.lowercase() }
+                    .toList()
 
                 val matchesSearch =
-                    searchQuery.isBlank() ||
-                        recipe.name.contains(searchQuery, ignoreCase = true) ||
-                        categoryName.contains(searchQuery, ignoreCase = true) ||
+                    query.isBlank() ||
+                        recipe.name.contains(
+                            query,
+                            ignoreCase = true
+                        ) ||
+                        categoryName.contains(
+                            query,
+                            ignoreCase = true
+                        ) ||
                         proteinNames.any {
-                            it.contains(searchQuery, ignoreCase = true)
+                            it.contains(
+                                query,
+                                ignoreCase = true
+                            )
                         }
 
                 val matchesMeal =
                     mealFilter == "Alle måltider" ||
-                        recipe.mealType.danishName() == mealFilter
+                        recipe.mealType.danishName() ==
+                            mealFilter
 
                 val matchesCategory =
                     categoryFilter == "Alle kategorier" ||
@@ -1095,10 +1130,20 @@ fun RecipesScreen(
                 val matchesPantry =
                     !canMakeOnly || state.canMake(recipe)
 
-                matchesSearch &&
+                if (
+                    matchesSearch &&
                     matchesMeal &&
                     matchesCategory &&
                     matchesPantry
+                ) {
+                    RecipeListUi(
+                        recipe = recipe,
+                        categoryName = categoryName,
+                        proteinNames = proteinNames
+                    )
+                } else {
+                    null
+                }
             }
         }
     }
@@ -1176,14 +1221,18 @@ fun RecipesScreen(
         } else {
             items(
                 items = filteredRecipes,
-                key = { it.id }
-            ) { recipe ->
+                key = { it.recipe.id }
+            ) { item ->
                 RecipeListCard(
-                    recipe = recipe,
-                    categoryName = state.recipeCategoryName(recipe),
-                    proteinNames = state.recipeProteinNames(recipe),
-                    isSandwich = state.weeklySandwichRecipeId == recipe.id,
-                    onClick = { onOpenRecipe(recipe.id) }
+                    recipe = item.recipe,
+                    categoryName = item.categoryName,
+                    proteinNames = item.proteinNames,
+                    isSandwich =
+                        state.weeklySandwichRecipeId ==
+                            item.recipe.id,
+                    onClick = {
+                        onOpenRecipe(item.recipe.id)
+                    }
                 )
             }
         }
@@ -2600,6 +2649,16 @@ private fun PantryAmountDialog(
     )
 }
 
+private data class ShoppingSections(
+    val all: List<ShoppingItem>,
+    val included: List<ShoppingItem>,
+    val missing: List<ShoppingItem>,
+    val bought: List<ShoppingItem>,
+    val excluded: List<ShoppingItem>,
+    val missingByCategoryId: Map<String?, List<ShoppingItem>>,
+    val checkedCount: Int
+)
+
 @Composable
 fun ShoppingScreen(state: MealPlannerState) {
     var addToPantryItem by remember {
@@ -2625,27 +2684,51 @@ fun ShoppingScreen(state: MealPlannerState) {
         )
     }
 
-    val shoppingItems by remember {
-        derivedStateOf { state.shoppingItems() }
-    }
-    val included = shoppingItems.filter {
-        state.isShoppingIncluded(it.ingredient.id)
-    }
-    val checkedCount = included.count {
-        state.shoppingChecked[it.ingredient.id] == true
-    }
+    val sections by remember {
+        derivedStateOf {
+            val all = state.shoppingItems()
+            val included = ArrayList<ShoppingItem>()
+            val missing = ArrayList<ShoppingItem>()
+            val bought = ArrayList<ShoppingItem>()
+            val excluded = ArrayList<ShoppingItem>()
 
-    val missing = included.filter {
-        state.shoppingChecked[it.ingredient.id] != true
-    }
+            all.forEach { item ->
+                val ingredientId = item.ingredient.id
+                if (state.isShoppingIncluded(ingredientId)) {
+                    included += item
+                    if (
+                        state.shoppingChecked[ingredientId] ==
+                        true
+                    ) {
+                        bought += item
+                    } else {
+                        missing += item
+                    }
+                } else {
+                    excluded += item
+                }
+            }
 
-    val bought = included.filter {
-        state.shoppingChecked[it.ingredient.id] == true
+            ShoppingSections(
+                all = all,
+                included = included,
+                missing = missing,
+                bought = bought,
+                excluded = excluded,
+                missingByCategoryId =
+                    missing.groupBy {
+                        it.ingredient.shoppingCategoryId
+                    },
+                checkedCount = bought.size
+            )
+        }
     }
-
-    val excluded = shoppingItems.filter {
-        !state.isShoppingIncluded(it.ingredient.id)
-    }
+    val shoppingItems = sections.all
+    val included = sections.included
+    val missing = sections.missing
+    val bought = sections.bought
+    val excluded = sections.excluded
+    val checkedCount = sections.checkedCount
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -2701,9 +2784,9 @@ fun ShoppingScreen(state: MealPlannerState) {
                 val knownIds = categories.map { it.id }.toSet()
 
                 categories.forEach { category ->
-                    val categoryItems = missing.filter {
-                        it.ingredient.shoppingCategoryId == category.id
-                    }
+                    val categoryItems =
+                        sections.missingByCategoryId[category.id]
+                            .orEmpty()
 
                     if (categoryItems.isNotEmpty()) {
                         item(key = "category-${category.id}") {
@@ -2732,9 +2815,11 @@ fun ShoppingScreen(state: MealPlannerState) {
                     }
                 }
 
-                val uncategorized = missing.filter {
-                    it.ingredient.shoppingCategoryId !in knownIds
-                }
+                val uncategorized =
+                    sections.missingByCategoryId
+                        .filterKeys { it !in knownIds }
+                        .values
+                        .flatten()
 
                 if (uncategorized.isNotEmpty()) {
                     item(key = "category-other") {
