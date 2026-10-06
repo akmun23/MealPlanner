@@ -276,9 +276,15 @@ private fun domainMask(vararg domains: CloudSyncDomain): Int =
 
 internal fun QueuedMutation.domains(): Set<CloudSyncDomain> = when (this) {
     is QueuedMutation.UpsertIngredient,
-    is QueuedMutation.DeleteIngredient,
     is QueuedMutation.UpsertIngredientCategory ->
         setOf(CloudSyncDomain.INGREDIENTS)
+
+    is QueuedMutation.DeleteIngredient ->
+        setOf(
+            CloudSyncDomain.INGREDIENTS,
+            CloudSyncDomain.PANTRY,
+            CloudSyncDomain.SHOPPING
+        )
 
     is QueuedMutation.UpsertRecipe,
     is QueuedMutation.DeleteRecipe,
@@ -301,9 +307,15 @@ internal fun QueuedMutation.domains(): Set<CloudSyncDomain> = when (this) {
 
 internal fun QueuedMutation.domainMask(): Int = when (this) {
     is QueuedMutation.UpsertIngredient,
-    is QueuedMutation.DeleteIngredient,
     is QueuedMutation.UpsertIngredientCategory ->
         domainMask(CloudSyncDomain.INGREDIENTS)
+
+    is QueuedMutation.DeleteIngredient ->
+        domainMask(
+            CloudSyncDomain.INGREDIENTS,
+            CloudSyncDomain.PANTRY,
+            CloudSyncDomain.SHOPPING
+        )
 
     is QueuedMutation.UpsertRecipe,
     is QueuedMutation.DeleteRecipe,
