@@ -310,12 +310,6 @@ class MealPlannerState(
             }
 
             is CloudRealtimeEvent.PantryChanged -> {
-                val key = SyncMutationKey(
-                    domain = CloudSyncDomain.PANTRY,
-                    entityId = "pantry:${event.ingredientId}"
-                )
-                if (syncTracker.isPending(key)) return
-
                 if (event.amountBase == null) {
                     pantry.remove(event.ingredientId)
                 } else if (
@@ -328,12 +322,6 @@ class MealPlannerState(
 
             is CloudRealtimeEvent.ShoppingCheckedChanged -> {
                 if (event.weeklyPlanId != weeklyPlanId) return
-                val key = SyncMutationKey(
-                    domain = CloudSyncDomain.SHOPPING,
-                    entityId = "checked:${event.ingredientId}"
-                )
-                if (syncTracker.isPending(key)) return
-
                 if (event.checked == null) {
                     shoppingChecked.remove(event.ingredientId)
                 } else if (
@@ -347,12 +335,6 @@ class MealPlannerState(
 
             is CloudRealtimeEvent.ShoppingIncludedChanged -> {
                 if (event.weeklyPlanId != weeklyPlanId) return
-                val key = SyncMutationKey(
-                    domain = CloudSyncDomain.SHOPPING,
-                    entityId = "included:${event.ingredientId}"
-                )
-                if (syncTracker.isPending(key)) return
-
                 if (event.included == null) {
                     shoppingIncluded.remove(event.ingredientId)
                 } else if (
