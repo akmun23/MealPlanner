@@ -6,6 +6,8 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.realtime.HasOldRecord
+import io.github.jan.supabase.realtime.HasRecord
 import io.github.jan.supabase.realtime.PostgresAction
 import io.github.jan.supabase.realtime.channel
 import io.github.jan.supabase.realtime.RealtimeChannel
@@ -25,6 +27,11 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.ByteArrayOutputStream
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -271,6 +278,103 @@ internal data class CloudShoppingSnapshot(
     val checked: Map<String, Boolean>,
     val included: Map<String, Boolean>
 )
+
+internal sealed interface CloudRealtimeEvent {
+    val domain: CloudSyncDomain
+
+    data class DomainChanged(
+        override val domain: CloudSyncDomain
+    ) : CloudRealtimeEvent
+
+    data class PantryChanged(
+        val ingredientId: String,
+        val amountBase: Double?
+    ) : CloudRealtimeEvent {
+        override val domain = CloudSyncDomain.PANTRY
+    }
+
+    data class ShoppingCheckedChanged(
+        val weeklyPlanId: String,
+        val ingredientId: String,
+        val checked: Boolean?
+    ) : CloudRealtimeEvent {
+        override val domain = CloudSyncDomain.SHOPPING
+    }
+
+    data class ShoppingIncludedChanged(
+        val weeklyPlanId: String,
+        val ingredientId: String,
+        val included: Boolean?
+    ) : CloudRealtimeEvent {
+        override val domain = CloudSyncDomain.SHOPPING
+    }
+}
+
+private fun PostgresAction.recordOrNull(): JsonObject? =
+    (this as? HasRecord)?.record
+
+private fun PostgresAction.oldRecordOrNull(): JsonObject? =
+    (this as? HasOldRecord)?.oldRecord
+
+private fun JsonObject.stringValue(name: String): String? =
+    get(name)?.jsonPrimitive?.contentOrNull
+
+private fun JsonObject.doubleValue(name: String): Double? =
+    get(name)?.jsonPrimitive?.doubleOrNull
+
+private fun JsonObject.booleanValue(name: String): Boolean? =
+    get(name)?.jsonPrimitive?.booleanOrNull
+
+internal fun realtimeEventFor(
+    table: String,
+    action: PostgresAction
+): CloudRealtimeEvent? {
+    val record = action.recordOrNull()
+    val oldRecord = action.oldRecordOrNull()
+    val source = record ?: oldRecord
+
+    return when (table) {
+        "pantry_items" -> {
+            val ingredientId =
+                source?.stringValue("ingredient_id") ?: return null
+
+            CloudRealtimeEvent.PantryChanged(
+                ingredientId = ingredientId,
+                amountBase = record?.doubleValue("amount_base")
+            )
+        }
+
+        "shopping_checks" -> {
+            val planId =
+                source?.stringValue("weekly_plan_id") ?: return null
+            val ingredientId =
+                source.stringValue("ingredient_id") ?: return null
+
+            CloudRealtimeEvent.ShoppingCheckedChanged(
+                weeklyPlanId = planId,
+                ingredientId = ingredientId,
+                checked = record?.booleanValue("checked")
+            )
+        }
+
+        "shopping_inclusions" -> {
+            val planId =
+                source?.stringValue("weekly_plan_id") ?: return null
+            val ingredientId =
+                source.stringValue("ingredient_id") ?: return null
+
+            CloudRealtimeEvent.ShoppingIncludedChanged(
+                weeklyPlanId = planId,
+                ingredientId = ingredientId,
+                included = record?.booleanValue("included")
+            )
+        }
+
+        else -> syncDomainForTable(table)?.let {
+            CloudRealtimeEvent.DomainChanged(it)
+        }
+    }
+}
 
 class CloudMealRepository(
     private val context: Context,
@@ -1371,7 +1475,7 @@ class CloudMealRepository(
 
     internal suspend fun startRealtime(
         scope: CoroutineScope,
-        onChanged: suspend (CloudSyncDomain) -> Unit
+        onEvent: suspend (CloudRealtimeEvent) -> Unit
     ) {
         stopRealtime()
 
@@ -1408,15 +1512,36 @@ class CloudMealRepository(
                 schema = "public"
             ) {
                 this.table = table
-            }.onEach {
-                domainSignals.getValue(domain).tryEmit(Unit)
+                filter {
+                    eq("household_id", householdId)
+                }
+            }.onEach { action ->
+                when (
+                    val event = realtimeEventFor(
+                        table = table,
+                        action = action
+                    )
+                ) {
+                    is CloudRealtimeEvent.PantryChanged,
+                    is CloudRealtimeEvent.ShoppingCheckedChanged,
+                    is CloudRealtimeEvent.ShoppingIncludedChanged ->
+                        onEvent(event)
+
+                    is CloudRealtimeEvent.DomainChanged,
+                    null ->
+                        domainSignals.getValue(domain).tryEmit(Unit)
+                }
             }.launchIn(scope)
         }
 
         val reconciliationJobs = domainSignals.map { (domain, signal) ->
             signal
                 .debounce(250)
-                .onEach { onChanged(domain) }
+                .onEach {
+                    onEvent(
+                        CloudRealtimeEvent.DomainChanged(domain)
+                    )
+                }
                 .launchIn(scope)
         }
 
