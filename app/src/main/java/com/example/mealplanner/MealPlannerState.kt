@@ -9,8 +9,6 @@ import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -33,14 +31,6 @@ class MealPlannerState(
     )
     private val legacyStorage = LocalStorage(context.applicationContext)
     private val reloadMutex = Mutex()
-    private val domainGenerations =
-        CloudSyncDomain.entries.associateWith { 0L }.toMutableMap()
-    private val coalescedJobs = mutableMapOf<String, Job>()
-    private val pendingSyncKeys = mutableSetOf<String>()
-    private val pendingPantryWrites = mutableMapOf<String, Double>()
-    private val pendingShoppingChecks = mutableMapOf<String, Boolean>()
-    private val pendingShoppingInclusions = mutableMapOf<String, Boolean>()
-    private var syncIndicatorJob: Job? = null
 
     val ingredients = mutableStateListOf<Ingredient>()
     val ingredientCategories = mutableStateListOf<IngredientCategory>()
@@ -74,9 +64,6 @@ class MealPlannerState(
     var lastError by mutableStateOf<String?>(null)
         private set
 
-    var syncStatus by mutableStateOf(SyncStatus.IDLE)
-        private set
-
     init {
         orderedWeekDays.forEach { day ->
             dayModes[day] = DayMode.AUTO
@@ -101,8 +88,8 @@ class MealPlannerState(
             }
 
             reload(syncHistory = true)
-            repository.startRealtime(scope) { change ->
-                handleRealtimeChange(change)
+            repository.startRealtime(scope) { domain ->
+                reload(domain)
             }
         } catch (e: Exception) {
             lastError = e.message ?: "Kunne ikke hente data."
@@ -117,9 +104,6 @@ class MealPlannerState(
 
     fun clearError() {
         lastError = null
-        if (syncStatus == SyncStatus.ERROR) {
-            syncStatus = SyncStatus.IDLE
-        }
     }
 
     private suspend fun reload(
