@@ -278,6 +278,31 @@ private fun domainMask(vararg domains: CloudSyncDomain): Int =
         acc or (1 shl domain.ordinal)
     }
 
+internal fun QueuedMutation.domains(): Set<CloudSyncDomain> = when (this) {
+    is QueuedMutation.UpsertIngredient,
+    is QueuedMutation.DeleteIngredient,
+    is QueuedMutation.UpsertIngredientCategory ->
+        setOf(CloudSyncDomain.INGREDIENTS)
+
+    is QueuedMutation.UpsertRecipe,
+    is QueuedMutation.DeleteRecipe,
+    is QueuedMutation.UpsertRecipeCategory ->
+        setOf(CloudSyncDomain.RECIPES)
+
+    is QueuedMutation.SetPantry ->
+        setOf(CloudSyncDomain.PANTRY)
+
+    is QueuedMutation.SetWeekState,
+    is QueuedMutation.SetDayPrep,
+    is QueuedMutation.ReplaceLunch ->
+        setOf(CloudSyncDomain.WEEK)
+
+    is QueuedMutation.ClearShopping,
+    is QueuedMutation.SetShoppingIncluded,
+    is QueuedMutation.SetShoppingChecked ->
+        setOf(CloudSyncDomain.SHOPPING)
+}
+
 internal fun QueuedMutation.domainMask(): Int = when (this) {
     is QueuedMutation.UpsertIngredient,
     is QueuedMutation.DeleteIngredient,
@@ -334,25 +359,37 @@ internal class OfflineSyncQueue(
         snapshot: CloudSnapshot,
         mutation: QueuedMutation
     ) {
+        enqueue(snapshot, listOf(mutation))
+    }
+
+    suspend fun enqueue(
+        snapshot: CloudSnapshot,
+        mutations: List<QueuedMutation>
+    ) {
+        if (mutations.isEmpty()) return
+
         val now = System.currentTimeMillis()
-        val key = mutation.key()
+        val entities = mutations.mapIndexed { index, mutation ->
+            val key = mutation.key()
+            PendingMutationEntity(
+                id = "$householdId|$key",
+                householdId = householdId,
+                mutationKey = key,
+                priority = mutation.priority(),
+                domainMask = mutation.domainMask(),
+                payload = QueuedMutationCodec.encode(mutation),
+                updatedAtEpochMs = now + index
+            )
+        }
 
         database.localStateDao()
-            .persistSnapshotAndMutation(
+            .persistSnapshotAndMutations(
                 snapshot = HouseholdSnapshotEntity(
                     householdId = householdId,
                     payload = RoomSnapshotCodec.encode(snapshot),
                     updatedAtEpochMs = now
                 ),
-                mutation = PendingMutationEntity(
-                    id = "$householdId|$key",
-                    householdId = householdId,
-                    mutationKey = key,
-                    priority = mutation.priority(),
-                    domainMask = mutation.domainMask(),
-                    payload = QueuedMutationCodec.encode(mutation),
-                    updatedAtEpochMs = now
-                )
+                mutations = entities
             )
 
         schedule()
