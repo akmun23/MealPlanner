@@ -49,17 +49,19 @@ internal interface HouseholdSnapshotDao {
 }
 
 @Dao
-internal interface LocalStateDao {
+internal abstract class LocalStateDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertSnapshot(entity: HouseholdSnapshotEntity)
+    abstract suspend fun upsertSnapshot(
+        entity: HouseholdSnapshotEntity
+    )
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertMutations(
+    abstract suspend fun upsertMutations(
         entities: List<PendingMutationEntity>
     )
 
     @Transaction
-    suspend fun persistSnapshotAndMutations(
+    open suspend fun persistSnapshotAndMutations(
         snapshot: HouseholdSnapshotEntity,
         mutations: List<PendingMutationEntity>
     ) {
