@@ -858,6 +858,21 @@ class CloudMealRepository(
         )
     }
 
+    suspend fun upsertIngredientCategory(
+        category: IngredientCategory
+    ) = withContext(Dispatchers.IO) {
+        supabase.from("shopping_categories").upsert(
+            IngredientCategoryRow(
+                id = category.id,
+                householdId = householdId,
+                name = category.name.normalizedDisplayName(),
+                position = category.position
+            )
+        ) {
+            onConflict = "id"
+        }
+    }
+
     suspend fun createIngredientCategory(
         name: String,
         position: Int
@@ -1010,6 +1025,21 @@ class CloudMealRepository(
             imagePath = finalImage.first,
             imageUri = finalImage.second
         )
+    }
+
+    suspend fun upsertRecipeCategory(
+        category: RecipeCategoryOption
+    ) = withContext(Dispatchers.IO) {
+        supabase.from("recipe_categories").upsert(
+            RecipeCategoryRow(
+                id = category.id,
+                householdId = householdId,
+                name = category.name.normalizedDisplayName(),
+                position = category.position
+            )
+        ) {
+            onConflict = "id"
+        }
     }
 
     suspend fun createRecipeCategory(
@@ -1180,6 +1210,31 @@ class CloudMealRepository(
                 eq("weekly_plan_id", weeklyPlanId)
                 eq("recipe_id", recipeId)
             }
+        }
+    }
+
+    suspend fun replaceLunchRecipes(
+        weeklyPlanId: String,
+        recipeIds: List<String>
+    ) = withContext(Dispatchers.IO) {
+        supabase.from("weekly_lunch_recipes").delete {
+            filter {
+                eq("household_id", householdId)
+                eq("weekly_plan_id", weeklyPlanId)
+            }
+        }
+
+        if (recipeIds.isNotEmpty()) {
+            supabase.from("weekly_lunch_recipes").insert(
+                recipeIds.mapIndexed { position, recipeId ->
+                    WeeklyLunchRecipeRow(
+                        householdId = householdId,
+                        weeklyPlanId = weeklyPlanId,
+                        recipeId = recipeId,
+                        position = position
+                    )
+                }
+            )
         }
     }
 
