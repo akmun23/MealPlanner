@@ -345,6 +345,7 @@ fun MealPlannerApp(
 
         SyncStatusBadge(
             indicator = state.syncIndicator,
+            onRetry = state::retryPendingSync,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 86.dp)
@@ -355,19 +356,27 @@ fun MealPlannerApp(
 @Composable
 private fun SyncStatusBadge(
     indicator: SyncIndicator,
+    onRetry: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val text = when (indicator) {
         SyncIndicator.IDLE -> null
         SyncIndicator.SAVING -> "Gemmer…"
         SyncIndicator.SAVED -> "Gemt"
-        SyncIndicator.PENDING -> "Venter på synk."
-        SyncIndicator.ERROR -> "Ikke gemt"
+        SyncIndicator.PENDING -> "Gemt lokalt · afventer synk."
+        SyncIndicator.DELAYED -> "Synk. forsinket · Prøv igen"
+        SyncIndicator.ERROR -> "Kunne ikke gemme lokalt"
         SyncIndicator.OFFLINE -> "Offline"
     } ?: return
 
     Surface(
-        modifier = modifier,
+        modifier = modifier.then(
+            if (indicator == SyncIndicator.DELAYED) {
+                Modifier.clickable(onClick = onRetry)
+            } else {
+                Modifier
+            }
+        ),
         shape = RoundedCornerShape(12.dp),
         tonalElevation = 2.dp,
         shadowElevation = 2.dp
