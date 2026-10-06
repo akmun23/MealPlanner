@@ -32,7 +32,6 @@ class MealPlannerState(
         context = context.applicationContext,
         householdId = householdId
     )
-    private val legacyStorage = LocalStorage(context.applicationContext)
     private val roomCache = RoomSnapshotCache(
         context = context.applicationContext,
         householdId = householdId
@@ -104,15 +103,6 @@ class MealPlannerState(
             }
 
         try {
-            if (repository.needsLocalImport()) {
-                val localSnapshot = legacyStorage.load()
-                if (localSnapshot != null) {
-                    repository.importLocal(localSnapshot)
-                } else {
-                    repository.markLocalImportCompleted()
-                }
-            }
-
             reload(syncHistory = true)
             syncIndicator = SyncIndicator.IDLE
             repository.startRealtime(scope) { event ->
@@ -948,9 +938,7 @@ class MealPlannerState(
         recipeCategories
             .find { it.id == recipe.categoryId }
             ?.name
-            ?: recipe.categoryTag
-                .toRecipeCategory()
-                .danishName()
+            ?: "Andet"
 
     fun recipeProteinNames(recipe: Recipe): List<String> {
         val ingredientsById = ingredients.associateBy { it.id }
@@ -964,7 +952,10 @@ class MealPlannerState(
 
     fun deleteIngredient(ingredientId: String) {
         if (recipes.any { recipe ->
-                recipe.ingredients.any { it.ingredientId == ingredientId }
+                recipe.ingredients.any { it.ingredientId == ingredientId } ||
+                    recipe.pantryPrerequisites.any {
+                        it.ingredientId == ingredientId
+                    }
             }
         ) {
             lastError = "Ingrediensen bruges i en opskrift."
@@ -1019,6 +1010,7 @@ class MealPlannerState(
         categoryId: String?,
         notes: String = "",
         imageUri: String? = null,
+        pantryPrerequisites: List<DraftRequirement> = emptyList(),
         requirements: List<DraftRequirement>
     ): String? {
         if (!isRecipeNameAvailable(name)) {
@@ -1036,6 +1028,7 @@ class MealPlannerState(
             notes = notes,
             imageUri = imageUri,
             imagePath = null,
+            pantryPrerequisites = pantryPrerequisites,
             requirements = requirements
         ) ?: return null
 
@@ -1066,6 +1059,7 @@ class MealPlannerState(
         categoryId: String?,
         notes: String = "",
         imageUri: String? = null,
+        pantryPrerequisites: List<DraftRequirement> = emptyList(),
         requirements: List<DraftRequirement>
     ): Boolean {
         val index = recipes.indexOfFirst { it.id == id }
@@ -1087,6 +1081,7 @@ class MealPlannerState(
             notes = notes,
             imageUri = imageUri,
             imagePath = existing.imagePath,
+            pantryPrerequisites = pantryPrerequisites,
             requirements = requirements
         ) ?: return false
 
@@ -1172,12 +1167,19 @@ class MealPlannerState(
         notes: String,
         imageUri: String?,
         imagePath: String?,
+        pantryPrerequisites: List<DraftRequirement>,
         requirements: List<DraftRequirement>
     ): Recipe? {
         val clean = name.normalizedDisplayName()
         val cleanPrepMinutes = prepMinutes?.takeIf { it in 1..1440 }
-        val selectedCategory = recipeCategories.find { it.id == categoryId }
-        if (clean.isBlank() || requirements.isEmpty()) return null
+        if (
+            clean.isBlank() ||
+            requirements.isEmpty() ||
+            (
+                categoryId != null &&
+                recipeCategories.none { it.id == categoryId }
+            )
+        ) return null
 
         val converted = requirements.mapNotNull { draft ->
             val ingredient = ingredients.find { it.id == draft.ingredientId }
@@ -1196,19 +1198,43 @@ class MealPlannerState(
 
         if (converted.isEmpty()) return null
 
+        val convertedPrerequisites = if (mealType == MealType.DINNER) {
+            pantryPrerequisites.mapNotNull { draft ->
+                val ingredient = ingredients.find {
+                    it.id == draft.ingredientId
+                } ?: return@mapNotNull null
+
+                if (
+                    draft.amount <= 0.0 ||
+                    draft.unit.quantityType != ingredient.quantityType
+                ) return@mapNotNull null
+
+                RecipePantryPrerequisite(
+                    ingredientId = draft.ingredientId,
+                    minimumAmountBase = draft.unit.toBase(draft.amount)
+                )
+            }
+        } else {
+            emptyList()
+        }
+
+        if (
+            mealType == MealType.DINNER &&
+            convertedPrerequisites.size != pantryPrerequisites.size
+        ) return null
+
         return Recipe(
             id = id,
             name = clean,
             mealType = mealType,
             autoRotationEnabled = autoRotationEnabled,
             prepMinutes = cleanPrepMinutes,
-            proteinTag = "",
-            categoryTag = selectedCategory?.name ?: "Andet",
-            categoryId = selectedCategory?.id,
+            categoryId = categoryId,
             notes = notes.trim(),
             imageUri = imageUri,
             imagePath = imagePath,
-            ingredients = converted
+            ingredients = converted,
+            pantryPrerequisites = convertedPrerequisites
         )
     }
 
