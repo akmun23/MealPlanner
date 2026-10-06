@@ -46,7 +46,6 @@ private data class IngredientRow(
     val name: String,
     @SerialName("quantity_type") val quantityType: String,
     @SerialName("preferred_unit") val preferredUnit: String,
-    @SerialName("shopping_category") val shoppingCategory: String = "OTHER",
     @SerialName("shopping_category_id") val shoppingCategoryId: String? = null,
     @SerialName("image_path") val imagePath: String? = null
 )
@@ -82,14 +81,12 @@ private data class RecipeCategoryAssignmentRow(
 )
 
 @Serializable
-private data class RecipeRow(
+internal data class RecipeRow(
     val id: String,
     @SerialName("household_id") val householdId: String,
     val name: String,
     @SerialName("meal_type") val mealType: String = "DINNER",
-    @SerialName("protein_tag") val proteinTag: String = "",
-    @SerialName("category_tag") val categoryTag: String = "OTHER",
-    val notes: String = "",
+    val notes: String,
     @SerialName("image_path") val imagePath: String? = null
 )
 
@@ -124,6 +121,14 @@ private data class RecipeIngredientRow(
 )
 
 @Serializable
+private data class RecipePantryPrerequisiteRow(
+    @SerialName("household_id") val householdId: String,
+    @SerialName("recipe_id") val recipeId: String,
+    @SerialName("ingredient_id") val ingredientId: String,
+    @SerialName("minimum_amount_base") val minimumAmountBase: Double
+)
+
+@Serializable
 private data class PantryRow(
     @SerialName("household_id") val householdId: String,
     @SerialName("ingredient_id") val ingredientId: String,
@@ -133,9 +138,7 @@ private data class PantryRow(
 @Serializable
 private data class SettingsRow(
     @SerialName("household_id") val householdId: String,
-    @SerialName("sandwich_recipe_id") val sandwichRecipeId: String? = null,
-    @SerialName("preferred_sandwich_day") val preferredSandwichDay: Int = 5,
-    @SerialName("local_import_completed") val localImportCompleted: Boolean = false
+    @SerialName("sandwich_recipe_id") val sandwichRecipeId: String? = null
 )
 
 @Serializable
@@ -236,7 +239,8 @@ internal fun syncDomainForTable(table: String): CloudSyncDomain? =
         "recipes",
         "recipe_rotation_settings",
         "recipe_time_settings",
-        "recipe_ingredients" -> CloudSyncDomain.RECIPES
+        "recipe_ingredients",
+        "recipe_pantry_prerequisites" -> CloudSyncDomain.RECIPES
 
         "pantry_items" -> CloudSyncDomain.PANTRY
 
@@ -462,6 +466,11 @@ class CloudMealRepository(
                     filter { eq("household_id", householdId) }
                 }.decodeList<RecipeIngredientRow>()
             }
+            val recipePantryPrerequisitesDeferred = async {
+                supabase.from("recipe_pantry_prerequisites").select {
+                    filter { eq("household_id", householdId) }
+                }.decodeList<RecipePantryPrerequisiteRow>()
+            }
             val pantryDeferred = async {
                 supabase.from("pantry_items").select {
                     filter { eq("household_id", householdId) }
@@ -490,6 +499,8 @@ class CloudMealRepository(
             val rotationRows = rotationDeferred.await()
             val recipeTimeRows = recipeTimeDeferred.await()
             val recipeIngredientRows = recipeIngredientsDeferred.await()
+            val recipePantryPrerequisiteRows =
+                recipePantryPrerequisitesDeferred.await()
             val pantryRows = pantryDeferred.await()
             val settings = settingsDeferred.await()
             val historyRows = historyDeferred.await()
@@ -578,6 +589,8 @@ class CloudMealRepository(
             }
 
             val requirements = recipeIngredientRows.groupBy { it.recipeId }
+            val pantryPrerequisites =
+                recipePantryPrerequisiteRows.groupBy { it.recipeId }
             val categoryByRecipe = categoryAssignmentRows.associateBy { it.recipeId }
             val rotationByRecipe = rotationRows.associateBy { it.recipeId }
             val timeByRecipe = recipeTimeRows.associateBy { it.recipeId }
@@ -591,8 +604,6 @@ class CloudMealRepository(
                     autoRotationEnabled =
                         rotationByRecipe[row.id]?.autoRotationEnabled ?: true,
                     prepMinutes = timeByRecipe[row.id]?.prepMinutes,
-                    proteinTag = row.proteinTag,
-                    categoryTag = row.categoryTag,
                     categoryId = categoryByRecipe[row.id]?.categoryId,
                     notes = row.notes,
                     imageUri = row.imagePath?.let(urls::get),
@@ -602,7 +613,14 @@ class CloudMealRepository(
                             ingredientId = it.ingredientId,
                             amountBase = it.amountBase
                         )
-                    }
+                    },
+                    pantryPrerequisites =
+                        pantryPrerequisites[row.id].orEmpty().map {
+                            RecipePantryPrerequisite(
+                                ingredientId = it.ingredientId,
+                                minimumAmountBase = it.minimumAmountBase
+                            )
+                        }
                 )
             }
 
@@ -771,6 +789,11 @@ class CloudMealRepository(
                         filter { eq("household_id", householdId) }
                     }.decodeList<RecipeIngredientRow>()
                 }
+                val pantryPrerequisitesDeferred = async {
+                    supabase.from("recipe_pantry_prerequisites").select {
+                        filter { eq("household_id", householdId) }
+                    }.decodeList<RecipePantryPrerequisiteRow>()
+                }
 
                 val categoryRows = categoriesDeferred.await()
                 val assignmentRows = assignmentsDeferred.await()
@@ -778,6 +801,8 @@ class CloudMealRepository(
                 val rotationRows = rotationDeferred.await()
                 val timeRows = timeDeferred.await()
                 val ingredientRows = ingredientsDeferred.await()
+                val pantryPrerequisiteRows =
+                    pantryPrerequisitesDeferred.await()
 
                 val urls = recipeRows
                     .mapNotNull { it.imagePath }
@@ -789,6 +814,8 @@ class CloudMealRepository(
                     .toMap()
 
                 val requirements = ingredientRows.groupBy { it.recipeId }
+                val pantryPrerequisites =
+                    pantryPrerequisiteRows.groupBy { it.recipeId }
                 val categoryByRecipe =
                     assignmentRows.associateBy { it.recipeId }
                 val rotationByRecipe =
@@ -822,8 +849,6 @@ class CloudMealRepository(
                                     ?: true,
                             prepMinutes =
                                 timeByRecipe[row.id]?.prepMinutes,
-                            proteinTag = row.proteinTag,
-                            categoryTag = row.categoryTag,
                             categoryId =
                                 categoryByRecipe[row.id]?.categoryId,
                             notes = row.notes,
@@ -834,6 +859,13 @@ class CloudMealRepository(
                                     RecipeIngredient(
                                         ingredientId = it.ingredientId,
                                         amountBase = it.amountBase
+                                    )
+                                },
+                            pantryPrerequisites =
+                                pantryPrerequisites[row.id].orEmpty().map {
+                                    RecipePantryPrerequisite(
+                                        ingredientId = it.ingredientId,
+                                        minimumAmountBase = it.minimumAmountBase
                                     )
                                 }
                         )
@@ -991,102 +1023,6 @@ class CloudMealRepository(
                 }
         }
 
-    suspend fun needsLocalImport(): Boolean = withContext(Dispatchers.IO) {
-        val settings = supabase.from("household_settings").select {
-            filter { eq("household_id", householdId) }
-            limit(1)
-        }.decodeList<SettingsRow>().firstOrNull()
-
-        settings?.localImportCompleted != true
-    }
-
-    suspend fun markLocalImportCompleted() = withContext(Dispatchers.IO) {
-        supabase.from("household_settings").update(
-            {
-                set("local_import_completed", true)
-            }
-        ) {
-            filter { eq("household_id", householdId) }
-        }
-    }
-
-    suspend fun importLocal(snapshot: LocalStorage.Snapshot) = withContext(Dispatchers.IO) {
-
-        snapshot.ingredients.forEach { ingredient ->
-            upsertIngredient(ingredient)
-        }
-
-        snapshot.recipes.forEach { recipe ->
-            upsertRecipe(recipe)
-        }
-
-        if (snapshot.pantry.isNotEmpty()) {
-            supabase.from("pantry_items").upsert(
-                snapshot.pantry.map { (ingredientId, amount) ->
-                    PantryRow(householdId, ingredientId, amount)
-                }
-            ) {
-                onConflict = "household_id,ingredient_id"
-            }
-        }
-
-        supabase.from("household_settings").upsert(
-            SettingsRow(
-                householdId = householdId,
-                sandwichRecipeId = snapshot.weeklySandwichRecipeId,
-                localImportCompleted = false
-            )
-        ) {
-            onConflict = "household_id"
-        }
-
-        val week = ensureWeek(
-            currentWeekStart(),
-            snapshot.weeklySandwichRecipeId
-        )
-
-        val activeSandwichDay = orderedWeekDays.firstOrNull { day ->
-            snapshot.dayModes[day] != DayMode.AWAY &&
-                snapshot.plan[day] == snapshot.weeklySandwichRecipeId
-        } ?: WeeklyPlanner.preferredSandwichDay(snapshot.dayModes)
-
-        val meals = orderedWeekDays.map { day ->
-            PlannedMealRow(
-                householdId = householdId,
-                weeklyPlanId = week.id,
-                dayOfWeek = day.value,
-                mode = if (snapshot.dayModes[day] == DayMode.AWAY) "AWAY" else "AUTO",
-                recipeId = if (day == activeSandwichDay) null else snapshot.plan[day],
-                locked = false
-            )
-        }
-        supabase.from("planned_meals").upsert(meals) {
-            onConflict = "weekly_plan_id,day_of_week"
-        }
-
-        saveWeekHeader(
-            weeklyPlanId = week.id,
-            sandwichRecipeId = snapshot.weeklySandwichRecipeId,
-            sandwichDay = activeSandwichDay
-        )
-
-        val checks = snapshot.shoppingChecked.map { (ingredientId, checked) ->
-            ShoppingCheckRow(
-                householdId = householdId,
-                weeklyPlanId = week.id,
-                ingredientId = ingredientId,
-                checked = checked
-            )
-        }
-        if (checks.isNotEmpty()) {
-            supabase.from("shopping_checks").upsert(checks) {
-                onConflict = "weekly_plan_id,ingredient_id"
-            }
-        }
-
-        markLocalImportCompleted()
-    }
-
     suspend fun upsertIngredient(ingredient: Ingredient): Ingredient = withContext(Dispatchers.IO) {
         val finalImage = resolveImage(
             kind = "ingredients",
@@ -1187,8 +1123,6 @@ class CloudMealRepository(
                 householdId = householdId,
                 name = recipe.name,
                 mealType = recipe.mealType.name,
-                proteinTag = recipe.proteinTag,
-                categoryTag = recipe.categoryTag,
                 notes = recipe.notes,
                 imagePath = finalImage.first
             )
@@ -1250,6 +1184,26 @@ class CloudMealRepository(
                         recipeId = recipe.id,
                         ingredientId = it.ingredientId,
                         amountBase = it.amountBase
+                    )
+                }
+            )
+        }
+
+        supabase.from("recipe_pantry_prerequisites").delete {
+            filter {
+                eq("household_id", householdId)
+                eq("recipe_id", recipe.id)
+            }
+        }
+
+        if (recipe.pantryPrerequisites.isNotEmpty()) {
+            supabase.from("recipe_pantry_prerequisites").insert(
+                recipe.pantryPrerequisites.map {
+                    RecipePantryPrerequisiteRow(
+                        householdId = householdId,
+                        recipeId = recipe.id,
+                        ingredientId = it.ingredientId,
+                        minimumAmountBase = it.minimumAmountBase
                     )
                 }
             )
@@ -1514,6 +1468,7 @@ class CloudMealRepository(
             "recipe_rotation_settings",
             "recipe_time_settings",
             "recipe_ingredients",
+            "recipe_pantry_prerequisites",
             "pantry_items",
             "household_settings",
             "weekly_plans",
