@@ -152,7 +152,7 @@ class MealPlannerState(
             when {
                 failedCount > 0 -> {
                     syncStatusClearJob?.cancel()
-                    syncIndicator = SyncIndicator.ERROR
+                    syncIndicator = SyncIndicator.DELAYED
                 }
 
                 count > 0 -> {
@@ -200,6 +200,15 @@ class MealPlannerState(
             }
 
             previousCount = count
+        }
+    }
+
+    fun retryPendingSync() {
+        scope.launch {
+            if (offlineSyncQueue.hasPendingMutations()) {
+                syncIndicator = SyncIndicator.PENDING
+                offlineSyncQueue.schedule()
+            }
         }
     }
 
