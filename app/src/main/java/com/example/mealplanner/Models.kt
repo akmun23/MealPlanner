@@ -1,5 +1,6 @@
 package com.example.mealplanner
 
+import kotlinx.serialization.Serializable
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.util.UUID
@@ -62,12 +63,14 @@ enum class MeasurementUnit(
     }
 }
 
+@Serializable
 data class IngredientCategory(
     val id: String,
     val name: String,
     val position: Int = 0
 )
 
+@Serializable
 data class RecipeCategoryOption(
     val id: String,
     val name: String,
@@ -86,6 +89,7 @@ fun parseDanishDecimal(value: String): Double? =
         .replace(',', '.')
         .toDoubleOrNull()
 
+@Serializable
 data class Ingredient(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
@@ -97,11 +101,13 @@ data class Ingredient(
     val imagePath: String? = null
 )
 
+@Serializable
 data class RecipeIngredient(
     val ingredientId: String,
     val amountBase: Double
 )
 
+@Serializable
 data class RecipePantryPrerequisite(
     val ingredientId: String,
     val minimumAmountBase: Double
@@ -117,6 +123,7 @@ fun MealType.danishName(): String = when (this) {
     MealType.LUNCH -> "Frokost"
 }
 
+@Serializable
 data class Recipe(
     val id: String = UUID.randomUUID().toString(),
     val name: String,

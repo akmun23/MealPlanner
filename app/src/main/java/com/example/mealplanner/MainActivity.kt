@@ -188,6 +188,9 @@ fun MealPlannerApp(
 
     var tab by remember { mutableStateOf(AppTab.WEEK) }
     var page by remember { mutableStateOf<AppPage?>(null) }
+    var showSyncConflictDialog by remember {
+        mutableStateOf(false)
+    }
     val pantryListState = rememberLazyListState()
 
     fun navigateBack() {
@@ -215,6 +218,49 @@ fun MealPlannerApp(
             confirmButton = {
                 TextButton(onClick = { state.clearError() }) {
                     Text("OK")
+                }
+            }
+        )
+    }
+
+    if (
+        showSyncConflictDialog &&
+        state.syncConflictCount > 0
+    ) {
+        AlertDialog(
+            onDismissRequest = {
+                showSyncConflictDialog = false
+            },
+            title = {
+                Text("Synkroniseringskonflikt")
+            },
+            text = {
+                Text(
+                    if (state.syncConflictCount == 1) {
+                        "En ændring findes også i en nyere fælles version. Ingen version overskrives, før du vælger."
+                    } else {
+                        "${state.syncConflictCount} ændringer findes også i nyere fælles versioner. Ingen version overskrives, før du vælger."
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showSyncConflictDialog = false
+                        state.useSharedConflictingChanges()
+                    }
+                ) {
+                    Text("Behold fælles")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showSyncConflictDialog = false
+                        state.keepMyConflictingChanges()
+                    }
+                ) {
+                    Text("Behold mine")
                 }
             }
         )
@@ -345,6 +391,10 @@ fun MealPlannerApp(
 
         SyncStatusBadge(
             indicator = state.syncIndicator,
+            onRetry = state::retryPendingSync,
+            onConflict = {
+                showSyncConflictDialog = true
+            },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 86.dp)
@@ -355,18 +405,33 @@ fun MealPlannerApp(
 @Composable
 private fun SyncStatusBadge(
     indicator: SyncIndicator,
+    onRetry: () -> Unit,
+    onConflict: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val text = when (indicator) {
         SyncIndicator.IDLE -> null
         SyncIndicator.SAVING -> "Gemmer…"
         SyncIndicator.SAVED -> "Gemt"
-        SyncIndicator.ERROR -> "Ikke gemt"
+        SyncIndicator.PENDING -> "Gemt lokalt · afventer synk."
+        SyncIndicator.DELAYED -> "Synk. forsinket · Prøv igen"
+        SyncIndicator.CONFLICT -> "Synk.-konflikt · Gennemse"
+        SyncIndicator.ERROR -> "Kunne ikke gemme lokalt"
         SyncIndicator.OFFLINE -> "Offline"
     } ?: return
 
+    val action = when (indicator) {
+        SyncIndicator.DELAYED -> onRetry
+        SyncIndicator.CONFLICT -> onConflict
+        else -> null
+    }
+
     Surface(
-        modifier = modifier,
+        modifier = modifier.then(
+            action?.let { onClick ->
+                Modifier.clickable(onClick = onClick)
+            } ?: Modifier
+        ),
         shape = RoundedCornerShape(12.dp),
         tonalElevation = 2.dp,
         shadowElevation = 2.dp
@@ -3471,15 +3536,14 @@ private fun ImagePickerBox(
     val context = LocalContext.current
 
     val launcher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
+        contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) {
-            try {
+            runCatching {
                 context.contentResolver.takePersistableUriPermission(
                     uri,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
-            } catch (_: Exception) {
             }
             onImageSelected(uri.toString())
         }
@@ -3490,7 +3554,7 @@ private fun ImagePickerBox(
             .height(height)
             .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable { launcher.launch("image/*") },
+            .clickable { launcher.launch(arrayOf("image/*")) },
         contentAlignment = Alignment.Center
     ) {
         if (!imageUri.isNullOrBlank()) {

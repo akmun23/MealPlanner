@@ -4,18 +4,15 @@ internal enum class SyncIndicator {
     IDLE,
     SAVING,
     SAVED,
+    PENDING,
+    DELAYED,
+    CONFLICT,
     ERROR,
     OFFLINE
 }
 
-internal data class SyncMutationKey(
-    val domain: CloudSyncDomain,
-    val entityId: String
-)
-
 internal class SyncGenerationTracker {
     private val generations = mutableMapOf<CloudSyncDomain, Long>()
-    private val pendingKeys = mutableMapOf<SyncMutationKey, Int>()
 
     fun markLocalChange(
         domains: Set<CloudSyncDomain>
@@ -36,28 +33,4 @@ internal class SyncGenerationTracker {
             generation(domain) == generation
         }
 
-    fun beginPending(keys: Set<SyncMutationKey>) {
-        keys.forEach { key ->
-            pendingKeys[key] = (pendingKeys[key] ?: 0) + 1
-        }
-    }
-
-    fun endPending(keys: Set<SyncMutationKey>) {
-        keys.forEach { key ->
-            val next = (pendingKeys[key] ?: 0) - 1
-            if (next > 0) {
-                pendingKeys[key] = next
-            } else {
-                pendingKeys.remove(key)
-            }
-        }
-    }
-
-    fun isPending(key: SyncMutationKey): Boolean =
-        (pendingKeys[key] ?: 0) > 0
-
-    fun isDomainPending(domain: CloudSyncDomain): Boolean =
-        pendingKeys.any { (key, count) ->
-            key.domain == domain && count > 0
-        }
 }
