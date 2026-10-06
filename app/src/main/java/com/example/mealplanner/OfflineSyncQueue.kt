@@ -379,6 +379,9 @@ internal fun QueuedMutation.domainMask(): Int = when (this) {
         domainMask(CloudSyncDomain.SHOPPING)
 }
 
+internal val OFFLINE_SYNC_WORK_POLICY =
+    ExistingWorkPolicy.APPEND_OR_REPLACE
+
 internal class OfflineSyncQueue(
     private val context: Context,
     private val householdId: String
@@ -469,7 +472,7 @@ internal class OfflineSyncQueue(
 
         WorkManager.getInstance(context).enqueueUniqueWork(
             "mealplanner-sync-$householdId",
-            ExistingWorkPolicy.APPEND_OR_REPLACE,
+            OFFLINE_SYNC_WORK_POLICY,
             request
         )
     }
