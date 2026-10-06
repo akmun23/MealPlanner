@@ -101,19 +101,6 @@ internal interface PendingMutationDao {
         select count(*) > 0
         from pending_mutations
         where household_id = :householdId
-          and mutation_key = :mutationKey
-        """
-    )
-    suspend fun hasKey(
-        householdId: String,
-        mutationKey: String
-    ): Boolean
-
-    @Query(
-        """
-        select count(*) > 0
-        from pending_mutations
-        where household_id = :householdId
           and (domain_mask & :domainMask) != 0
         """
     )
@@ -350,14 +337,6 @@ internal class OfflineSyncQueue(
 
     suspend fun hasPendingMutations(): Boolean =
         dao.count(householdId) > 0
-
-    suspend fun hasPending(
-        key: SyncMutationKey
-    ): Boolean =
-        dao.hasKey(
-            householdId = householdId,
-            mutationKey = key.entityId
-        )
 
     suspend fun hasPending(
         domain: CloudSyncDomain
