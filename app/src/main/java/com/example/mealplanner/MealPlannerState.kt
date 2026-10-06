@@ -542,6 +542,13 @@ class MealPlannerState(
         }
 
         coalescedMutations[coalesceKey] = job
+        job.invokeOnCompletion {
+            scope.launch {
+                if (coalescedMutations[coalesceKey] === job) {
+                    coalescedMutations.remove(coalesceKey)
+                }
+            }
+        }
         previous?.cancel()
     }
 
