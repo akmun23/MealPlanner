@@ -1682,9 +1682,7 @@ class MealPlannerState(
             try {
                 repository.submitFeedback(clean)
                 onResult(true)
-            } catch (e: Exception) {
-                lastError =
-                    "Forslaget kunne ikke sendes. Prøv igen senere."
+            } catch (_: Exception) {
                 onResult(false)
             }
         }
