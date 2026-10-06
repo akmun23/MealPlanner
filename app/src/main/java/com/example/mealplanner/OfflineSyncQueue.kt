@@ -550,6 +550,10 @@ internal class OfflineSyncQueue(
                 existing?.batchId
             }
             ?: UUID.randomUUID().toString()
+        val batchHasConflict =
+            keyedMutations.any { (_, _, existing) ->
+                existing?.conflict == true
+            }
 
         val entities = keyedMutations.mapIndexed {
                 index,
@@ -566,7 +570,14 @@ internal class OfflineSyncQueue(
                 baseSnapshotPayload =
                     existing?.baseSnapshotPayload
                         ?: previousSnapshotPayload,
-                updatedAtEpochMs = now + index
+                updatedAtEpochMs = now + index,
+                conflict = batchHasConflict,
+                lastError = if (batchHasConflict) {
+                    existing?.lastError
+                        ?: "Afventer konfliktvalg"
+                } else {
+                    null
+                }
             )
         }
 
