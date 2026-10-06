@@ -1499,21 +1499,15 @@ class MealPlannerState(
         shoppingIncluded.clear()
 
         val planId = weeklyPlanId ?: return
-        val position = selectedLunchRecipeIds.indexOf(recipe.id)
-
-        runMutation(
-            domains = setOf(
-                CloudSyncDomain.WEEK,
-                CloudSyncDomain.SHOPPING
+        enqueueMutations(
+            listOf(
+                QueuedMutation.ReplaceLunch(
+                    weeklyPlanId = planId,
+                    recipeIds = selectedLunchRecipeIds.toList()
+                ),
+                QueuedMutation.ClearShopping(planId)
             )
-        ) {
-            repository.clearShoppingChecks(planId)
-            repository.addLunchRecipe(
-                weeklyPlanId = planId,
-                recipeId = recipe.id,
-                position = position
-            )
-        }
+        )
     }
 
     fun removeLunchRecipe(recipeId: String) {
@@ -1522,19 +1516,15 @@ class MealPlannerState(
         shoppingChecked.clear()
         shoppingIncluded.clear()
         val planId = weeklyPlanId ?: return
-
-        runMutation(
-            domains = setOf(
-                CloudSyncDomain.WEEK,
-                CloudSyncDomain.SHOPPING
+        enqueueMutations(
+            listOf(
+                QueuedMutation.ReplaceLunch(
+                    weeklyPlanId = planId,
+                    recipeIds = selectedLunchRecipeIds.toList()
+                ),
+                QueuedMutation.ClearShopping(planId)
             )
-        ) {
-            repository.clearShoppingChecks(planId)
-            repository.removeLunchRecipe(
-                weeklyPlanId = planId,
-                recipeId = recipeId
-            )
-        }
+        )
     }
 
     fun isShoppingIncluded(ingredientId: String): Boolean =
@@ -1550,33 +1540,13 @@ class MealPlannerState(
         }
 
         val id = weeklyPlanId ?: return
-        scheduleMutation(
-            coalesceKey = "shopping-included:" + ingredientId,
-            domains = setOf(CloudSyncDomain.SHOPPING),
-            keys = setOf(
-                SyncMutationKey(
-                    domain = CloudSyncDomain.SHOPPING,
-                    entityId = "included:" + ingredientId
-                ),
-                SyncMutationKey(
-                    domain = CloudSyncDomain.SHOPPING,
-                    entityId = "checked:" + ingredientId
-                )
-            )
-        ) {
-            repository.setShoppingIncluded(
+        enqueueMutation(
+            QueuedMutation.SetShoppingIncluded(
                 weeklyPlanId = id,
                 ingredientId = ingredientId,
                 included = included
             )
-            if (!included) {
-                repository.setShoppingChecked(
-                    weeklyPlanId = id,
-                    ingredientId = ingredientId,
-                    checked = false
-                )
-            }
-        }
+        )
     }
 
     fun setShoppingChecked(
@@ -1586,23 +1556,13 @@ class MealPlannerState(
         if (!isShoppingIncluded(ingredientId) && checked) return
         shoppingChecked[ingredientId] = checked
         val id = weeklyPlanId ?: return
-
-        scheduleMutation(
-            coalesceKey = "shopping-checked:" + ingredientId,
-            domains = setOf(CloudSyncDomain.SHOPPING),
-            keys = setOf(
-                SyncMutationKey(
-                    domain = CloudSyncDomain.SHOPPING,
-                    entityId = "checked:" + ingredientId
-                )
-            )
-        ) {
-            repository.setShoppingChecked(
+        enqueueMutation(
+            QueuedMutation.SetShoppingChecked(
                 weeklyPlanId = id,
                 ingredientId = ingredientId,
                 checked = checked
             )
-        }
+        )
     }
 
     fun submitFeedback(
