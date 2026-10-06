@@ -611,6 +611,12 @@ internal interface PendingMutationStore {
         revision: String,
         message: String?
     ): Int
+
+    suspend fun markConflict(
+        id: String,
+        revision: String,
+        message: String?
+    ): Int
 }
 
 internal enum class OfflineSyncDrainResult {
@@ -620,6 +626,10 @@ internal enum class OfflineSyncDrainResult {
 
 internal class OfflineSyncDrain(
     private val store: PendingMutationStore,
+    private val hasConflict: suspend (
+        PendingMutationEntity,
+        QueuedMutation
+    ) -> Boolean = { _, _ -> false },
     private val applyMutation: suspend (QueuedMutation) -> Unit
 ) {
     suspend fun drain(
@@ -630,11 +640,20 @@ internal class OfflineSyncDrain(
                 ?: return OfflineSyncDrainResult.EMPTY
 
             try {
-                applyMutation(
-                    QueuedMutationCodec.decode(
-                        pending.payload
-                    )
+                val mutation = QueuedMutationCodec.decode(
+                    pending.payload
                 )
+
+                if (hasConflict(pending, mutation)) {
+                    store.markConflict(
+                        id = pending.id,
+                        revision = pending.revision,
+                        message = "Ændret på en anden enhed"
+                    )
+                    continue
+                }
+
+                applyMutation(mutation)
                 store.deleteIfCurrent(
                     id = pending.id,
                     revision = pending.revision
@@ -679,6 +698,17 @@ internal class OfflineSyncWorker(
         return when (
             OfflineSyncDrain(
                 store = dao,
+                hasConflict = { pending, mutation ->
+                    pending.baseSnapshotPayload
+                        ?.let(RoomSnapshotCodec::decode)
+                        ?.let { baseSnapshot ->
+                            mutation.hasRemoteConflict(
+                                repository = repository,
+                                baseSnapshot = baseSnapshot
+                            )
+                        }
+                        ?: false
+                },
                 applyMutation = { mutation ->
                     applyQueuedMutation(
                         repository = repository,
