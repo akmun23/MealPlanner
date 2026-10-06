@@ -3121,6 +3121,12 @@ private fun RecipeCategoriesScreen(
     var showAdd by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<RecipeCategoryOption?>(null) }
     var categoryName by remember { mutableStateOf("") }
+    val recipeCategoryNameAvailable =
+        categoryName.isBlank() ||
+            state.isRecipeCategoryNameAvailable(
+                name = categoryName,
+                excludingId = editing?.id
+            )
 
     if (showAdd || editing != null) {
         AlertDialog(
@@ -3143,7 +3149,13 @@ private fun RecipeCategoriesScreen(
                     onValueChange = { categoryName = it },
                     label = { Text("Navn") },
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
+                    singleLine = true,
+                    isError = !recipeCategoryNameAvailable,
+                    supportingText = {
+                        if (!recipeCategoryNameAvailable) {
+                            Text("Navnet findes allerede")
+                        }
+                    }
                 )
             },
             confirmButton = {
@@ -3162,7 +3174,9 @@ private fun RecipeCategoriesScreen(
                             categoryName = ""
                         }
                     },
-                    enabled = categoryName.trim().isNotBlank()
+                    enabled =
+                        categoryName.trim().isNotBlank() &&
+                            recipeCategoryNameAvailable
                 ) {
                     Text("Gem")
                 }
@@ -3253,6 +3267,13 @@ private fun IngredientCategoriesScreen(
     var editing by remember { mutableStateOf<IngredientCategory?>(null) }
     var categoryName by remember { mutableStateOf("") }
 
+    val ingredientCategoryNameAvailable =
+        categoryName.isBlank() ||
+            state.isIngredientCategoryNameAvailable(
+                name = categoryName,
+                excludingId = editing?.id
+            )
+
     val activeDialog = showAdd || editing != null
     if (activeDialog) {
         AlertDialog(
@@ -3275,7 +3296,13 @@ private fun IngredientCategoriesScreen(
                     onValueChange = { categoryName = it },
                     label = { Text("Navn") },
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
+                    singleLine = true,
+                    isError = !ingredientCategoryNameAvailable,
+                    supportingText = {
+                        if (!ingredientCategoryNameAvailable) {
+                            Text("Navnet findes allerede")
+                        }
+                    }
                 )
             },
             confirmButton = {
@@ -3294,7 +3321,9 @@ private fun IngredientCategoriesScreen(
                             categoryName = ""
                         }
                     },
-                    enabled = categoryName.trim().isNotBlank()
+                    enabled =
+                        categoryName.trim().isNotBlank() &&
+                            ingredientCategoryNameAvailable
                 ) {
                     Text("Gem")
                 }
@@ -3393,6 +3422,9 @@ private fun SettingsScreen(
     var showRenameHome by remember { mutableStateOf(false) }
     var renameBusy by remember { mutableStateOf(false) }
     var feedbackBusy by remember { mutableStateOf(false) }
+    var feedbackError by remember {
+        mutableStateOf<String?>(null)
+    }
     var homeName by remember(household.name) {
         mutableStateOf(household.name)
     }
@@ -3461,23 +3493,34 @@ private fun SettingsScreen(
                     placeholder = { Text("Hvad kan blive bedre?") },
                     modifier = Modifier.fillMaxWidth(),
                     minLines = 4,
-                    maxLines = 8
+                    maxLines = 8,
+                    isError = feedbackError != null,
+                    supportingText = {
+                        feedbackError?.let {
+                            Text(it)
+                        }
+                    }
                 )
             },
             confirmButton = {
                 Button(
                     onClick = {
                         feedbackBusy = true
+                        feedbackError = null
                         state.submitFeedback(feedback) { sent ->
                             feedbackBusy = false
                             if (sent) {
                                 feedback = ""
+                                feedbackError = null
                                 showFeedback = false
                                 Toast.makeText(
                                     context,
                                     "Forslag sendt",
                                     Toast.LENGTH_SHORT
                                 ).show()
+                            } else {
+                                feedbackError =
+                                    "Kunne ikke sende forslaget. Prøv igen senere."
                             }
                         }
                     },
