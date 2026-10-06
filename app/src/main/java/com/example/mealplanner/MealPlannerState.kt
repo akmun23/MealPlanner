@@ -949,19 +949,25 @@ class MealPlannerState(
             .sortedBy { it.lowercase() }
     }
 
-    fun deleteIngredient(ingredientId: String) {
+    fun deleteIngredient(ingredientId: String): Boolean {
         if (recipes.any { recipe ->
-                recipe.ingredients.any { it.ingredientId == ingredientId } ||
+                recipe.ingredients.any {
+                    it.ingredientId == ingredientId
+                } ||
                     recipe.pantryPrerequisites.any {
                         it.ingredientId == ingredientId
                     }
             }
         ) {
-            lastError = "Ingrediensen bruges i en opskrift."
-            return
+            lastError =
+                "Ingrediensen bruges i en opskrift og kan derfor ikke slettes."
+            return false
         }
 
-        val ingredient = ingredients.find { it.id == ingredientId } ?: return
+        val ingredient = ingredients.find {
+            it.id == ingredientId
+        } ?: return false
+
         ingredients.removeAll { it.id == ingredientId }
         pantry.remove(ingredientId)
         shoppingChecked.remove(ingredientId)
@@ -973,6 +979,7 @@ class MealPlannerState(
                 imagePath = ingredient.imagePath
             )
         )
+        return true
     }
 
     fun isRecipeNameAvailable(
