@@ -29,9 +29,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -186,6 +188,7 @@ fun MealPlannerApp(
 
     var tab by remember { mutableStateOf(AppTab.WEEK) }
     var page by remember { mutableStateOf<AppPage?>(null) }
+    val pantryListState = rememberLazyListState()
 
     fun navigateBack() {
         page = when (val current = page) {
@@ -324,6 +327,7 @@ fun MealPlannerApp(
                         )
                         AppTab.PANTRY -> PantryScreen(
                             state = state,
+                            listState = pantryListState,
                             onAddIngredient = {
                                 page = AppPage.IngredientEditor(null)
                             },
@@ -1314,6 +1318,40 @@ private fun RecipeDetailScreen(
                 }
             }
 
+            if (recipe.pantryPrerequisites.isNotEmpty()) {
+                item {
+                    SectionCard("Kræver på lager") {
+                        recipe.pantryPrerequisites.forEach { prerequisite ->
+                            val ingredient = state.ingredients.find {
+                                it.id == prerequisite.ingredientId
+                            }
+
+                            if (ingredient != null) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    horizontalArrangement =
+                                        Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        ingredient.name,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        state.formatBaseAmount(
+                                            ingredient,
+                                            prerequisite.minimumAmountBase
+                                        ),
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             item {
                 SectionCard("Ingredienser") {
                     recipe.ingredients.forEach { requirement ->
@@ -1420,15 +1458,6 @@ private fun RecipeEditorScreen(
         mutableStateOf(
             existing?.categoryId
                 ?: state.recipeCategories
-                    .firstOrNull {
-                        it.name.equals(
-                            existing?.categoryTag?.toRecipeCategory()?.danishName()
-                                ?: "Andet",
-                            ignoreCase = true
-                        )
-                    }
-                    ?.id
-                ?: state.recipeCategories
                     .firstOrNull { it.name.equals("Andet", ignoreCase = true) }
                     ?.id
                 ?: state.recipeCategories.firstOrNull()?.id
@@ -1437,6 +1466,7 @@ private fun RecipeEditorScreen(
     var notes by remember(recipeId) { mutableStateOf(existing?.notes ?: "") }
     var imageUri by remember(recipeId) { mutableStateOf(existing?.imageUri) }
     var ingredientSearch by remember { mutableStateOf("") }
+    var prerequisiteSearch by remember { mutableStateOf("") }
     val recipeNameAvailable =
         name.isBlank() ||
             state.isRecipeNameAvailable(
@@ -1465,6 +1495,41 @@ private fun RecipeEditorScreen(
             }
         }
     }
+
+    val prerequisiteDrafts = remember(recipeId) {
+        mutableStateListOf<DraftRequirement>().apply {
+            existing?.pantryPrerequisites?.forEach { prerequisite ->
+                val ingredient = state.ingredients.find {
+                    it.id == prerequisite.ingredientId
+                }
+
+                if (ingredient != null) {
+                    add(
+                        DraftRequirement(
+                            ingredientId = ingredient.id,
+                            amount = ingredient.preferredUnit.fromBase(
+                                prerequisite.minimumAmountBase
+                            ),
+                            unit = ingredient.preferredUnit
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    val prerequisiteMatches = state.ingredients
+        .filter { ingredient ->
+            prerequisiteSearch.isNotBlank() &&
+                ingredient.name.contains(
+                    prerequisiteSearch,
+                    ignoreCase = true
+                ) &&
+                prerequisiteDrafts.none {
+                    it.ingredientId == ingredient.id
+                }
+        }
+        .take(8)
 
     val matches = state.ingredients
         .filter { ingredient ->
@@ -1587,6 +1652,79 @@ private fun RecipeEditorScreen(
                 )
             }
 
+            if (mealType == MealType.DINNER) {
+                item {
+                    Text(
+                        "Kræver på lager",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                itemsIndexed(
+                    items = prerequisiteDrafts,
+                    key = { _, item ->
+                        "prerequisite-${item.ingredientId}"
+                    }
+                ) { index, draft ->
+                    val ingredient = state.ingredients.find {
+                        it.id == draft.ingredientId
+                    }
+
+                    if (ingredient != null) {
+                        RequirementEditor(
+                            ingredient = ingredient,
+                            draft = draft,
+                            onChange = {
+                                prerequisiteDrafts[index] = it
+                            },
+                            onRemove = {
+                                prerequisiteDrafts.removeAt(index)
+                            }
+                        )
+                    }
+                }
+
+                item {
+                    SearchField(
+                        value = prerequisiteSearch,
+                        onValueChange = { prerequisiteSearch = it },
+                        placeholder = "Tilføj lagerkrav"
+                    )
+                }
+
+                items(
+                    items = prerequisiteMatches,
+                    key = { "prerequisite-match-${it.id}" }
+                ) { ingredient ->
+                    OutlinedCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                prerequisiteDrafts += DraftRequirement(
+                                    ingredientId = ingredient.id,
+                                    amount = 1.0,
+                                    unit = ingredient.preferredUnit
+                                )
+                                prerequisiteSearch = ""
+                            },
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                ingredient.name,
+                                modifier = Modifier.weight(1f),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text("Tilføj")
+                        }
+                    }
+                }
+            }
+
             item {
                 Text(
                     "Ingredienser",
@@ -1671,6 +1809,12 @@ private fun RecipeEditorScreen(
                                 categoryId = categoryId,
                                 notes = notes,
                                 imageUri = imageUri,
+                                pantryPrerequisites =
+                                    if (mealType == MealType.DINNER) {
+                                        prerequisiteDrafts.toList()
+                                    } else {
+                                        emptyList()
+                                    },
                                 requirements = drafts.toList()
                             )
 
@@ -1687,6 +1831,12 @@ private fun RecipeEditorScreen(
                                 categoryId = categoryId,
                                 notes = notes,
                                 imageUri = imageUri,
+                                pantryPrerequisites =
+                                    if (mealType == MealType.DINNER) {
+                                        prerequisiteDrafts.toList()
+                                    } else {
+                                        emptyList()
+                                    },
                                 requirements = drafts.toList()
                             )
                             if (saved) {
@@ -1698,7 +1848,8 @@ private fun RecipeEditorScreen(
                         recipeNameAvailable &&
                         prepTimeValid &&
                         drafts.isNotEmpty() &&
-                        drafts.all { it.amount > 0.0 },
+                        drafts.all { it.amount > 0.0 } &&
+                        prerequisiteDrafts.all { it.amount > 0.0 },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp)
                 ) {
@@ -2095,10 +2246,14 @@ private fun IngredientEditorScreen(
 @Composable
 fun PantryScreen(
     state: MealPlannerState,
+    listState: LazyListState,
     onAddIngredient: () -> Unit,
     onEditIngredient: (String) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
+    var selectedCategoryId by remember {
+        mutableStateOf<String?>(null)
+    }
     var editing by remember { mutableStateOf<Ingredient?>(null) }
 
     editing?.let { ingredient ->
@@ -2109,14 +2264,15 @@ fun PantryScreen(
         )
     }
 
-    val filtered = state.ingredients
-        .filter {
-            searchQuery.isBlank() ||
-                it.name.contains(searchQuery, ignoreCase = true)
-        }
-        .sortedBy { it.name.lowercase() }
+    val filtered = filterPantryIngredients(
+        ingredients = state.ingredients.toList(),
+        categories = state.ingredientCategories.toList(),
+        searchQuery = searchQuery,
+        selectedCategoryId = selectedCategoryId
+    )
 
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -2145,8 +2301,23 @@ fun PantryScreen(
             SearchField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = "Søg i lageret"
+                placeholder = "Søg navn eller kategori"
             )
+        }
+
+        if (state.ingredientCategories.isNotEmpty()) {
+            item {
+                val selectedCategory = state.ingredientCategories
+                    .find { it.id == selectedCategoryId }
+
+                SimpleSelector(
+                    label = selectedCategory?.name ?: "Alle kategorier",
+                    options = listOf<IngredientCategory?>(null) +
+                        state.ingredientCategories.toList(),
+                    optionText = { it?.name ?: "Alle kategorier" },
+                    onSelected = { selectedCategoryId = it?.id }
+                )
+            }
         }
 
         items(filtered, key = { it.id }) { ingredient ->
@@ -2283,6 +2454,17 @@ fun ShoppingScreen(state: MealPlannerState) {
     var addToPantryItem by remember {
         mutableStateOf<ShoppingItem?>(null)
     }
+    var editPantryItem by remember {
+        mutableStateOf<ShoppingItem?>(null)
+    }
+
+    editPantryItem?.let { item ->
+        PantryAmountDialog(
+            ingredient = item.ingredient,
+            state = state,
+            onDismiss = { editPantryItem = null }
+        )
+    }
 
     addToPantryItem?.let { item ->
         AddPurchasedToPantryDialog(
@@ -2390,7 +2572,10 @@ fun ShoppingScreen(state: MealPlannerState) {
                                 item = item,
                                 state = state,
                                 included = true,
-                                checked = false
+                                checked = false,
+                                onEditPantry = {
+                                    editPantryItem = item
+                                }
                             )
                         }
                     }
@@ -2418,7 +2603,10 @@ fun ShoppingScreen(state: MealPlannerState) {
                             item = item,
                             state = state,
                             included = true,
-                            checked = false
+                            checked = false,
+                            onEditPantry = {
+                                editPantryItem = item
+                            }
                         )
                     }
                 }
@@ -2440,6 +2628,9 @@ fun ShoppingScreen(state: MealPlannerState) {
                         state = state,
                         included = true,
                         checked = true,
+                        onEditPantry = {
+                            editPantryItem = item
+                        },
                         onAddToPantry = {
                             addToPantryItem = item
                         }
@@ -2465,7 +2656,10 @@ fun ShoppingScreen(state: MealPlannerState) {
                         item = item,
                         state = state,
                         included = false,
-                        checked = false
+                        checked = false,
+                        onEditPantry = {
+                            editPantryItem = item
+                        }
                     )
                 }
             }
@@ -2481,6 +2675,7 @@ private fun ShoppingItemCard(
     state: MealPlannerState,
     included: Boolean,
     checked: Boolean,
+    onEditPantry: (() -> Unit)? = null,
     onAddToPantry: (() -> Unit)? = null
 ) {
     Card(
@@ -2529,17 +2724,15 @@ private fun ShoppingItemCard(
                     style = MaterialTheme.typography.bodyMedium
                 )
 
-                if (item.pantryBase > 0.0) {
-                    Text(
-                        "Lager: " +
-                            state.formatBaseAmount(
-                                item.ingredient,
-                                item.pantryBase
-                            ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                Text(
+                    "Lager: " +
+                        state.formatBaseAmount(
+                            item.ingredient,
+                            item.pantryBase
+                        ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
 
                 FilterChip(
                     selected = included,
@@ -2551,6 +2744,15 @@ private fun ShoppingItemCard(
                     },
                     label = { Text("Køb") }
                 )
+
+                if (onEditPantry != null) {
+                    TextButton(
+                        onClick = onEditPantry,
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text("Ret lager")
+                    }
+                }
 
                 if (checked && onAddToPantry != null) {
                     TextButton(
