@@ -1546,9 +1546,10 @@ class CloudMealRepository(
                     is CloudRealtimeEvent.ShoppingIncludedChanged ->
                         onEvent(event)
 
-                    is CloudRealtimeEvent.DomainChanged,
-                    null ->
+                    is CloudRealtimeEvent.DomainChanged ->
                         domainSignals.getValue(domain).tryEmit(Unit)
+
+                    null -> Unit
                 }
             }.launchIn(scope)
         }
