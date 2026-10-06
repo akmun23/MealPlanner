@@ -33,7 +33,12 @@ class MealPlannerState(
         householdId = householdId
     )
     private val legacyStorage = LocalStorage(context.applicationContext)
+    private val roomCache = RoomSnapshotCache(
+        context = context.applicationContext,
+        householdId = householdId
+    )
     private val reloadMutex = Mutex()
+    private var cachePersistJob: Job? = null
     private val syncTracker = SyncGenerationTracker()
     private val coalescedMutations = mutableMapOf<String, Job>()
     private var pendingSaveCount = 0
@@ -88,6 +93,16 @@ class MealPlannerState(
     }
 
     private suspend fun initialize() {
+        var hasCachedSnapshot = false
+
+        runCatching { roomCache.load() }
+            .getOrNull()
+            ?.let { cached ->
+                applySnapshot(cached)
+                hasCachedSnapshot = true
+                isLoading = false
+            }
+
         try {
             if (repository.needsLocalImport()) {
                 val localSnapshot = legacyStorage.load()
@@ -99,17 +114,23 @@ class MealPlannerState(
             }
 
             reload(syncHistory = true)
+            syncIndicator = SyncIndicator.IDLE
             repository.startRealtime(scope) { event ->
                 handleRealtime(event)
             }
         } catch (e: Exception) {
-            lastError = e.message ?: "Kunne ikke hente data."
+            if (hasCachedSnapshot) {
+                syncIndicator = SyncIndicator.OFFLINE
+            } else {
+                lastError = e.message ?: "Kunne ikke hente data."
+            }
         } finally {
             isLoading = false
         }
     }
 
     suspend fun close() {
+        cachePersistJob?.join()
         repository.stopRealtime()
     }
 
@@ -120,14 +141,22 @@ class MealPlannerState(
     private suspend fun reload(
         syncHistory: Boolean = false
     ) {
+        val snapshot = repository.loadCurrent(
+            syncHistory = syncHistory
+        )
+
         reloadMutex.withLock {
-            applySnapshot(
-                repository.loadCurrent(syncHistory = syncHistory)
-            )
+            applySnapshot(snapshot)
+        }
+
+        runCatching {
+            roomCache.save(snapshot)
         }
     }
 
     private suspend fun reload(domain: CloudSyncDomain) {
+        var applied = false
+
         reloadMutex.withLock {
             val generationSnapshot = when (domain) {
                 CloudSyncDomain.WEEK -> mapOf(
@@ -149,6 +178,7 @@ class MealPlannerState(
                         return@withLock
                     }
                     applyIngredientsSnapshot(snapshot)
+                    applied = true
                 }
 
                 CloudSyncDomain.RECIPES -> {
@@ -157,6 +187,7 @@ class MealPlannerState(
                         return@withLock
                     }
                     applyRecipesSnapshot(snapshot)
+                    applied = true
                 }
 
                 CloudSyncDomain.PANTRY -> {
@@ -168,6 +199,7 @@ class MealPlannerState(
                         target = pantry,
                         incoming = snapshot
                     )
+                    applied = true
                 }
 
                 CloudSyncDomain.WEEK -> {
@@ -180,6 +212,7 @@ class MealPlannerState(
                     }
                     applyWeekSnapshot(week)
                     applyShoppingSnapshot(shopping)
+                    applied = true
                 }
 
                 CloudSyncDomain.SHOPPING -> {
@@ -191,6 +224,7 @@ class MealPlannerState(
                         return@withLock
                     }
                     applyShoppingSnapshot(snapshot)
+                    applied = true
                 }
 
                 CloudSyncDomain.HISTORY -> {
@@ -205,8 +239,13 @@ class MealPlannerState(
                             it.recipeId to it.eatenOn
                         }
                     )
+                    applied = true
                 }
             }
+        }
+
+        if (applied) {
+            scheduleCachePersist()
         }
     }
 
@@ -232,6 +271,7 @@ class MealPlannerState(
                 ) {
                     pantry[event.ingredientId] = event.amountBase
                 }
+                scheduleCachePersist()
             }
 
             is CloudRealtimeEvent.ShoppingCheckedChanged -> {
@@ -250,6 +290,7 @@ class MealPlannerState(
                     shoppingChecked[event.ingredientId] =
                         event.checked
                 }
+                scheduleCachePersist()
             }
 
             is CloudRealtimeEvent.ShoppingIncludedChanged -> {
@@ -258,12 +299,7 @@ class MealPlannerState(
                     domain = CloudSyncDomain.SHOPPING,
                     entityId = "included:${event.ingredientId}"
                 )
-                if (
-                    syncTracker.isPending(key) ||
-                    syncTracker.isDomainPending(
-                        CloudSyncDomain.SHOPPING
-                    )
-                ) return
+                if (syncTracker.isPending(key)) return
 
                 if (event.included == null) {
                     shoppingIncluded.remove(event.ingredientId)
@@ -274,6 +310,7 @@ class MealPlannerState(
                     shoppingIncluded[event.ingredientId] =
                         event.included
                 }
+                scheduleCachePersist()
             }
         }
     }
@@ -431,6 +468,51 @@ class MealPlannerState(
         )
     }
 
+    private fun currentSnapshot(): CloudSnapshot? {
+        val planId = weeklyPlanId ?: return null
+
+        return CloudSnapshot(
+            ingredients = ingredients.toList(),
+            ingredientCategories = ingredientCategories.toList(),
+            recipeCategories = recipeCategories.toList(),
+            recipes = recipes.toList(),
+            pantry = pantry.toMap(),
+            dayModes = dayModes.toMap(),
+            dayMaxPrepMinutes = dayMaxPrepMinutes.toMap(),
+            plan = plan.toMap(),
+            lockedDays = lockedDays.toSet(),
+            shoppingChecked = shoppingChecked.toMap(),
+            shoppingIncluded = shoppingIncluded.toMap(),
+            selectedLunchRecipeIds =
+                selectedLunchRecipeIds.toList(),
+            weeklyPlanId = planId,
+            weeklySandwichRecipeId = weeklySandwichRecipeId,
+            sandwichDay = sandwichDay,
+            history = history.toList()
+        )
+    }
+
+    private fun scheduleCachePersist(
+        delayMillis: Long = 100L
+    ) {
+        if (
+            pendingSaveCount > 0 ||
+            syncHadFailure
+        ) {
+            return
+        }
+
+        val snapshot = currentSnapshot() ?: return
+
+        cachePersistJob?.cancel()
+        cachePersistJob = scope.launch {
+            delay(delayMillis)
+            runCatching {
+                roomCache.save(snapshot)
+            }
+        }
+    }
+
     private fun beginSave() {
         syncStatusClearJob?.cancel()
         syncStatusClearJob = null
@@ -493,6 +575,9 @@ class MealPlannerState(
             } finally {
                 syncTracker.endPending(keys)
                 finishSave(success)
+                if (success == true) {
+                    scheduleCachePersist()
+                }
             }
         }
     }
@@ -528,6 +613,9 @@ class MealPlannerState(
             } finally {
                 syncTracker.endPending(keys)
                 finishSave(success)
+                if (success == true) {
+                    scheduleCachePersist()
+                }
             }
         }
 
