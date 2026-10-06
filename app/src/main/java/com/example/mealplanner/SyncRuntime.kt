@@ -4,7 +4,8 @@ internal enum class SyncIndicator {
     IDLE,
     SAVING,
     SAVED,
-    ERROR
+    ERROR,
+    OFFLINE
 }
 
 internal data class SyncMutationKey(
