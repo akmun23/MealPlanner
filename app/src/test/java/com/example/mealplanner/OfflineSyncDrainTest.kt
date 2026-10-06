@@ -113,6 +113,48 @@ class OfflineSyncDrainTest {
             assertEquals(false, applied)
         }
 
+    @Test
+    fun entireBatchIsPreflightedBeforeAnyMutationIsApplied() =
+        runBlocking {
+            val first = pendingPantry(
+                revision = "pantry",
+                amount = 2.0
+            ).copy(batchId = "batch")
+            val clear = QueuedMutation.ClearShopping("week")
+            val second = PendingMutationEntity(
+                id = "household|${clear.key()}",
+                revision = "clear",
+                batchId = "batch",
+                householdId = "household",
+                mutationKey = clear.key(),
+                priority = clear.priority(),
+                domainMask = clear.domainMask(),
+                payload = QueuedMutationCodec.encode(clear),
+                updatedAtEpochMs = 2L
+            )
+            val store = FakeBatchPendingMutationStore(
+                mutableListOf(first, second)
+            )
+            val applied = mutableListOf<QueuedMutation>()
+
+            val drain = OfflineSyncDrain(
+                store = store,
+                hasConflict = { pending, _ ->
+                    pending.id == second.id
+                },
+                applyMutation = applied::add
+            )
+
+            assertEquals(
+                OfflineSyncDrainResult.EMPTY,
+                drain.drain("household")
+            )
+            assertTrue(applied.isEmpty())
+            assertTrue(
+                store.rows.all { it.conflict }
+            )
+        }
+
     private fun pendingPantry(
         revision: String,
         amount: Double
@@ -134,6 +176,89 @@ class OfflineSyncDrainTest {
         )
     }
 
+    private class FakeBatchPendingMutationStore(
+        val rows: MutableList<PendingMutationEntity>
+    ) : PendingMutationStore {
+
+        override suspend fun next(
+            householdId: String
+        ): PendingMutationEntity? =
+            rows
+                .filter {
+                    it.householdId == householdId &&
+                        !it.conflict
+                }
+                .sortedWith(
+                    compareBy<PendingMutationEntity> {
+                        it.priority
+                    }.thenBy {
+                        it.updatedAtEpochMs
+                    }.thenBy {
+                        it.id
+                    }
+                )
+                .firstOrNull()
+
+        override suspend fun batch(
+            batchId: String
+        ): List<PendingMutationEntity> =
+            rows
+                .filter {
+                    it.batchId == batchId &&
+                        !it.conflict
+                }
+                .sortedWith(
+                    compareBy<PendingMutationEntity> {
+                        it.priority
+                    }.thenBy {
+                        it.updatedAtEpochMs
+                    }.thenBy {
+                        it.id
+                    }
+                )
+
+        override suspend fun deleteIfCurrent(
+            id: String,
+            revision: String
+        ): Int {
+            val index = rows.indexOfFirst {
+                it.id == id &&
+                    it.revision == revision
+            }
+            if (index < 0) return 0
+            rows.removeAt(index)
+            return 1
+        }
+
+        override suspend fun markFailure(
+            id: String,
+            revision: String,
+            message: String?
+        ): Int = 1
+
+        override suspend fun markConflict(
+            batchId: String,
+            message: String?
+        ): Int {
+            var changed = 0
+            rows.indices.forEach { index ->
+                if (rows[index].batchId == batchId) {
+                    rows[index] = rows[index].copy(
+                        conflict = true,
+                        lastError = message
+                    )
+                    changed += 1
+                }
+            }
+            return changed
+        }
+
+        override suspend fun rebaseLatest(
+            id: String,
+            baseSnapshotPayload: String
+        ): Int = 0
+    }
+
     private class FakePendingMutationStore(
         var pending: PendingMutationEntity?
     ) : PendingMutationStore {
@@ -146,6 +271,17 @@ class OfflineSyncDrainTest {
                 it.householdId == householdId &&
                     !it.conflict
             }
+
+        override suspend fun batch(
+            batchId: String
+        ): List<PendingMutationEntity> =
+            pending
+                ?.takeIf {
+                    it.batchId == batchId &&
+                        !it.conflict
+                }
+                ?.let(::listOf)
+                .orEmpty()
 
         override suspend fun deleteIfCurrent(
             id: String,
