@@ -329,9 +329,20 @@ internal fun realtimeEventFor(
     table: String,
     action: PostgresAction,
     expectedHouseholdId: String
+): CloudRealtimeEvent? =
+    realtimeEventForPayload(
+        table = table,
+        record = action.recordOrNull(),
+        oldRecord = action.oldRecordOrNull(),
+        expectedHouseholdId = expectedHouseholdId
+    )
+
+internal fun realtimeEventForPayload(
+    table: String,
+    record: JsonObject?,
+    oldRecord: JsonObject?,
+    expectedHouseholdId: String
 ): CloudRealtimeEvent? {
-    val record = action.recordOrNull()
-    val oldRecord = action.oldRecordOrNull()
     val source = record ?: oldRecord
     val eventHouseholdId =
         source?.stringValue("household_id")
