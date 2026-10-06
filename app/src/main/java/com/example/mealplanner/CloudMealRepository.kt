@@ -873,44 +873,6 @@ class CloudMealRepository(
         }
     }
 
-    suspend fun createIngredientCategory(
-        name: String,
-        position: Int
-    ): IngredientCategory = withContext(Dispatchers.IO) {
-        val row = IngredientCategoryRow(
-            id = UUID.randomUUID().toString(),
-            householdId = householdId,
-            name = name.trim(),
-            position = position
-        )
-
-        val saved = supabase.from("shopping_categories").insert(row) {
-            select()
-        }.decodeList<IngredientCategoryRow>().firstOrNull() ?: row
-
-        IngredientCategory(
-            id = saved.id,
-            name = saved.name,
-            position = saved.position
-        )
-    }
-
-    suspend fun renameIngredientCategory(
-        categoryId: String,
-        name: String
-    ) = withContext(Dispatchers.IO) {
-        supabase.from("shopping_categories").update(
-            {
-                set("name", name.trim())
-            }
-        ) {
-            filter {
-                eq("household_id", householdId)
-                eq("id", categoryId)
-            }
-        }
-    }
-
     suspend fun deleteIngredient(id: String, imagePath: String?) = withContext(Dispatchers.IO) {
         supabase.from("ingredients").delete {
             filter {
@@ -1042,44 +1004,6 @@ class CloudMealRepository(
         }
     }
 
-    suspend fun createRecipeCategory(
-        name: String,
-        position: Int
-    ): RecipeCategoryOption = withContext(Dispatchers.IO) {
-        val row = RecipeCategoryRow(
-            id = UUID.randomUUID().toString(),
-            householdId = householdId,
-            name = name.normalizedDisplayName(),
-            position = position
-        )
-
-        val saved = supabase.from("recipe_categories").insert(row) {
-            select()
-        }.decodeList<RecipeCategoryRow>().firstOrNull() ?: row
-
-        RecipeCategoryOption(
-            id = saved.id,
-            name = saved.name,
-            position = saved.position
-        )
-    }
-
-    suspend fun renameRecipeCategory(
-        categoryId: String,
-        name: String
-    ) = withContext(Dispatchers.IO) {
-        supabase.from("recipe_categories").update(
-            {
-                set("name", name.normalizedDisplayName())
-            }
-        ) {
-            filter {
-                eq("household_id", householdId)
-                eq("id", categoryId)
-            }
-        }
-    }
-
     suspend fun deleteRecipe(id: String, imagePath: String?) = withContext(Dispatchers.IO) {
         supabase.from("recipes").delete {
             filter {
@@ -1097,24 +1021,6 @@ class CloudMealRepository(
                 ingredientId = ingredientId,
                 amountBase = amountBase
             )
-        ) {
-            onConflict = "household_id,ingredient_id"
-        }
-    }
-
-    suspend fun setPantryBatch(
-        amountsByIngredient: Map<String, Double>
-    ) = withContext(Dispatchers.IO) {
-        if (amountsByIngredient.isEmpty()) return@withContext
-
-        supabase.from("pantry_items").upsert(
-            amountsByIngredient.map { (ingredientId, amountBase) ->
-                PantryRow(
-                    householdId = householdId,
-                    ingredientId = ingredientId,
-                    amountBase = amountBase.coerceAtLeast(0.0)
-                )
-            }
         ) {
             onConflict = "household_id,ingredient_id"
         }
@@ -1179,36 +1085,6 @@ class CloudMealRepository(
                 )
             ) {
                 onConflict = "weekly_plan_id,day_of_week"
-            }
-        }
-    }
-
-    suspend fun addLunchRecipe(
-        weeklyPlanId: String,
-        recipeId: String,
-        position: Int
-    ) = withContext(Dispatchers.IO) {
-        supabase.from("weekly_lunch_recipes").upsert(
-            WeeklyLunchRecipeRow(
-                householdId = householdId,
-                weeklyPlanId = weeklyPlanId,
-                recipeId = recipeId,
-                position = position
-            )
-        ) {
-            onConflict = "weekly_plan_id,recipe_id"
-        }
-    }
-
-    suspend fun removeLunchRecipe(
-        weeklyPlanId: String,
-        recipeId: String
-    ) = withContext(Dispatchers.IO) {
-        supabase.from("weekly_lunch_recipes").delete {
-            filter {
-                eq("household_id", householdId)
-                eq("weekly_plan_id", weeklyPlanId)
-                eq("recipe_id", recipeId)
             }
         }
     }
