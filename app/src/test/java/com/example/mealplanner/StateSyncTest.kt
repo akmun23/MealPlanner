@@ -1,6 +1,7 @@
 package com.example.mealplanner
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertSame
 import org.junit.Test
 
 class StateSyncTest {
@@ -34,7 +35,7 @@ class StateSyncTest {
             ),
             target
         )
-        assertEquals(unchanged, target[1])
+        assertSame(unchanged, target[1])
     }
 
     @Test
