@@ -47,6 +47,8 @@ internal data class PendingMutationEntity(
     @ColumnInfo(name = "domain_mask")
     val domainMask: Int,
     val payload: String,
+    @ColumnInfo(name = "base_snapshot_payload")
+    val baseSnapshotPayload: String? = null,
     @ColumnInfo(name = "updated_at_epoch_ms")
     val updatedAtEpochMs: Long,
     @ColumnInfo(
@@ -54,6 +56,11 @@ internal data class PendingMutationEntity(
         defaultValue = "0"
     )
     val attemptCount: Int = 0,
+    @ColumnInfo(
+        name = "conflict",
+        defaultValue = "0"
+    )
+    val conflict: Boolean = false,
     @ColumnInfo(name = "last_error")
     val lastError: String? = null
 )
@@ -65,6 +72,7 @@ internal interface PendingMutationDao : PendingMutationStore {
         select *
         from pending_mutations
         where household_id = :householdId
+          and conflict = 0
         order by priority asc, updated_at_epoch_ms asc
         limit 1
         """
@@ -72,6 +80,16 @@ internal interface PendingMutationDao : PendingMutationStore {
     override suspend fun next(
         householdId: String
     ): PendingMutationEntity?
+
+    @Query(
+        """
+        select *
+        from pending_mutations
+        where id = :id
+        limit 1
+        """
+    )
+    suspend fun find(id: String): PendingMutationEntity?
 
     @Query(
         """
@@ -124,9 +142,76 @@ internal interface PendingMutationDao : PendingMutationStore {
         from pending_mutations
         where household_id = :householdId
           and attempt_count >= 6
+          and conflict = 0
         """
     )
     fun observeFailedCount(householdId: String): Flow<Int>
+
+    @Query(
+        """
+        select count(*)
+        from pending_mutations
+        where household_id = :householdId
+          and conflict = 1
+        """
+    )
+    fun observeConflictCount(
+        householdId: String
+    ): Flow<Int>
+
+    @Query(
+        """
+        select *
+        from pending_mutations
+        where household_id = :householdId
+          and conflict = 1
+        order by priority asc, updated_at_epoch_ms asc
+        """
+    )
+    suspend fun conflicts(
+        householdId: String
+    ): List<PendingMutationEntity>
+
+    @Query(
+        """
+        update pending_mutations
+        set conflict = 1,
+            last_error = :message
+        where id = :id
+          and revision = :revision
+        """
+    )
+    override suspend fun markConflict(
+        id: String,
+        revision: String,
+        message: String?
+    ): Int
+
+    @Query(
+        """
+        update pending_mutations
+        set conflict = 0,
+            base_snapshot_payload = null,
+            attempt_count = 0,
+            last_error = null
+        where household_id = :householdId
+          and conflict = 1
+        """
+    )
+    suspend fun forceConflicts(
+        householdId: String
+    ): Int
+
+    @Query(
+        """
+        delete from pending_mutations
+        where household_id = :householdId
+          and conflict = 1
+        """
+    )
+    suspend fun deleteConflicts(
+        householdId: String
+    ): Int
 
     @Query(
         """
@@ -396,6 +481,9 @@ internal class OfflineSyncQueue(
     fun observeFailedCount(): Flow<Int> =
         dao.observeFailedCount(householdId)
 
+    fun observeConflictCount(): Flow<Int> =
+        dao.observeConflictCount(householdId)
+
     suspend fun hasPendingMutations(): Boolean =
         dao.count(householdId) > 0
 
@@ -421,16 +509,27 @@ internal class OfflineSyncQueue(
         if (mutations.isEmpty()) return
 
         val now = System.currentTimeMillis()
+        val previousSnapshotPayload =
+            database.householdSnapshotDao()
+                .find(householdId)
+                ?.payload
+
         val entities = mutations.mapIndexed { index, mutation ->
             val key = mutation.key()
+            val id = "$householdId|$key"
+            val existing = dao.find(id)
+
             PendingMutationEntity(
-                id = "$householdId|$key",
+                id = id,
                 revision = UUID.randomUUID().toString(),
                 householdId = householdId,
                 mutationKey = key,
                 priority = mutation.priority(),
                 domainMask = mutation.domainMask(),
                 payload = QueuedMutationCodec.encode(mutation),
+                baseSnapshotPayload =
+                    existing?.baseSnapshotPayload
+                        ?: previousSnapshotPayload,
                 updatedAtEpochMs = now + index
             )
         }
@@ -446,6 +545,25 @@ internal class OfflineSyncQueue(
             )
 
         schedule()
+    }
+
+    suspend fun forceConflicts() {
+        dao.forceConflicts(householdId)
+        schedule()
+    }
+
+    suspend fun discardConflicts(): Set<CloudSyncDomain> {
+        val domains = dao.conflicts(householdId)
+            .flatMap { entity ->
+                CloudSyncDomain.entries.filter { domain ->
+                    entity.domainMask and
+                        (1 shl domain.ordinal) != 0
+                }
+            }
+            .toSet()
+
+        dao.deleteConflicts(householdId)
+        return domains
     }
 
     fun schedule() {
