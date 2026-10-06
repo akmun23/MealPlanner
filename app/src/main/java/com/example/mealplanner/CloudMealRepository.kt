@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.realtime.HasOldRecord
 import io.github.jan.supabase.realtime.HasRecord
 import io.github.jan.supabase.realtime.PostgresAction
@@ -557,7 +558,16 @@ class CloudMealRepository(
                     }.decodeList<RecipeCategoryAssignmentRow>()
                 }
                 val recipesDeferred = async {
-                    supabase.from("recipes").select {
+                    supabase.from("recipes").select(
+                        columns = Columns.list(
+                            "id",
+                            "household_id",
+                            "name",
+                            "meal_type",
+                            "notes",
+                            "image_path"
+                        )
+                    ) {
                         filter { eq("household_id", householdId) }
                     }.decodeList<RecipeRow>()
                 }
