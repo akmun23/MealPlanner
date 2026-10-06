@@ -258,12 +258,7 @@ class MealPlannerState(
                     domain = CloudSyncDomain.SHOPPING,
                     entityId = "included:${event.ingredientId}"
                 )
-                if (
-                    syncTracker.isPending(key) ||
-                    syncTracker.isDomainPending(
-                        CloudSyncDomain.SHOPPING
-                    )
-                ) return
+                if (syncTracker.isPending(key)) return
 
                 if (event.included == null) {
                     shoppingIncluded.remove(event.ingredientId)
