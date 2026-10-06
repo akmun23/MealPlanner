@@ -54,15 +54,17 @@ internal interface LocalStateDao {
     suspend fun upsertSnapshot(entity: HouseholdSnapshotEntity)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsertMutation(entity: PendingMutationEntity)
+    suspend fun upsertMutations(
+        entities: List<PendingMutationEntity>
+    )
 
     @Transaction
-    suspend fun persistSnapshotAndMutation(
+    suspend fun persistSnapshotAndMutations(
         snapshot: HouseholdSnapshotEntity,
-        mutation: PendingMutationEntity
+        mutations: List<PendingMutationEntity>
     ) {
         upsertSnapshot(snapshot)
-        upsertMutation(mutation)
+        upsertMutations(mutations)
     }
 }
 
