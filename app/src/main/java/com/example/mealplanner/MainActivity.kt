@@ -1333,6 +1333,9 @@ private fun RecipeDetailScreen(
     var showConsumeConfirm by remember(recipeId) {
         mutableStateOf(false)
     }
+    var showDeleteConfirm by remember(recipeId) {
+        mutableStateOf(false)
+    }
 
     if (recipe == null) {
         onBack()
@@ -1390,6 +1393,45 @@ private fun RecipeDetailScreen(
             dismissButton = {
                 TextButton(
                     onClick = { showConsumeConfirm = false }
+                ) {
+                    Text("Annuller")
+                }
+            }
+        )
+    }
+
+    if (showDeleteConfirm) {
+        AlertDialog(
+            onDismissRequest = {
+                showDeleteConfirm = false
+            },
+            title = {
+                Text("Slet opskrift?")
+            },
+            text = {
+                Text(
+                    "Opskriften fjernes fra det fælles hjem. Du kan annullere og beholde den."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirm = false
+                        state.deleteRecipe(recipe.id)
+                        onBack()
+                    }
+                ) {
+                    Text(
+                        "Slet",
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirm = false
+                    }
                 ) {
                     Text("Annuller")
                 }
@@ -1584,8 +1626,7 @@ private fun RecipeDetailScreen(
             item {
                 TextButton(
                     onClick = {
-                        state.deleteRecipe(recipe.id)
-                        onBack()
+                        showDeleteConfirm = true
                     }
                 ) {
                     Icon(
@@ -2157,107 +2198,6 @@ private fun RequirementEditor(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun IngredientLibraryScreen(
-    state: MealPlannerState,
-    onBack: () -> Unit,
-    onAdd: () -> Unit,
-    onOpen: (String) -> Unit
-) {
-    var search by remember { mutableStateOf("") }
-
-    val filtered = state.ingredients
-        .filter {
-            search.isBlank() ||
-                it.name.contains(search, ignoreCase = true)
-        }
-        .sortedBy { it.name.lowercase() }
-
-    SubpageScaffold(
-        title = "Ingredienser",
-        onBack = onBack
-    ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            item {
-                Button(
-                    onClick = onAdd,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Icon(Icons.Filled.Add, contentDescription = null)
-                    Spacer(Modifier.width(6.dp))
-                    Text("Ny ingrediens")
-                }
-            }
-
-            item {
-                SearchField(
-                    value = search,
-                    onValueChange = { search = it },
-                    placeholder = "Søg i ingredienser"
-                )
-            }
-
-            items(filtered, key = { it.id }) { ingredient ->
-                IngredientListCard(
-                    ingredient = ingredient,
-                    onClick = { onOpen(ingredient.id) }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun IngredientListCard(
-    ingredient: Ingredient,
-    onClick: () -> Unit
-) {
-    OutlinedCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Row(
-            modifier = Modifier.padding(10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            AppThumbnail(
-                imageUri = ingredient.imageUri,
-                fallback = ingredient.name.take(1).uppercase()
-            )
-
-            Spacer(Modifier.width(12.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    ingredient.name,
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    buildList {
-                        add(ingredient.quantityType.danishName())
-                        add(ingredient.preferredUnit.selectorLabel())
-                        if (ingredient.isProtein) add("Protein")
-                    }.joinToString(" · "),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Text("›")
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
 private fun IngredientEditorScreen(
     state: MealPlannerState,
     ingredientId: String?,
@@ -2304,6 +2244,53 @@ private fun IngredientEditorScreen(
                 name,
                 excludingId = existing?.id
             )
+    var showDeleteConfirm by remember(ingredientId) {
+        mutableStateOf(false)
+    }
+
+    if (showDeleteConfirm && existing != null) {
+        AlertDialog(
+            onDismissRequest = {
+                showDeleteConfirm = false
+            },
+            title = {
+                Text("Slet ingrediens?")
+            },
+            text = {
+                Text(
+                    "Ingrediensen fjernes fra det fælles lager. Hvis den bruges i en opskrift, bliver den ikke slettet."
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirm = false
+                        if (
+                            state.deleteIngredient(
+                                existing.id
+                            )
+                        ) {
+                            onSaved()
+                        }
+                    }
+                ) {
+                    Text(
+                        "Slet",
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showDeleteConfirm = false
+                    }
+                ) {
+                    Text("Annuller")
+                }
+            }
+        )
+    }
 
     SubpageScaffold(
         title = if (existing == null) "Ny ingrediens" else "Rediger ingrediens",
@@ -2452,8 +2439,7 @@ private fun IngredientEditorScreen(
                 item {
                     TextButton(
                         onClick = {
-                            state.deleteIngredient(existing.id)
-                            onSaved()
+                            showDeleteConfirm = true
                         }
                     ) {
                         Icon(
