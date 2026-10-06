@@ -401,8 +401,7 @@ fun CloudGate() {
                         } catch (e: Exception) {
 
                             message =
-                                e.message
-                                    ?: "Kunne ikke oprette hjem."
+                                "Kunne ikke oprette hjemmet. Prøv igen."
                         }
                     }
                 },
@@ -432,8 +431,7 @@ fun CloudGate() {
                         } catch (e: Exception) {
 
                             message =
-                                e.message
-                                    ?: "Kunne ikke tilmelde dig hjemmet."
+                                "Kunne ikke tilmelde dig hjemmet. Tjek koden og prøv igen."
                         }
                     }
                 },
