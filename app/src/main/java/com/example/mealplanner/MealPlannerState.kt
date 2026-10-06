@@ -884,29 +884,14 @@ class MealPlannerState(
         ingredients.removeAll { it.id == ingredientId }
         pantry.remove(ingredientId)
         shoppingChecked.remove(ingredientId)
+        shoppingIncluded.remove(ingredientId)
 
-        runMutation(
-            domains = setOf(
-                CloudSyncDomain.INGREDIENTS,
-                CloudSyncDomain.PANTRY,
-                CloudSyncDomain.SHOPPING
-            ),
-            keys = setOf(
-                SyncMutationKey(
-                    domain = CloudSyncDomain.INGREDIENTS,
-                    entityId = "ingredient:" + ingredientId
-                ),
-                SyncMutationKey(
-                    domain = CloudSyncDomain.PANTRY,
-                    entityId = "pantry:" + ingredientId
-                )
-            )
-        ) {
-            repository.deleteIngredient(
-                id = ingredientId,
+        enqueueMutation(
+            QueuedMutation.DeleteIngredient(
+                ingredientId = ingredientId,
                 imagePath = ingredient.imagePath
             )
-        }
+        )
     }
 
     fun isRecipeNameAvailable(
@@ -951,20 +936,9 @@ class MealPlannerState(
         ) ?: return null
 
         recipes += recipe
-
-        runMutation(
-            domains = setOf(CloudSyncDomain.RECIPES),
-            keys = setOf(
-                SyncMutationKey(
-                    domain = CloudSyncDomain.RECIPES,
-                    entityId = "recipe:" + recipe.id
-                )
-            )
-        ) {
-            val saved = repository.upsertRecipe(recipe)
-            val index = recipes.indexOfFirst { it.id == saved.id }
-            if (index >= 0) recipes[index] = saved
-        }
+        enqueueMutation(
+            QueuedMutation.UpsertRecipe(recipe)
+        )
         return recipe.id
     }
 
@@ -1032,46 +1006,26 @@ class MealPlannerState(
         shoppingIncluded.clear()
         }
 
-        runMutation(
-            domains = buildSet {
-                add(CloudSyncDomain.RECIPES)
-                if (weekChanged) {
-                    add(CloudSyncDomain.WEEK)
-                    add(CloudSyncDomain.SHOPPING)
-                }
-            },
-            keys = setOf(
-                SyncMutationKey(
-                    domain = CloudSyncDomain.RECIPES,
-                    entityId = "recipe:" + id
-                )
-            )
-        ) {
-            val saved = repository.upsertRecipe(updated)
-            val current = recipes.indexOfFirst { it.id == saved.id }
-            if (current >= 0) recipes[current] = saved
+        val mutations = buildList {
+            add(QueuedMutation.UpsertRecipe(updated))
 
             val currentPlanId = weeklyPlanId
             if (removedFromLunch && currentPlanId != null) {
-                repository.removeLunchRecipe(
-                    weeklyPlanId = currentPlanId,
-                    recipeId = id
+                add(
+                    QueuedMutation.ReplaceLunch(
+                        weeklyPlanId = currentPlanId,
+                        recipeIds = selectedLunchRecipeIds.toList()
+                    )
                 )
             }
 
             if (weekChanged && currentPlanId != null) {
-                repository.setHouseholdSandwich(weeklySandwichRecipeId)
-                repository.clearShoppingChecks(currentPlanId)
-                repository.saveWeekState(
-                    weeklyPlanId = currentPlanId,
-                    plan = plan.toMap(),
-                    dayModes = dayModes.toMap(),
-                    lockedDays = lockedDays.toSet(),
-                    sandwichRecipeId = weeklySandwichRecipeId,
-                    sandwichDay = sandwichDay
-                )
+                add(weekStateMutation(currentPlanId))
+                add(QueuedMutation.ClearShopping(currentPlanId))
             }
         }
+
+        enqueueMutations(mutations)
         return true
     }
 
@@ -1173,36 +1127,28 @@ class MealPlannerState(
         shoppingChecked.clear()
         shoppingIncluded.clear()
 
-        runMutation(
-            domains = setOf(
-                CloudSyncDomain.RECIPES,
-                CloudSyncDomain.WEEK,
-                CloudSyncDomain.SHOPPING
-            ),
-            keys = setOf(
-                SyncMutationKey(
-                    domain = CloudSyncDomain.RECIPES,
-                    entityId = "recipe:" + recipeId
+        val mutations = buildList {
+            val planId = weeklyPlanId
+            if (planId != null) {
+                add(
+                    QueuedMutation.ReplaceLunch(
+                        weeklyPlanId = planId,
+                        recipeIds = selectedLunchRecipeIds.toList()
+                    )
                 )
-            )
-        ) {
-            repository.deleteRecipe(
-                id = recipeId,
-                imagePath = recipe.imagePath
-            )
-            repository.setHouseholdSandwich(weeklySandwichRecipeId)
-            weeklyPlanId?.let {
-                repository.clearShoppingChecks(it)
-                repository.saveWeekState(
-                    weeklyPlanId = it,
-                    plan = plan.toMap(),
-                    dayModes = dayModes.toMap(),
-                    lockedDays = lockedDays.toSet(),
-                    sandwichRecipeId = weeklySandwichRecipeId,
-                    sandwichDay = sandwichDay
-                )
+                add(weekStateMutation(planId))
+                add(QueuedMutation.ClearShopping(planId))
             }
+
+            add(
+                QueuedMutation.DeleteRecipe(
+                    recipeId = recipeId,
+                    imagePath = recipe.imagePath
+                )
+            )
         }
+
+        enqueueMutations(mutations)
     }
 
     fun removeSandwichThisWeek() {
