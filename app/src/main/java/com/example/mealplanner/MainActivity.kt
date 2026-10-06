@@ -358,6 +358,7 @@ private fun SyncStatusBadge(
         SyncIndicator.SAVING -> "Gemmer…"
         SyncIndicator.SAVED -> "Gemt"
         SyncIndicator.ERROR -> "Ikke gemt"
+        SyncIndicator.OFFLINE -> "Offline"
     } ?: return
 
     Surface(
