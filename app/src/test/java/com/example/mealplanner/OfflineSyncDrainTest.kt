@@ -183,15 +183,11 @@ class OfflineSyncDrainTest {
         }
 
         override suspend fun markConflict(
-            id: String,
-            revision: String,
+            batchId: String,
             message: String?
         ): Int {
             val current = pending
-            if (
-                current?.id == id &&
-                current.revision == revision
-            ) {
+            if (current?.batchId == batchId) {
                 pending = current.copy(
                     conflict = true,
                     lastError = message
