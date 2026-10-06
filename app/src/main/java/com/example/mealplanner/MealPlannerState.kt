@@ -173,7 +173,11 @@ class MealPlannerState(
                         syncTracker.isCurrent(generationSnapshot)
                     ) {
                         runCatching {
-                            reload(syncHistory = false)
+                            reload(
+                                syncHistory = false,
+                                expectedGenerations =
+                                    generationSnapshot
+                            )
                         }
                     }
 
@@ -209,18 +213,30 @@ class MealPlannerState(
     }
 
     private suspend fun reload(
-        syncHistory: Boolean = false
+        syncHistory: Boolean = false,
+        expectedGenerations: Map<CloudSyncDomain, Long>? = null
     ) {
         val snapshot = repository.loadCurrent(
             syncHistory = syncHistory
         )
 
+        var applied = false
         reloadMutex.withLock {
+            if (
+                expectedGenerations != null &&
+                !syncTracker.isCurrent(expectedGenerations)
+            ) {
+                return@withLock
+            }
+
             applySnapshot(snapshot)
+            applied = true
         }
 
-        runCatching {
-            roomCache.save(snapshot)
+        if (applied) {
+            runCatching {
+                roomCache.save(snapshot)
+            }
         }
     }
 
