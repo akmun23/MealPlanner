@@ -1407,18 +1407,31 @@ class MealPlannerState(
                 plan.putAll(result.plan)
                 sandwichDay = result.sandwichDay
                 shoppingChecked.clear()
-        shoppingIncluded.clear()
+                shoppingIncluded.clear()
 
                 val id = weeklyPlanId ?: return@launch
-                repository.clearShoppingChecks(id)
-                repository.saveWeekState(
-                    weeklyPlanId = id,
-                    plan = plan.toMap(),
-                    dayModes = dayModes.toMap(),
-                    lockedDays = lockedDays.toSet(),
-                    sandwichRecipeId = weeklySandwichRecipeId,
-                    sandwichDay = sandwichDay
-                )
+                runMutation(
+                    domains = setOf(
+                        CloudSyncDomain.WEEK,
+                        CloudSyncDomain.SHOPPING
+                    ),
+                    keys = setOf(
+                        SyncMutationKey(
+                            domain = CloudSyncDomain.WEEK,
+                            entityId = "week:" + id
+                        )
+                    )
+                ) {
+                    repository.clearShoppingChecks(id)
+                    repository.saveWeekState(
+                        weeklyPlanId = id,
+                        plan = plan.toMap(),
+                        dayModes = dayModes.toMap(),
+                        lockedDays = lockedDays.toSet(),
+                        sandwichRecipeId = weeklySandwichRecipeId,
+                        sandwichDay = sandwichDay
+                    )
+                }
             } catch (e: Exception) {
                 lastError = e.message ?: "Madplanen kunne ikke opdateres."
             } finally {
@@ -1466,17 +1479,30 @@ class MealPlannerState(
 
                 plan.putAll(updated)
                 shoppingChecked.clear()
-        shoppingIncluded.clear()
+                shoppingIncluded.clear()
                 val id = weeklyPlanId ?: return@launch
-                repository.clearShoppingChecks(id)
-                repository.saveWeekState(
-                    weeklyPlanId = id,
-                    plan = plan.toMap(),
-                    dayModes = dayModes.toMap(),
-                    lockedDays = lockedDays.toSet(),
-                    sandwichRecipeId = weeklySandwichRecipeId,
-                    sandwichDay = sandwichDay
-                )
+                runMutation(
+                    domains = setOf(
+                        CloudSyncDomain.WEEK,
+                        CloudSyncDomain.SHOPPING
+                    ),
+                    keys = setOf(
+                        SyncMutationKey(
+                            domain = CloudSyncDomain.WEEK,
+                            entityId = "week:" + id
+                        )
+                    )
+                ) {
+                    repository.clearShoppingChecks(id)
+                    repository.saveWeekState(
+                        weeklyPlanId = id,
+                        plan = plan.toMap(),
+                        dayModes = dayModes.toMap(),
+                        lockedDays = lockedDays.toSet(),
+                        sandwichRecipeId = weeklySandwichRecipeId,
+                        sandwichDay = sandwichDay
+                    )
+                }
             } catch (e: Exception) {
                 lastError = e.message ?: "Retten kunne ikke skiftes."
             }
