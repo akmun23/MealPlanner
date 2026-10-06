@@ -237,6 +237,64 @@ class RoomOutboxIntegrationTest {
         database.close()
     }
 
+    @Test
+    fun conflictPausesEntireLogicalMutationBatch() = runBlocking {
+        val database = openVersionTwoDatabase()
+        val pantry = pendingPantry(
+            revision = "pantry",
+            amount = 2.0,
+            timestamp = 10L
+        ).copy(
+            batchId = "batch"
+        )
+        val shoppingMutation =
+            QueuedMutation.ClearShopping("week")
+        val shopping = PendingMutationEntity(
+            id = "household|${shoppingMutation.key()}",
+            revision = "shopping",
+            batchId = "batch",
+            householdId = "household",
+            mutationKey = shoppingMutation.key(),
+            priority = shoppingMutation.priority(),
+            domainMask = shoppingMutation.domainMask(),
+            payload =
+                QueuedMutationCodec.encode(
+                    shoppingMutation
+                ),
+            updatedAtEpochMs = 11L
+        )
+
+        database.localStateDao()
+            .persistSnapshotAndMutations(
+                snapshot = HouseholdSnapshotEntity(
+                    householdId = "household",
+                    payload = "local",
+                    updatedAtEpochMs = 11L
+                ),
+                mutations = listOf(pantry, shopping)
+            )
+
+        database.pendingMutationDao()
+            .markConflict(
+                batchId = "batch",
+                message = "shared change"
+            )
+
+        assertEquals(
+            2,
+            database.pendingMutationDao()
+                .conflicts("household")
+                .size
+        )
+        assertEquals(
+            null,
+            database.pendingMutationDao()
+                .next("household")
+        )
+
+        database.close()
+    }
+
     private fun createVersionOneDatabase() {
         val sqlite = context.openOrCreateDatabase(
             databaseName,
