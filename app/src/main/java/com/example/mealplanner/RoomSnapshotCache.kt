@@ -108,6 +108,7 @@ internal object MealPlannerDatabaseProvider {
                 create table if not exists pending_mutations (
                     id text not null primary key,
                     revision text not null,
+                    batch_id text not null,
                     household_id text not null,
                     mutation_key text not null,
                     priority integer not null,
@@ -126,6 +127,13 @@ internal object MealPlannerDatabaseProvider {
                 create index if not exists
                     index_pending_mutations_household_id
                 on pending_mutations(household_id)
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                create index if not exists
+                    index_pending_mutations_batch_id
+                on pending_mutations(batch_id)
                 """.trimIndent()
             )
         }
