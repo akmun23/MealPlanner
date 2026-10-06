@@ -45,7 +45,6 @@ class RoomSnapshotCodecTest {
                     mealType = MealType.DINNER,
                     autoRotationEnabled = true,
                     prepMinutes = 30,
-                    categoryTag = "Aftensmad",
                     categoryId = "dinner",
                     notes = "Test",
                     imageUri = "https://example.invalid/recipe",
@@ -54,6 +53,12 @@ class RoomSnapshotCodecTest {
                         RecipeIngredient(
                             ingredientId = "ingredient",
                             amountBase = 400.0
+                        )
+                    ),
+                    pantryPrerequisites = listOf(
+                        RecipePantryPrerequisite(
+                            ingredientId = "ingredient",
+                            minimumAmountBase = 200.0
                         )
                     )
                 )
