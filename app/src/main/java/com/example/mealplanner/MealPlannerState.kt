@@ -499,6 +499,7 @@ class MealPlannerState(
         categoryId: String?,
         notes: String = "",
         imageUri: String? = null,
+        pantryPrerequisites: List<DraftRequirement> = emptyList(),
         requirements: List<DraftRequirement>
     ): String? {
         if (!isRecipeNameAvailable(name)) {
@@ -516,6 +517,7 @@ class MealPlannerState(
             notes = notes,
             imageUri = imageUri,
             imagePath = null,
+            pantryPrerequisites = pantryPrerequisites,
             requirements = requirements
         ) ?: return null
 
@@ -538,6 +540,7 @@ class MealPlannerState(
         categoryId: String?,
         notes: String = "",
         imageUri: String? = null,
+        pantryPrerequisites: List<DraftRequirement> = emptyList(),
         requirements: List<DraftRequirement>
     ): Boolean {
         val index = recipes.indexOfFirst { it.id == id }
@@ -559,6 +562,7 @@ class MealPlannerState(
             notes = notes,
             imageUri = imageUri,
             imagePath = existing.imagePath,
+            pantryPrerequisites = pantryPrerequisites,
             requirements = requirements
         ) ?: return false
 
@@ -630,6 +634,7 @@ class MealPlannerState(
         notes: String,
         imageUri: String?,
         imagePath: String?,
+        pantryPrerequisites: List<DraftRequirement>,
         requirements: List<DraftRequirement>
     ): Recipe? {
         val clean = name.normalizedDisplayName()
@@ -654,6 +659,31 @@ class MealPlannerState(
 
         if (converted.isEmpty()) return null
 
+        val convertedPrerequisites = if (mealType == MealType.DINNER) {
+            pantryPrerequisites.mapNotNull { draft ->
+                val ingredient = ingredients.find {
+                    it.id == draft.ingredientId
+                } ?: return@mapNotNull null
+
+                if (
+                    draft.amount <= 0.0 ||
+                    draft.unit.quantityType != ingredient.quantityType
+                ) return@mapNotNull null
+
+                RecipePantryPrerequisite(
+                    ingredientId = draft.ingredientId,
+                    minimumAmountBase = draft.unit.toBase(draft.amount)
+                )
+            }
+        } else {
+            emptyList()
+        }
+
+        if (
+            mealType == MealType.DINNER &&
+            convertedPrerequisites.size != pantryPrerequisites.size
+        ) return null
+
         return Recipe(
             id = id,
             name = clean,
@@ -666,7 +696,8 @@ class MealPlannerState(
             notes = notes.trim(),
             imageUri = imageUri,
             imagePath = imagePath,
-            ingredients = converted
+            ingredients = converted,
+            pantryPrerequisites = convertedPrerequisites
         )
     }
 
