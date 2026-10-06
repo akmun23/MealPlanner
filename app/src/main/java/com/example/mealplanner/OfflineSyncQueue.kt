@@ -1,0 +1,558 @@
+package com.example.mealplanner
+
+import android.content.Context
+import androidx.room.ColumnInfo
+import androidx.room.Dao
+import androidx.room.Entity
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.PrimaryKey
+import androidx.room.Query
+import androidx.work.BackoffPolicy
+import androidx.work.Constraints
+import androidx.work.CoroutineWorker
+import androidx.work.Data
+import androidx.work.ExistingWorkPolicy
+import androidx.work.NetworkType
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.WorkManager
+import androidx.work.WorkerParameters
+import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.auth.status.SessionStatus
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
+import java.time.DayOfWeek
+import java.util.concurrent.TimeUnit
+
+@Entity(tableName = "pending_mutations")
+internal data class PendingMutationEntity(
+    @PrimaryKey
+    val id: String,
+    @ColumnInfo(name = "household_id")
+    val householdId: String,
+    @ColumnInfo(name = "mutation_key")
+    val mutationKey: String,
+    val priority: Int,
+    @ColumnInfo(name = "domain_mask")
+    val domainMask: Int,
+    val payload: String,
+    @ColumnInfo(name = "updated_at_epoch_ms")
+    val updatedAtEpochMs: Long,
+    @ColumnInfo(name = "attempt_count")
+    val attemptCount: Int = 0,
+    @ColumnInfo(name = "last_error")
+    val lastError: String? = null
+)
+
+@Dao
+internal interface PendingMutationDao {
+    @Query(
+        """
+        select *
+        from pending_mutations
+        where household_id = :householdId
+        order by priority asc, updated_at_epoch_ms asc
+        limit 1
+        """
+    )
+    suspend fun next(householdId: String): PendingMutationEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(entity: PendingMutationEntity)
+
+    @Query("delete from pending_mutations where id = :id")
+    suspend fun delete(id: String)
+
+    @Query(
+        """
+        update pending_mutations
+        set attempt_count = attempt_count + 1,
+            last_error = :message
+        where id = :id
+        """
+    )
+    suspend fun markFailure(id: String, message: String?)
+
+    @Query(
+        """
+        select count(*)
+        from pending_mutations
+        where household_id = :householdId
+        """
+    )
+    fun observeCount(householdId: String): Flow<Int>
+
+    @Query(
+        """
+        select count(*) > 0
+        from pending_mutations
+        where household_id = :householdId
+          and mutation_key = :mutationKey
+        """
+    )
+    suspend fun hasKey(
+        householdId: String,
+        mutationKey: String
+    ): Boolean
+
+    @Query(
+        """
+        select count(*) > 0
+        from pending_mutations
+        where household_id = :householdId
+          and (domain_mask & :domainMask) != 0
+        """
+    )
+    suspend fun hasDomain(
+        householdId: String,
+        domainMask: Int
+    ): Boolean
+}
+
+@Serializable
+internal sealed interface QueuedMutation {
+    @Serializable
+    @SerialName("upsert_ingredient")
+    data class UpsertIngredient(
+        val ingredient: Ingredient
+    ) : QueuedMutation
+
+    @Serializable
+    @SerialName("delete_ingredient")
+    data class DeleteIngredient(
+        val ingredientId: String,
+        val imagePath: String?
+    ) : QueuedMutation
+
+    @Serializable
+    @SerialName("upsert_ingredient_category")
+    data class UpsertIngredientCategory(
+        val category: IngredientCategory
+    ) : QueuedMutation
+
+    @Serializable
+    @SerialName("upsert_recipe")
+    data class UpsertRecipe(
+        val recipe: Recipe
+    ) : QueuedMutation
+
+    @Serializable
+    @SerialName("delete_recipe")
+    data class DeleteRecipe(
+        val recipeId: String,
+        val imagePath: String?
+    ) : QueuedMutation
+
+    @Serializable
+    @SerialName("upsert_recipe_category")
+    data class UpsertRecipeCategory(
+        val category: RecipeCategoryOption
+    ) : QueuedMutation
+
+    @Serializable
+    @SerialName("set_pantry")
+    data class SetPantry(
+        val ingredientId: String,
+        val amountBase: Double
+    ) : QueuedMutation
+
+    @Serializable
+    @SerialName("set_week_state")
+    data class SetWeekState(
+        val weeklyPlanId: String,
+        val plan: Map<String, String?>,
+        val dayModes: Map<String, String>,
+        val lockedDays: List<String>,
+        val sandwichRecipeId: String?,
+        val sandwichDay: String?
+    ) : QueuedMutation
+
+    @Serializable
+    @SerialName("set_day_prep")
+    data class SetDayPrep(
+        val weeklyPlanId: String,
+        val day: String,
+        val maxPrepMinutes: Int?
+    ) : QueuedMutation
+
+    @Serializable
+    @SerialName("replace_lunch")
+    data class ReplaceLunch(
+        val weeklyPlanId: String,
+        val recipeIds: List<String>
+    ) : QueuedMutation
+
+    @Serializable
+    @SerialName("shopping_included")
+    data class SetShoppingIncluded(
+        val weeklyPlanId: String,
+        val ingredientId: String,
+        val included: Boolean
+    ) : QueuedMutation
+
+    @Serializable
+    @SerialName("shopping_checked")
+    data class SetShoppingChecked(
+        val weeklyPlanId: String,
+        val ingredientId: String,
+        val checked: Boolean
+    ) : QueuedMutation
+
+    @Serializable
+    @SerialName("clear_shopping")
+    data class ClearShopping(
+        val weeklyPlanId: String
+    ) : QueuedMutation
+}
+
+internal object QueuedMutationCodec {
+    private val json = Json {
+        ignoreUnknownKeys = true
+        encodeDefaults = true
+        classDiscriminator = "mutation_type"
+    }
+
+    fun encode(mutation: QueuedMutation): String =
+        json.encodeToString<QueuedMutation>(mutation)
+
+    fun decode(payload: String): QueuedMutation =
+        json.decodeFromString<QueuedMutation>(payload)
+}
+
+internal fun QueuedMutation.key(): String = when (this) {
+    is QueuedMutation.UpsertIngredient ->
+        "ingredient:${ingredient.id}"
+    is QueuedMutation.DeleteIngredient ->
+        "ingredient:$ingredientId"
+    is QueuedMutation.UpsertIngredientCategory ->
+        "ingredient-category:${category.id}"
+    is QueuedMutation.UpsertRecipe ->
+        "recipe:${recipe.id}"
+    is QueuedMutation.DeleteRecipe ->
+        "recipe:$recipeId"
+    is QueuedMutation.UpsertRecipeCategory ->
+        "recipe-category:${category.id}"
+    is QueuedMutation.SetPantry ->
+        "pantry:$ingredientId"
+    is QueuedMutation.SetWeekState ->
+        "week:$weeklyPlanId"
+    is QueuedMutation.SetDayPrep ->
+        "day-prep:$weeklyPlanId:$day"
+    is QueuedMutation.ReplaceLunch ->
+        "lunch:$weeklyPlanId"
+    is QueuedMutation.SetShoppingIncluded ->
+        "shopping-included:$weeklyPlanId:$ingredientId"
+    is QueuedMutation.SetShoppingChecked ->
+        "shopping-checked:$weeklyPlanId:$ingredientId"
+    is QueuedMutation.ClearShopping ->
+        "shopping-clear:$weeklyPlanId"
+}
+
+internal fun QueuedMutation.priority(): Int = when (this) {
+    is QueuedMutation.UpsertIngredientCategory,
+    is QueuedMutation.UpsertRecipeCategory -> 10
+
+    is QueuedMutation.UpsertIngredient -> 20
+    is QueuedMutation.UpsertRecipe -> 30
+
+    is QueuedMutation.SetPantry,
+    is QueuedMutation.SetWeekState,
+    is QueuedMutation.SetDayPrep,
+    is QueuedMutation.ReplaceLunch -> 40
+
+    is QueuedMutation.ClearShopping,
+    is QueuedMutation.SetShoppingIncluded,
+    is QueuedMutation.SetShoppingChecked -> 50
+
+    is QueuedMutation.DeleteRecipe -> 60
+    is QueuedMutation.DeleteIngredient -> 70
+}
+
+private fun domainMask(vararg domains: CloudSyncDomain): Int =
+    domains.fold(0) { acc, domain ->
+        acc or (1 shl domain.ordinal)
+    }
+
+internal fun QueuedMutation.domainMask(): Int = when (this) {
+    is QueuedMutation.UpsertIngredient,
+    is QueuedMutation.DeleteIngredient,
+    is QueuedMutation.UpsertIngredientCategory ->
+        domainMask(CloudSyncDomain.INGREDIENTS)
+
+    is QueuedMutation.UpsertRecipe,
+    is QueuedMutation.DeleteRecipe,
+    is QueuedMutation.UpsertRecipeCategory ->
+        domainMask(CloudSyncDomain.RECIPES)
+
+    is QueuedMutation.SetPantry ->
+        domainMask(CloudSyncDomain.PANTRY)
+
+    is QueuedMutation.SetWeekState,
+    is QueuedMutation.SetDayPrep,
+    is QueuedMutation.ReplaceLunch ->
+        domainMask(CloudSyncDomain.WEEK)
+
+    is QueuedMutation.ClearShopping,
+    is QueuedMutation.SetShoppingIncluded,
+    is QueuedMutation.SetShoppingChecked ->
+        domainMask(CloudSyncDomain.SHOPPING)
+}
+
+internal class OfflineSyncQueue(
+    private val context: Context,
+    private val householdId: String
+) {
+    private val database =
+        MealPlannerDatabaseProvider.get(context)
+    private val dao = database.pendingMutationDao()
+
+    fun observePendingCount(): Flow<Int> =
+        dao.observeCount(householdId)
+
+    suspend fun hasPending(
+        key: SyncMutationKey
+    ): Boolean =
+        dao.hasKey(
+            householdId = householdId,
+            mutationKey = key.entityId
+        )
+
+    suspend fun hasPending(
+        domain: CloudSyncDomain
+    ): Boolean =
+        dao.hasDomain(
+            householdId = householdId,
+            domainMask = domainMask(domain)
+        )
+
+    suspend fun enqueue(
+        snapshot: CloudSnapshot,
+        mutation: QueuedMutation
+    ) {
+        val now = System.currentTimeMillis()
+        val key = mutation.key()
+
+        database.localStateDao()
+            .persistSnapshotAndMutation(
+                snapshot = HouseholdSnapshotEntity(
+                    householdId = householdId,
+                    payload = RoomSnapshotCodec.encode(snapshot),
+                    updatedAtEpochMs = now
+                ),
+                mutation = PendingMutationEntity(
+                    id = "$householdId|$key",
+                    householdId = householdId,
+                    mutationKey = key,
+                    priority = mutation.priority(),
+                    domainMask = mutation.domainMask(),
+                    payload = QueuedMutationCodec.encode(mutation),
+                    updatedAtEpochMs = now
+                )
+            )
+
+        schedule()
+    }
+
+    fun schedule() {
+        val request = OneTimeWorkRequestBuilder<OfflineSyncWorker>()
+            .setInputData(
+                Data.Builder()
+                    .putString(
+                        OfflineSyncWorker.HOUSEHOLD_ID,
+                        householdId
+                    )
+                    .build()
+            )
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(NetworkType.CONNECTED)
+                    .build()
+            )
+            .setBackoffCriteria(
+                BackoffPolicy.EXPONENTIAL,
+                10,
+                TimeUnit.SECONDS
+            )
+            .build()
+
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "mealplanner-sync-$householdId",
+            ExistingWorkPolicy.REPLACE,
+            request
+        )
+    }
+}
+
+internal class OfflineSyncWorker(
+    appContext: Context,
+    params: WorkerParameters
+) : CoroutineWorker(appContext, params) {
+
+    override suspend fun doWork(): Result {
+        val householdId =
+            inputData.getString(HOUSEHOLD_ID)
+                ?: return Result.failure()
+
+        val status = SupabaseProvider.client.auth.sessionStatus.first {
+            it != SessionStatus.Initializing
+        }
+        if (status !is SessionStatus.Authenticated) {
+            return Result.retry()
+        }
+
+        val database =
+            MealPlannerDatabaseProvider.get(applicationContext)
+        val dao = database.pendingMutationDao()
+        val repository = CloudMealRepository(
+            context = applicationContext,
+            householdId = householdId
+        )
+
+        while (true) {
+            val pending = dao.next(householdId)
+                ?: return Result.success()
+
+            try {
+                applyQueuedMutation(
+                    repository = repository,
+                    mutation = QueuedMutationCodec.decode(
+                        pending.payload
+                    )
+                )
+                dao.delete(pending.id)
+            } catch (e: Exception) {
+                dao.markFailure(
+                    id = pending.id,
+                    message = e.message
+                )
+                return Result.retry()
+            }
+        }
+    }
+
+    companion object {
+        const val HOUSEHOLD_ID =
+            "mealplanner_household_id"
+    }
+}
+
+private suspend fun applyQueuedMutation(
+    repository: CloudMealRepository,
+    mutation: QueuedMutation
+) {
+    when (mutation) {
+        is QueuedMutation.UpsertIngredient -> {
+            repository.upsertIngredient(mutation.ingredient)
+        }
+
+        is QueuedMutation.DeleteIngredient -> {
+            repository.deleteIngredient(
+                id = mutation.ingredientId,
+                imagePath = mutation.imagePath
+            )
+        }
+
+        is QueuedMutation.UpsertIngredientCategory -> {
+            repository.upsertIngredientCategory(
+                mutation.category
+            )
+        }
+
+        is QueuedMutation.UpsertRecipe -> {
+            repository.upsertRecipe(mutation.recipe)
+        }
+
+        is QueuedMutation.DeleteRecipe -> {
+            repository.deleteRecipe(
+                id = mutation.recipeId,
+                imagePath = mutation.imagePath
+            )
+        }
+
+        is QueuedMutation.UpsertRecipeCategory -> {
+            repository.upsertRecipeCategory(
+                mutation.category
+            )
+        }
+
+        is QueuedMutation.SetPantry -> {
+            repository.setPantry(
+                ingredientId = mutation.ingredientId,
+                amountBase = mutation.amountBase
+            )
+        }
+
+        is QueuedMutation.SetWeekState -> {
+            repository.setHouseholdSandwich(
+                mutation.sandwichRecipeId
+            )
+            repository.saveWeekState(
+                weeklyPlanId = mutation.weeklyPlanId,
+                plan = mutation.plan.mapKeys {
+                    DayOfWeek.valueOf(it.key)
+                },
+                dayModes = mutation.dayModes
+                    .mapKeys { DayOfWeek.valueOf(it.key) }
+                    .mapValues { DayMode.valueOf(it.value) },
+                lockedDays = mutation.lockedDays
+                    .mapTo(mutableSetOf()) {
+                        DayOfWeek.valueOf(it)
+                    },
+                sandwichRecipeId =
+                    mutation.sandwichRecipeId,
+                sandwichDay = mutation.sandwichDay?.let(
+                    DayOfWeek::valueOf
+                )
+            )
+        }
+
+        is QueuedMutation.SetDayPrep -> {
+            repository.setDayPrepLimit(
+                weeklyPlanId = mutation.weeklyPlanId,
+                day = DayOfWeek.valueOf(mutation.day),
+                maxPrepMinutes = mutation.maxPrepMinutes
+            )
+        }
+
+        is QueuedMutation.ReplaceLunch -> {
+            repository.replaceLunchRecipes(
+                weeklyPlanId = mutation.weeklyPlanId,
+                recipeIds = mutation.recipeIds
+            )
+        }
+
+        is QueuedMutation.SetShoppingIncluded -> {
+            repository.setShoppingIncluded(
+                weeklyPlanId = mutation.weeklyPlanId,
+                ingredientId = mutation.ingredientId,
+                included = mutation.included
+            )
+            if (!mutation.included) {
+                repository.setShoppingChecked(
+                    weeklyPlanId = mutation.weeklyPlanId,
+                    ingredientId = mutation.ingredientId,
+                    checked = false
+                )
+            }
+        }
+
+        is QueuedMutation.SetShoppingChecked -> {
+            repository.setShoppingChecked(
+                weeklyPlanId = mutation.weeklyPlanId,
+                ingredientId = mutation.ingredientId,
+                checked = mutation.checked
+            )
+        }
+
+        is QueuedMutation.ClearShopping -> {
+            repository.clearShoppingChecks(
+                mutation.weeklyPlanId
+            )
+        }
+    }
+}
