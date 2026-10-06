@@ -72,7 +72,7 @@ class MealPlannerState(
     var lastError by mutableStateOf<String?>(null)
         private set
 
-    var syncIndicator by mutableStateOf(SyncIndicator.IDLE)
+    internal var syncIndicator by mutableStateOf(SyncIndicator.IDLE)
         private set
 
     init {
