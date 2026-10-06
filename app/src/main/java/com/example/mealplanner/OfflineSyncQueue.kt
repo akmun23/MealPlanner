@@ -75,6 +75,12 @@ internal interface PendingMutationDao : PendingMutationStore {
         from pending_mutations
         where household_id = :householdId
           and conflict = 0
+          and not exists (
+              select 1
+              from pending_mutations blocked
+              where blocked.household_id = :householdId
+                and blocked.conflict = 1
+          )
         order by priority asc, updated_at_epoch_ms asc
         limit 1
         """
