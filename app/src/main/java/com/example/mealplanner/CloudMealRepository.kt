@@ -542,7 +542,7 @@ class CloudMealRepository(
         }
     }
 
-    suspend fun loadIngredientsSnapshot(): CloudIngredientsSnapshot =
+    internal suspend fun loadIngredientsSnapshot(): CloudIngredientsSnapshot =
         withContext(Dispatchers.IO) {
             coroutineScope {
                 val ingredientsDeferred = async {
@@ -613,7 +613,7 @@ class CloudMealRepository(
             }
         }
 
-    suspend fun loadRecipesSnapshot(): CloudRecipesSnapshot =
+    internal suspend fun loadRecipesSnapshot(): CloudRecipesSnapshot =
         withContext(Dispatchers.IO) {
             coroutineScope {
                 val categoriesDeferred = async {
@@ -717,7 +717,7 @@ class CloudMealRepository(
             }
         }
 
-    suspend fun loadPantrySnapshot(): Map<String, Double> =
+    internal suspend fun loadPantrySnapshot(): Map<String, Double> =
         withContext(Dispatchers.IO) {
             supabase.from("pantry_items").select {
                 filter { eq("household_id", householdId) }
@@ -725,7 +725,7 @@ class CloudMealRepository(
                 .associate { it.ingredientId to it.amountBase }
         }
 
-    suspend fun loadWeekSnapshot(): CloudWeekSnapshot =
+    internal suspend fun loadWeekSnapshot(): CloudWeekSnapshot =
         withContext(Dispatchers.IO) {
             val settings = supabase.from("household_settings").select {
                 filter { eq("household_id", householdId) }
@@ -810,7 +810,7 @@ class CloudMealRepository(
             }
         }
 
-    suspend fun loadShoppingSnapshot(
+    internal suspend fun loadShoppingSnapshot(
         weeklyPlanId: String
     ): CloudShoppingSnapshot =
         withContext(Dispatchers.IO) {
@@ -845,7 +845,7 @@ class CloudMealRepository(
             }
         }
 
-    suspend fun loadHistorySnapshot(): List<MealHistoryEntry> =
+    internal suspend fun loadHistorySnapshot(): List<MealHistoryEntry> =
         withContext(Dispatchers.IO) {
             supabase.from("meal_history").select {
                 filter {
@@ -1369,7 +1369,7 @@ class CloudMealRepository(
         )
     }
 
-    suspend fun startRealtime(
+    internal suspend fun startRealtime(
         scope: CoroutineScope,
         onChanged: suspend (CloudSyncDomain) -> Unit
     ) {
