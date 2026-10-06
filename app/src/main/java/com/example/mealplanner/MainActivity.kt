@@ -3379,6 +3379,8 @@ private fun SettingsScreen(
     var showFeedback by remember { mutableStateOf(false) }
     var feedback by remember { mutableStateOf("") }
     var showRenameHome by remember { mutableStateOf(false) }
+    var renameBusy by remember { mutableStateOf(false) }
+    var feedbackBusy by remember { mutableStateOf(false) }
     var homeName by remember(household.name) {
         mutableStateOf(household.name)
     }
@@ -3399,21 +3401,31 @@ private fun SettingsScreen(
             confirmButton = {
                 Button(
                     onClick = {
+                        renameBusy = true
                         scope.launch {
-                            val renamed = onRenameHousehold(homeName.trim())
-                            if (renamed) {
-                                showRenameHome = false
-                            } else {
-                                Toast.makeText(
-                                    context,
-                                    "Kunne ikke ændre navnet",
-                                    Toast.LENGTH_SHORT
-                                ).show()
+                            try {
+                                val renamed =
+                                    onRenameHousehold(
+                                        homeName.trim()
+                                    )
+                                if (renamed) {
+                                    showRenameHome = false
+                                } else {
+                                    Toast.makeText(
+                                        context,
+                                        "Kunne ikke ændre navnet",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                            } finally {
+                                renameBusy = false
                             }
                         }
                     },
-                    enabled = homeName.trim().isNotBlank() &&
-                        homeName.trim() != household.name
+                    enabled =
+                        !renameBusy &&
+                            homeName.trim().isNotBlank() &&
+                            homeName.trim() != household.name
                 ) {
                     Text("Gem")
                 }
@@ -3443,7 +3455,9 @@ private fun SettingsScreen(
             confirmButton = {
                 Button(
                     onClick = {
+                        feedbackBusy = true
                         state.submitFeedback(feedback) { sent ->
+                            feedbackBusy = false
                             if (sent) {
                                 feedback = ""
                                 showFeedback = false
@@ -3455,7 +3469,9 @@ private fun SettingsScreen(
                             }
                         }
                     },
-                    enabled = feedback.trim().length >= 3
+                    enabled =
+                        !feedbackBusy &&
+                            feedback.trim().length >= 3
                 ) {
                     Text("Send")
                 }
