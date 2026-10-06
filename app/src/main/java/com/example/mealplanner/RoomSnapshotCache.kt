@@ -105,6 +105,7 @@ internal object MealPlannerDatabaseProvider {
                 """
                 create table if not exists pending_mutations (
                     id text not null primary key,
+                    revision text not null,
                     household_id text not null,
                     mutation_key text not null,
                     priority integer not null,
