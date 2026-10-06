@@ -327,11 +327,21 @@ private fun JsonObject.booleanValue(name: String): Boolean? =
 
 internal fun realtimeEventFor(
     table: String,
-    action: PostgresAction
+    action: PostgresAction,
+    expectedHouseholdId: String
 ): CloudRealtimeEvent? {
     val record = action.recordOrNull()
     val oldRecord = action.oldRecordOrNull()
     val source = record ?: oldRecord
+    val eventHouseholdId =
+        source?.stringValue("household_id")
+
+    if (
+        eventHouseholdId != null &&
+        eventHouseholdId != expectedHouseholdId
+    ) {
+        return null
+    }
 
     return when (table) {
         "pantry_items" -> {
@@ -1512,14 +1522,12 @@ class CloudMealRepository(
                 schema = "public"
             ) {
                 this.table = table
-                filter {
-                    eq("household_id", householdId)
-                }
             }.onEach { action ->
                 when (
                     val event = realtimeEventFor(
                         table = table,
-                        action = action
+                        action = action,
+                        expectedHouseholdId = householdId
                     )
                 ) {
                     is CloudRealtimeEvent.PantryChanged,
