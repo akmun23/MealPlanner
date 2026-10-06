@@ -35,12 +35,17 @@ import kotlin.math.abs
 
 @Entity(
     tableName = "pending_mutations",
-    indices = [Index("household_id")]
+    indices = [
+        Index("household_id"),
+        Index("batch_id")
+    ]
 )
 internal data class PendingMutationEntity(
     @PrimaryKey
     val id: String,
     val revision: String,
+    @ColumnInfo(name = "batch_id")
+    val batchId: String = "single",
     @ColumnInfo(name = "household_id")
     val householdId: String,
     @ColumnInfo(name = "mutation_key")
@@ -157,7 +162,7 @@ internal interface PendingMutationDao : PendingMutationStore {
 
     @Query(
         """
-        select count(*)
+        select count(distinct batch_id)
         from pending_mutations
         where household_id = :householdId
           and conflict = 1
@@ -185,13 +190,11 @@ internal interface PendingMutationDao : PendingMutationStore {
         update pending_mutations
         set conflict = 1,
             last_error = :message
-        where id = :id
-          and revision = :revision
+        where batch_id = :batchId
         """
     )
     override suspend fun markConflict(
-        id: String,
-        revision: String,
+        batchId: String,
         message: String?
     ): Int
 
@@ -537,16 +540,26 @@ internal class OfflineSyncQueue(
                 .find(householdId)
                 ?.payload
 
-        val entities = mutations.mapIndexed { index, mutation ->
+        val keyedMutations = mutations.map { mutation ->
             val key = mutation.key()
             val id = "$householdId|$key"
-            val existing = dao.find(id)
+            Triple(mutation, id, dao.find(id))
+        }
+        val batchId = keyedMutations
+            .firstNotNullOfOrNull { (_, _, existing) ->
+                existing?.batchId
+            }
+            ?: UUID.randomUUID().toString()
 
+        val entities = keyedMutations.mapIndexed {
+                index,
+                (mutation, id, existing) ->
             PendingMutationEntity(
                 id = id,
                 revision = UUID.randomUUID().toString(),
+                batchId = batchId,
                 householdId = householdId,
-                mutationKey = key,
+                mutationKey = mutation.key(),
                 priority = mutation.priority(),
                 domainMask = mutation.domainMask(),
                 payload = QueuedMutationCodec.encode(mutation),
@@ -636,8 +649,7 @@ internal interface PendingMutationStore {
     ): Int
 
     suspend fun markConflict(
-        id: String,
-        revision: String,
+        batchId: String,
         message: String?
     ): Int
 
@@ -675,8 +687,7 @@ internal class OfflineSyncDrain(
 
                 if (hasConflict(pending, mutation)) {
                     store.markConflict(
-                        id = pending.id,
-                        revision = pending.revision,
+                        batchId = pending.batchId,
                         message = "Ændret på en anden enhed"
                     )
                     continue
