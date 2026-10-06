@@ -34,7 +34,8 @@ object WeeklyPlanner {
     ): PlannerResult {
         val dinnerRecipes = recipes.filter {
             it.mealType == MealType.DINNER &&
-                it.autoRotationEnabled
+                it.autoRotationEnabled &&
+                hasRequiredPantryStock(it, pantry)
         }
 
         if (dinnerRecipes.isEmpty() && weeklySandwichRecipeId == null) {
@@ -182,7 +183,8 @@ object WeeklyPlanner {
 
         val dinnerRecipes = recipes.filter {
             it.mealType == MealType.DINNER &&
-                it.autoRotationEnabled
+                it.autoRotationEnabled &&
+                hasRequiredPantryStock(it, pantry)
         }
         val recipesById = recipes.associateBy { it.id }
         val oldId = currentPlan[day]
@@ -298,6 +300,15 @@ object WeeklyPlanner {
 
         return best
     }
+
+    internal fun hasRequiredPantryStock(
+        recipe: Recipe,
+        pantry: Map<String, Double>
+    ): Boolean =
+        recipe.pantryPrerequisites.all { prerequisite ->
+            val available = pantry[prerequisite.ingredientId] ?: 0.0
+            available + 0.00001 >= prerequisite.minimumAmountBase
+        }
 
     private fun fitsPrepLimit(
         recipe: Recipe,
