@@ -7,11 +7,11 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -36,12 +36,14 @@ class MealPlannerState(
         context = context.applicationContext,
         householdId = householdId
     )
+    private val offlineSyncQueue = OfflineSyncQueue(
+        context = context.applicationContext,
+        householdId = householdId
+    )
     private val reloadMutex = Mutex()
+    private val mutationQueueMutex = Mutex()
     private var cachePersistJob: Job? = null
     private val syncTracker = SyncGenerationTracker()
-    private val coalescedMutations = mutableMapOf<String, Job>()
-    private var pendingSaveCount = 0
-    private var syncHadFailure = false
     private var syncStatusClearJob: Job? = null
 
     val ingredients = mutableStateListOf<Ingredient>()
@@ -87,6 +89,10 @@ class MealPlannerState(
         }
 
         scope.launch {
+            observeSyncQueue()
+        }
+
+        scope.launch {
             initialize()
         }
     }
@@ -102,21 +108,73 @@ class MealPlannerState(
                 isLoading = false
             }
 
+        val hasPendingMutations =
+            runCatching {
+                offlineSyncQueue.hasPendingMutations()
+            }.getOrDefault(false)
+
+        if (hasPendingMutations) {
+            offlineSyncQueue.schedule()
+        }
+
         try {
-            reload(syncHistory = true)
-            syncIndicator = SyncIndicator.IDLE
+            if (!hasPendingMutations || !hasCachedSnapshot) {
+                reload(syncHistory = true)
+            }
             repository.startRealtime(scope) { event ->
                 handleRealtime(event)
             }
         } catch (e: Exception) {
             if (hasCachedSnapshot) {
-                syncIndicator = SyncIndicator.OFFLINE
+                syncIndicator = if (hasPendingMutations) {
+                    SyncIndicator.PENDING
+                } else {
+                    SyncIndicator.OFFLINE
+                }
             } else {
                 lastError = e.message ?: "Kunne ikke hente data."
             }
         } finally {
             isLoading = false
         }
+    }
+
+    private suspend fun observeSyncQueue() {
+        var previousCount = 0
+
+        offlineSyncQueue.observePendingCount()
+            .collectLatest { count ->
+                when {
+                    count > 0 -> {
+                        syncStatusClearJob?.cancel()
+                        syncIndicator = SyncIndicator.PENDING
+                    }
+
+                    previousCount > 0 -> {
+                        syncIndicator = SyncIndicator.SAVED
+                        runCatching {
+                            reload(syncHistory = false)
+                        }
+                        syncStatusClearJob?.cancel()
+                        syncStatusClearJob = scope.launch {
+                            delay(1200L)
+                            if (
+                                !offlineSyncQueue
+                                    .hasPendingMutations()
+                            ) {
+                                syncIndicator =
+                                    SyncIndicator.IDLE
+                            }
+                        }
+                    }
+
+                    syncIndicator == SyncIndicator.PENDING -> {
+                        syncIndicator = SyncIndicator.IDLE
+                    }
+                }
+
+                previousCount = count
+            }
     }
 
     suspend fun close() {
@@ -145,6 +203,8 @@ class MealPlannerState(
     }
 
     private suspend fun reload(domain: CloudSyncDomain) {
+        if (offlineSyncQueue.hasPending(domain)) return
+
         var applied = false
 
         reloadMutex.withLock {
@@ -242,6 +302,8 @@ class MealPlannerState(
     private suspend fun handleRealtime(
         event: CloudRealtimeEvent
     ) {
+        if (offlineSyncQueue.hasPending(event.domain)) return
+
         when (event) {
             is CloudRealtimeEvent.DomainChanged -> {
                 reload(event.domain)
@@ -485,13 +547,6 @@ class MealPlannerState(
     private fun scheduleCachePersist(
         delayMillis: Long = 100L
     ) {
-        if (
-            pendingSaveCount > 0 ||
-            syncHadFailure
-        ) {
-            return
-        }
-
         val snapshot = currentSnapshot() ?: return
 
         cachePersistJob?.cancel()
@@ -503,121 +558,42 @@ class MealPlannerState(
         }
     }
 
-    private fun beginSave() {
-        syncStatusClearJob?.cancel()
-        syncStatusClearJob = null
-        if (pendingSaveCount == 0) {
-            syncHadFailure = false
-        }
-        pendingSaveCount += 1
-        syncIndicator = SyncIndicator.SAVING
-    }
-
-    private fun finishSave(success: Boolean?) {
-        if (success == false) {
-            syncHadFailure = true
-        }
-        pendingSaveCount =
-            (pendingSaveCount - 1).coerceAtLeast(0)
-
-        if (pendingSaveCount > 0) {
-            syncIndicator = SyncIndicator.SAVING
-            return
-        }
-
-        syncIndicator = if (syncHadFailure) {
-            SyncIndicator.ERROR
-        } else {
-            SyncIndicator.SAVED
-        }
-
-        syncStatusClearJob = scope.launch {
-            delay(if (syncHadFailure) 2500L else 1200L)
-            if (pendingSaveCount == 0) {
-                syncIndicator = SyncIndicator.IDLE
-            }
-        }
-    }
-
-    private fun runMutation(
-        domains: Set<CloudSyncDomain>,
-        keys: Set<SyncMutationKey> = emptySet(),
-        block: suspend () -> Unit
+    private fun enqueueMutation(
+        mutation: QueuedMutation
     ) {
+        enqueueMutations(listOf(mutation))
+    }
+
+    private fun enqueueMutations(
+        mutations: List<QueuedMutation>
+    ) {
+        if (mutations.isEmpty()) return
+
+        val domains = mutations
+            .flatMap { it.domains() }
+            .toSet()
+
         syncTracker.markLocalChange(domains)
-        syncTracker.beginPending(keys)
-        beginSave()
+        syncIndicator = SyncIndicator.SAVING
 
         scope.launch {
-            var success: Boolean? = false
-            try {
-                block()
-                success = true
-            } catch (e: CancellationException) {
-                success = null
-                throw e
-            } catch (e: Exception) {
-                lastError =
-                    e.message ?: "Ændringen kunne ikke gemmes."
-                domains.forEach { domain ->
-                    runCatching { reload(domain) }
-                }
-            } finally {
-                syncTracker.endPending(keys)
-                finishSave(success)
-                if (success == true) {
-                    scheduleCachePersist()
+            mutationQueueMutex.withLock {
+                val snapshot = currentSnapshot()
+                    ?: return@withLock
+
+                try {
+                    offlineSyncQueue.enqueue(
+                        snapshot = snapshot,
+                        mutations = mutations
+                    )
+                } catch (e: Exception) {
+                    lastError =
+                        e.message
+                            ?: "Ændringen kunne ikke gemmes lokalt."
+                    syncIndicator = SyncIndicator.ERROR
                 }
             }
         }
-    }
-
-    private fun scheduleMutation(
-        coalesceKey: String,
-        domains: Set<CloudSyncDomain>,
-        keys: Set<SyncMutationKey> = emptySet(),
-        delayMillis: Long = 180L,
-        block: suspend () -> Unit
-    ) {
-        syncTracker.markLocalChange(domains)
-        syncTracker.beginPending(keys)
-        beginSave()
-
-        val previous = coalescedMutations.remove(coalesceKey)
-
-        val job = scope.launch {
-            var success: Boolean? = false
-            try {
-                delay(delayMillis)
-                block()
-                success = true
-            } catch (e: CancellationException) {
-                success = null
-                throw e
-            } catch (e: Exception) {
-                lastError =
-                    e.message ?: "Ændringen kunne ikke gemmes."
-                domains.forEach { domain ->
-                    runCatching { reload(domain) }
-                }
-            } finally {
-                syncTracker.endPending(keys)
-                finishSave(success)
-                if (success == true) {
-                    scheduleCachePersist()
-                }
-            }
-        }
-
-        coalescedMutations[coalesceKey] = job
-        job.invokeOnCompletion {
-            scope.launch {
-                if (coalescedMutations[coalesceKey] === job) {
-                    coalescedMutations.remove(coalesceKey)
-                }
-            }
-        }
-        previous?.cancel()
     }
 
     private fun persistWeek(clearChecks: Boolean = false) {
