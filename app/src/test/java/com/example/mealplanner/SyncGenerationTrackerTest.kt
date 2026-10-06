@@ -37,6 +37,30 @@ class SyncGenerationTrackerTest {
     }
 
     @Test
+    fun domainPendingReflectsAnyPendingEntity() {
+        val tracker = SyncGenerationTracker()
+        val key = SyncMutationKey(
+            domain = CloudSyncDomain.SHOPPING,
+            entityId = "checked:item"
+        )
+
+        tracker.beginPending(setOf(key))
+
+        assertTrue(
+            tracker.isDomainPending(CloudSyncDomain.SHOPPING)
+        )
+        assertFalse(
+            tracker.isDomainPending(CloudSyncDomain.PANTRY)
+        )
+
+        tracker.endPending(setOf(key))
+
+        assertFalse(
+            tracker.isDomainPending(CloudSyncDomain.SHOPPING)
+        )
+    }
+
+    @Test
     fun pendingEntityTracksOverlappingWrites() {
         val tracker = SyncGenerationTracker()
         val key = SyncMutationKey(
