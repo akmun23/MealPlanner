@@ -59,7 +59,7 @@ internal data class PendingMutationEntity(
 )
 
 @Dao
-internal interface PendingMutationDao {
+internal interface PendingMutationDao : PendingMutationStore {
     @Query(
         """
         select *
@@ -69,7 +69,9 @@ internal interface PendingMutationDao {
         limit 1
         """
     )
-    suspend fun next(householdId: String): PendingMutationEntity?
+    override suspend fun next(
+        householdId: String
+    ): PendingMutationEntity?
 
     @Query(
         """
@@ -78,7 +80,7 @@ internal interface PendingMutationDao {
           and revision = :revision
         """
     )
-    suspend fun deleteIfCurrent(
+    override suspend fun deleteIfCurrent(
         id: String,
         revision: String
     ): Int
@@ -92,7 +94,7 @@ internal interface PendingMutationDao {
           and revision = :revision
         """
     )
-    suspend fun markFailure(
+    override suspend fun markFailure(
         id: String,
         revision: String,
         message: String?
@@ -467,9 +469,64 @@ internal class OfflineSyncQueue(
 
         WorkManager.getInstance(context).enqueueUniqueWork(
             "mealplanner-sync-$householdId",
-            ExistingWorkPolicy.KEEP,
+            ExistingWorkPolicy.APPEND_OR_REPLACE,
             request
         )
+    }
+}
+
+internal interface PendingMutationStore {
+    suspend fun next(
+        householdId: String
+    ): PendingMutationEntity?
+
+    suspend fun deleteIfCurrent(
+        id: String,
+        revision: String
+    ): Int
+
+    suspend fun markFailure(
+        id: String,
+        revision: String,
+        message: String?
+    ): Int
+}
+
+internal enum class OfflineSyncDrainResult {
+    EMPTY,
+    RETRY
+}
+
+internal class OfflineSyncDrain(
+    private val store: PendingMutationStore,
+    private val applyMutation: suspend (QueuedMutation) -> Unit
+) {
+    suspend fun drain(
+        householdId: String
+    ): OfflineSyncDrainResult {
+        while (true) {
+            val pending = store.next(householdId)
+                ?: return OfflineSyncDrainResult.EMPTY
+
+            try {
+                applyMutation(
+                    QueuedMutationCodec.decode(
+                        pending.payload
+                    )
+                )
+                store.deleteIfCurrent(
+                    id = pending.id,
+                    revision = pending.revision
+                )
+            } catch (e: Exception) {
+                store.markFailure(
+                    id = pending.id,
+                    revision = pending.revision,
+                    message = e.message
+                )
+                return OfflineSyncDrainResult.RETRY
+            }
+        }
     }
 }
 
@@ -498,33 +555,22 @@ internal class OfflineSyncWorker(
             householdId = householdId
         )
 
-        while (true) {
-            val pending = dao.next(householdId)
-                ?: return Result.success()
-
-            try {
-                applyQueuedMutation(
-                    repository = repository,
-                    mutation = QueuedMutationCodec.decode(
-                        pending.payload
+        return when (
+            OfflineSyncDrain(
+                store = dao,
+                applyMutation = { mutation ->
+                    applyQueuedMutation(
+                        repository = repository,
+                        mutation = mutation
                     )
-                )
-                dao.deleteIfCurrent(
-                    id = pending.id,
-                    revision = pending.revision
-                )
-            } catch (e: Exception) {
-                dao.markFailure(
-                    id = pending.id,
-                    revision = pending.revision,
-                    message = e.message
-                )
-                return if (runAttemptCount >= 5) {
-                    Result.failure()
-                } else {
-                    Result.retry()
                 }
-            }
+            ).drain(householdId)
+        ) {
+            OfflineSyncDrainResult.EMPTY ->
+                Result.success()
+
+            OfflineSyncDrainResult.RETRY ->
+                Result.retry()
         }
     }
 
