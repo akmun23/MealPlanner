@@ -17,6 +17,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.temporal.TemporalAdjusters
 
 @Entity(tableName = "household_snapshots")
 internal data class HouseholdSnapshotEntity(
@@ -142,6 +143,7 @@ private data class CachedHistoryEntry(
 
 @Serializable
 private data class CachedCloudSnapshot(
+    val weekStart: String,
     val ingredients: List<CachedIngredient>,
     val ingredientCategories: List<CachedCategory>,
     val recipeCategories: List<CachedCategory>,
@@ -171,11 +173,21 @@ internal object RoomSnapshotCodec {
 
     fun decode(payload: String): CloudSnapshot? =
         runCatching {
-            json.decodeFromString<CachedCloudSnapshot>(payload)
-                .toCloudSnapshot()
+            val cached =
+                json.decodeFromString<CachedCloudSnapshot>(payload)
+            if (cached.weekStart != currentWeekStart().toString()) {
+                return null
+            }
+            cached.toCloudSnapshot()
         }.getOrNull()
 
+    private fun currentWeekStart(): LocalDate =
+        LocalDate.now().with(
+            TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)
+        )
+
     private fun CloudSnapshot.toCached() = CachedCloudSnapshot(
+        weekStart = currentWeekStart().toString(),
         ingredients = ingredients.map {
             CachedIngredient(
                 id = it.id,
