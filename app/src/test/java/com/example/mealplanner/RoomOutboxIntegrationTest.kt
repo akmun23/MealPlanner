@@ -142,6 +142,53 @@ class RoomOutboxIntegrationTest {
         database.close()
     }
 
+    @Test
+    fun conflictedMutationIsPausedUntilExplicitResolution() = runBlocking {
+        val database = openVersionTwoDatabase()
+        val pending = pendingPantry(
+            revision = "conflict",
+            amount = 3.0,
+            timestamp = 3L
+        ).copy(
+            baseSnapshotPayload = "base",
+            conflict = true
+        )
+
+        database.localStateDao()
+            .persistSnapshotAndMutations(
+                snapshot = HouseholdSnapshotEntity(
+                    householdId = "household",
+                    payload = "local",
+                    updatedAtEpochMs = 3L
+                ),
+                mutations = listOf(pending)
+            )
+
+        assertEquals(
+            null,
+            database.pendingMutationDao()
+                .next("household")
+        )
+        assertEquals(
+            1,
+            database.pendingMutationDao()
+                .conflicts("household")
+                .size
+        )
+
+        database.pendingMutationDao()
+            .forceConflicts("household")
+
+        val released =
+            database.pendingMutationDao()
+                .next("household")
+        assertEquals("conflict", released?.revision)
+        assertEquals(null, released?.baseSnapshotPayload)
+        assertEquals(false, released?.conflict)
+
+        database.close()
+    }
+
     private fun createVersionOneDatabase() {
         val sqlite = context.openOrCreateDatabase(
             databaseName,
