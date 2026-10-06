@@ -29,9 +29,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -186,6 +188,7 @@ fun MealPlannerApp(
 
     var tab by remember { mutableStateOf(AppTab.WEEK) }
     var page by remember { mutableStateOf<AppPage?>(null) }
+    val pantryListState = rememberLazyListState()
 
     fun navigateBack() {
         page = when (val current = page) {
@@ -323,6 +326,7 @@ fun MealPlannerApp(
                         )
                         AppTab.PANTRY -> PantryScreen(
                             state = state,
+                            listState = pantryListState,
                             onAddIngredient = {
                                 page = AppPage.IngredientEditor(null)
                             },
@@ -2055,10 +2059,14 @@ private fun IngredientEditorScreen(
 @Composable
 fun PantryScreen(
     state: MealPlannerState,
+    listState: LazyListState,
     onAddIngredient: () -> Unit,
     onEditIngredient: (String) -> Unit
 ) {
     var searchQuery by remember { mutableStateOf("") }
+    var selectedCategoryId by remember {
+        mutableStateOf<String?>(null)
+    }
     var editing by remember { mutableStateOf<Ingredient?>(null) }
 
     editing?.let { ingredient ->
@@ -2069,14 +2077,15 @@ fun PantryScreen(
         )
     }
 
-    val filtered = state.ingredients
-        .filter {
-            searchQuery.isBlank() ||
-                it.name.contains(searchQuery, ignoreCase = true)
-        }
-        .sortedBy { it.name.lowercase() }
+    val filtered = filterPantryIngredients(
+        ingredients = state.ingredients.toList(),
+        categories = state.ingredientCategories.toList(),
+        searchQuery = searchQuery,
+        selectedCategoryId = selectedCategoryId
+    )
 
     LazyColumn(
+        state = listState,
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -2105,8 +2114,23 @@ fun PantryScreen(
             SearchField(
                 value = searchQuery,
                 onValueChange = { searchQuery = it },
-                placeholder = "Søg i lageret"
+                placeholder = "Søg navn eller kategori"
             )
+        }
+
+        if (state.ingredientCategories.isNotEmpty()) {
+            item {
+                val selectedCategory = state.ingredientCategories
+                    .find { it.id == selectedCategoryId }
+
+                SimpleSelector(
+                    label = selectedCategory?.name ?: "Alle kategorier",
+                    options = listOf<IngredientCategory?>(null) +
+                        state.ingredientCategories.toList(),
+                    optionText = { it?.name ?: "Alle kategorier" },
+                    onSelected = { selectedCategoryId = it?.id }
+                )
+            }
         }
 
         items(filtered, key = { it.id }) { ingredient ->
@@ -2243,6 +2267,17 @@ fun ShoppingScreen(state: MealPlannerState) {
     var addToPantryItem by remember {
         mutableStateOf<ShoppingItem?>(null)
     }
+    var editPantryItem by remember {
+        mutableStateOf<ShoppingItem?>(null)
+    }
+
+    editPantryItem?.let { item ->
+        PantryAmountDialog(
+            ingredient = item.ingredient,
+            state = state,
+            onDismiss = { editPantryItem = null }
+        )
+    }
 
     addToPantryItem?.let { item ->
         AddPurchasedToPantryDialog(
@@ -2350,7 +2385,10 @@ fun ShoppingScreen(state: MealPlannerState) {
                                 item = item,
                                 state = state,
                                 included = true,
-                                checked = false
+                                checked = false,
+                                onEditPantry = {
+                                    editPantryItem = item
+                                }
                             )
                         }
                     }
@@ -2378,7 +2416,10 @@ fun ShoppingScreen(state: MealPlannerState) {
                             item = item,
                             state = state,
                             included = true,
-                            checked = false
+                            checked = false,
+                            onEditPantry = {
+                                editPantryItem = item
+                            }
                         )
                     }
                 }
@@ -2400,6 +2441,9 @@ fun ShoppingScreen(state: MealPlannerState) {
                         state = state,
                         included = true,
                         checked = true,
+                        onEditPantry = {
+                            editPantryItem = item
+                        },
                         onAddToPantry = {
                             addToPantryItem = item
                         }
@@ -2425,7 +2469,10 @@ fun ShoppingScreen(state: MealPlannerState) {
                         item = item,
                         state = state,
                         included = false,
-                        checked = false
+                        checked = false,
+                        onEditPantry = {
+                            editPantryItem = item
+                        }
                     )
                 }
             }
@@ -2441,6 +2488,7 @@ private fun ShoppingItemCard(
     state: MealPlannerState,
     included: Boolean,
     checked: Boolean,
+    onEditPantry: (() -> Unit)? = null,
     onAddToPantry: (() -> Unit)? = null
 ) {
     Card(
@@ -2489,17 +2537,15 @@ private fun ShoppingItemCard(
                     style = MaterialTheme.typography.bodyMedium
                 )
 
-                if (item.pantryBase > 0.0) {
-                    Text(
-                        "Lager: " +
-                            state.formatBaseAmount(
-                                item.ingredient,
-                                item.pantryBase
-                            ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
+                Text(
+                    "Lager: " +
+                        state.formatBaseAmount(
+                            item.ingredient,
+                            item.pantryBase
+                        ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
 
                 FilterChip(
                     selected = included,
@@ -2511,6 +2557,15 @@ private fun ShoppingItemCard(
                     },
                     label = { Text("Køb") }
                 )
+
+                if (onEditPantry != null) {
+                    TextButton(
+                        onClick = onEditPantry,
+                        contentPadding = PaddingValues(0.dp)
+                    ) {
+                        Text("Ret lager")
+                    }
+                }
 
                 if (checked && onAddToPantry != null) {
                     TextButton(
