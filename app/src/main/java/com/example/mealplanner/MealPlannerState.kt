@@ -223,12 +223,7 @@ class MealPlannerState(
                     domain = CloudSyncDomain.PANTRY,
                     entityId = "pantry:${event.ingredientId}"
                 )
-                if (
-                    syncTracker.isPending(key) ||
-                    syncTracker.isDomainPending(
-                        CloudSyncDomain.PANTRY
-                    )
-                ) return
+                if (syncTracker.isPending(key)) return
 
                 if (event.amountBase == null) {
                     pantry.remove(event.ingredientId)
@@ -245,12 +240,7 @@ class MealPlannerState(
                     domain = CloudSyncDomain.SHOPPING,
                     entityId = "checked:${event.ingredientId}"
                 )
-                if (
-                    syncTracker.isPending(key) ||
-                    syncTracker.isDomainPending(
-                        CloudSyncDomain.SHOPPING
-                    )
-                ) return
+                if (syncTracker.isPending(key)) return
 
                 if (event.checked == null) {
                     shoppingChecked.remove(event.ingredientId)
