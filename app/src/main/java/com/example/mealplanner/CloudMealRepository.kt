@@ -38,6 +38,7 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.temporal.TemporalAdjusters
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration.Companion.hours
 
 @Serializable
@@ -406,8 +407,14 @@ class CloudMealRepository(
     private val context: Context,
     private val householdId: String
 ) {
+    private data class CachedSignedImageUrl(
+        val url: String,
+        val refreshAtEpochMillis: Long
+    )
+
     private val supabase = SupabaseProvider.client
-    private val signedImageUrls = mutableMapOf<String, String>()
+    private val signedImageUrls =
+        ConcurrentHashMap<String, CachedSignedImageUrl>()
     private var realtimeChannel: RealtimeChannel? = null
     private var realtimeJobs: List<Job> = emptyList()
 
@@ -1396,10 +1403,23 @@ class CloudMealRepository(
     }
 
     private suspend fun signedImageUrl(path: String): String {
-        signedImageUrls[path]?.let { return it }
+        val now = System.currentTimeMillis()
+        signedImageUrls[path]
+            ?.takeIf {
+                it.refreshAtEpochMillis > now
+            }
+            ?.let {
+                return it.url
+            }
 
-        val url = supabase.storage["meal-images"].createSignedUrl(path, 24.hours)
-        signedImageUrls[path] = url
+        val url = supabase.storage["meal-images"]
+            .createSignedUrl(path, 24.hours)
+
+        signedImageUrls[path] = CachedSignedImageUrl(
+            url = url,
+            refreshAtEpochMillis =
+                now + 23L * 60L * 60L * 1000L
+        )
         return url
     }
 
