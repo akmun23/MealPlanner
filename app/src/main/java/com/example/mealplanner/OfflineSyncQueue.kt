@@ -80,13 +80,7 @@ internal interface PendingMutationDao : PendingMutationStore {
         from pending_mutations
         where household_id = :householdId
           and conflict = 0
-          and not exists (
-              select 1
-              from pending_mutations blocked
-              where blocked.household_id = :householdId
-                and blocked.conflict = 1
-          )
-        order by priority asc, updated_at_epoch_ms asc
+        order by priority asc, updated_at_epoch_ms asc, id asc
         limit 1
         """
     )
@@ -103,6 +97,19 @@ internal interface PendingMutationDao : PendingMutationStore {
         """
     )
     suspend fun find(id: String): PendingMutationEntity?
+
+    @Query(
+        """
+        select *
+        from pending_mutations
+        where batch_id = :batchId
+          and conflict = 0
+        order by priority asc, updated_at_epoch_ms asc, id asc
+        """
+    )
+    override suspend fun batch(
+        batchId: String
+    ): List<PendingMutationEntity>
 
     @Query(
         """
@@ -648,6 +655,10 @@ internal interface PendingMutationStore {
         householdId: String
     ): PendingMutationEntity?
 
+    suspend fun batch(
+        batchId: String
+    ): List<PendingMutationEntity>
+
     suspend fun deleteIfCurrent(
         id: String,
         revision: String
@@ -688,40 +699,72 @@ internal class OfflineSyncDrain(
         householdId: String
     ): OfflineSyncDrainResult {
         while (true) {
-            val pending = store.next(householdId)
+            val first = store.next(householdId)
                 ?: return OfflineSyncDrainResult.EMPTY
+            val batch = store.batch(first.batchId)
+                .ifEmpty { listOf(first) }
 
-            try {
-                val mutation = QueuedMutationCodec.decode(
-                    pending.payload
-                )
-
-                if (hasConflict(pending, mutation)) {
-                    store.markConflict(
-                        batchId = pending.batchId,
-                        message = "Ændret på en anden enhed"
+            val decoded = try {
+                batch.map { pending ->
+                    pending to QueuedMutationCodec.decode(
+                        pending.payload
                     )
-                    continue
-                }
-
-                applyMutation(mutation)
-                val deleted = store.deleteIfCurrent(
-                    id = pending.id,
-                    revision = pending.revision
-                )
-
-                if (deleted == 0) {
-                    onSuperseded(pending.id)
                 }
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 store.markFailure(
-                    id = pending.id,
-                    revision = pending.revision,
+                    id = first.id,
+                    revision = first.revision,
                     message = e.message
                 )
                 return OfflineSyncDrainResult.RETRY
+            }
+
+            val conflicts = try {
+                decoded.any { (pending, mutation) ->
+                    hasConflict(pending, mutation)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                store.markFailure(
+                    id = first.id,
+                    revision = first.revision,
+                    message = e.message
+                )
+                return OfflineSyncDrainResult.RETRY
+            }
+
+            if (conflicts) {
+                store.markConflict(
+                    batchId = first.batchId,
+                    message = "Ændret på en anden enhed"
+                )
+                continue
+            }
+
+            for ((pending, mutation) in decoded) {
+                try {
+                    applyMutation(mutation)
+                    val deleted = store.deleteIfCurrent(
+                        id = pending.id,
+                        revision = pending.revision
+                    )
+
+                    if (deleted == 0) {
+                        onSuperseded(pending.id)
+                    }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    store.markFailure(
+                        id = pending.id,
+                        revision = pending.revision,
+                        message = e.message
+                    )
+                    return OfflineSyncDrainResult.RETRY
+                }
             }
         }
     }
