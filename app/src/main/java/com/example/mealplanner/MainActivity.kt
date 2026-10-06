@@ -3471,15 +3471,14 @@ private fun ImagePickerBox(
     val context = LocalContext.current
 
     val launcher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.GetContent()
+        contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         if (uri != null) {
-            try {
+            runCatching {
                 context.contentResolver.takePersistableUriPermission(
                     uri,
                     Intent.FLAG_GRANT_READ_URI_PERMISSION
                 )
-            } catch (_: Exception) {
             }
             onImageSelected(uri.toString())
         }
@@ -3490,7 +3489,7 @@ private fun ImagePickerBox(
             .height(height)
             .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
-            .clickable { launcher.launch("image/*") },
+            .clickable { launcher.launch(arrayOf("image/*")) },
         contentAlignment = Alignment.Center
     ) {
         if (!imageUri.isNullOrBlank()) {
