@@ -771,22 +771,6 @@ private fun SummaryCard(
 }
 
 @Composable
-private fun NoticeCard(text: String) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer
-        ),
-        shape = RoundedCornerShape(16.dp)
-    ) {
-        Text(
-            text,
-            modifier = Modifier.padding(14.dp),
-            color = MaterialTheme.colorScheme.onSecondaryContainer
-        )
-    }
-}
-
-@Composable
 fun DayCard(
     day: DayOfWeek,
     state: MealPlannerState,
