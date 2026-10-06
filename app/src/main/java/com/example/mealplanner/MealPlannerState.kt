@@ -223,7 +223,12 @@ class MealPlannerState(
                     domain = CloudSyncDomain.PANTRY,
                     entityId = "pantry:${event.ingredientId}"
                 )
-                if (syncTracker.isPending(key)) return
+                if (
+                    syncTracker.isPending(key) ||
+                    syncTracker.isDomainPending(
+                        CloudSyncDomain.PANTRY
+                    )
+                ) return
 
                 if (event.amountBase == null) {
                     pantry.remove(event.ingredientId)
@@ -240,7 +245,12 @@ class MealPlannerState(
                     domain = CloudSyncDomain.SHOPPING,
                     entityId = "checked:${event.ingredientId}"
                 )
-                if (syncTracker.isPending(key)) return
+                if (
+                    syncTracker.isPending(key) ||
+                    syncTracker.isDomainPending(
+                        CloudSyncDomain.SHOPPING
+                    )
+                ) return
 
                 if (event.checked == null) {
                     shoppingChecked.remove(event.ingredientId)
@@ -258,7 +268,12 @@ class MealPlannerState(
                     domain = CloudSyncDomain.SHOPPING,
                     entityId = "included:${event.ingredientId}"
                 )
-                if (syncTracker.isPending(key)) return
+                if (
+                    syncTracker.isPending(key) ||
+                    syncTracker.isDomainPending(
+                        CloudSyncDomain.SHOPPING
+                    )
+                ) return
 
                 if (event.included == null) {
                     shoppingIncluded.remove(event.ingredientId)
@@ -538,7 +553,23 @@ class MealPlannerState(
         val sandwichRecipe = weeklySandwichRecipeId
         val selectedSandwichDay = sandwichDay
 
-        runMutation {
+        scheduleMutation(
+            coalesceKey = "week-state",
+            domains = if (clearChecks) {
+                setOf(
+                    CloudSyncDomain.WEEK,
+                    CloudSyncDomain.SHOPPING
+                )
+            } else {
+                setOf(CloudSyncDomain.WEEK)
+            },
+            keys = setOf(
+                SyncMutationKey(
+                    domain = CloudSyncDomain.WEEK,
+                    entityId = "week:" + id
+                )
+            )
+        ) {
             if (clearChecks) {
                 shoppingIncluded.clear()
                 repository.clearShoppingChecks(id)
@@ -615,7 +646,15 @@ class MealPlannerState(
 
         ingredients += ingredient
 
-        runMutation {
+        runMutation(
+            domains = setOf(CloudSyncDomain.INGREDIENTS),
+            keys = setOf(
+                SyncMutationKey(
+                    domain = CloudSyncDomain.INGREDIENTS,
+                    entityId = "ingredient:" + ingredient.id
+                )
+            )
+        ) {
             val saved = repository.upsertIngredient(ingredient)
             val index = ingredients.indexOfFirst { it.id == saved.id }
             if (index >= 0) ingredients[index] = saved
@@ -654,7 +693,15 @@ class MealPlannerState(
         )
         ingredients[index] = updated
 
-        runMutation {
+        runMutation(
+            domains = setOf(CloudSyncDomain.INGREDIENTS),
+            keys = setOf(
+                SyncMutationKey(
+                    domain = CloudSyncDomain.INGREDIENTS,
+                    entityId = "ingredient:" + id
+                )
+            )
+        ) {
             val saved = repository.upsertIngredient(updated)
             val current = ingredients.indexOfFirst { it.id == id }
             if (current >= 0) ingredients[current] = saved
@@ -683,7 +730,9 @@ class MealPlannerState(
         val nextPosition =
             (ingredientCategories.maxOfOrNull { it.position } ?: -1) + 1
 
-        runMutation {
+        runMutation(
+            domains = setOf(CloudSyncDomain.INGREDIENTS)
+        ) {
             val saved = repository.createIngredientCategory(
                 name = clean,
                 position = nextPosition
@@ -715,7 +764,15 @@ class MealPlannerState(
         ingredientCategories[index] =
             ingredientCategories[index].copy(name = clean)
 
-        runMutation {
+        runMutation(
+            domains = setOf(CloudSyncDomain.INGREDIENTS),
+            keys = setOf(
+                SyncMutationKey(
+                    domain = CloudSyncDomain.INGREDIENTS,
+                    entityId = "ingredient-category:" + categoryId
+                )
+            )
+        ) {
             repository.renameIngredientCategory(
                 categoryId = categoryId,
                 name = clean
@@ -751,7 +808,9 @@ class MealPlannerState(
         val nextPosition =
             (recipeCategories.maxOfOrNull { it.position } ?: -1) + 1
 
-        runMutation {
+        runMutation(
+            domains = setOf(CloudSyncDomain.RECIPES)
+        ) {
             val saved = repository.createRecipeCategory(
                 name = clean,
                 position = nextPosition
@@ -783,7 +842,15 @@ class MealPlannerState(
         recipeCategories[index] =
             recipeCategories[index].copy(name = clean)
 
-        runMutation {
+        runMutation(
+            domains = setOf(CloudSyncDomain.RECIPES),
+            keys = setOf(
+                SyncMutationKey(
+                    domain = CloudSyncDomain.RECIPES,
+                    entityId = "recipe-category:" + categoryId
+                )
+            )
+        ) {
             repository.renameRecipeCategory(
                 categoryId = categoryId,
                 name = clean
@@ -824,7 +891,23 @@ class MealPlannerState(
         pantry.remove(ingredientId)
         shoppingChecked.remove(ingredientId)
 
-        runMutation {
+        runMutation(
+            domains = setOf(
+                CloudSyncDomain.INGREDIENTS,
+                CloudSyncDomain.PANTRY,
+                CloudSyncDomain.SHOPPING
+            ),
+            keys = setOf(
+                SyncMutationKey(
+                    domain = CloudSyncDomain.INGREDIENTS,
+                    entityId = "ingredient:" + ingredientId
+                ),
+                SyncMutationKey(
+                    domain = CloudSyncDomain.PANTRY,
+                    entityId = "pantry:" + ingredientId
+                )
+            )
+        ) {
             repository.deleteIngredient(
                 id = ingredientId,
                 imagePath = ingredient.imagePath
@@ -873,7 +956,15 @@ class MealPlannerState(
 
         recipes += recipe
 
-        runMutation {
+        runMutation(
+            domains = setOf(CloudSyncDomain.RECIPES),
+            keys = setOf(
+                SyncMutationKey(
+                    domain = CloudSyncDomain.RECIPES,
+                    entityId = "recipe:" + recipe.id
+                )
+            )
+        ) {
             val saved = repository.upsertRecipe(recipe)
             val index = recipes.indexOfFirst { it.id == saved.id }
             if (index >= 0) recipes[index] = saved
@@ -943,7 +1034,21 @@ class MealPlannerState(
         shoppingIncluded.clear()
         }
 
-        runMutation {
+        runMutation(
+            domains = buildSet {
+                add(CloudSyncDomain.RECIPES)
+                if (weekChanged) {
+                    add(CloudSyncDomain.WEEK)
+                    add(CloudSyncDomain.SHOPPING)
+                }
+            },
+            keys = setOf(
+                SyncMutationKey(
+                    domain = CloudSyncDomain.RECIPES,
+                    entityId = "recipe:" + id
+                )
+            )
+        ) {
             val saved = repository.upsertRecipe(updated)
             val current = recipes.indexOfFirst { it.id == saved.id }
             if (current >= 0) recipes[current] = saved
@@ -1039,7 +1144,19 @@ class MealPlannerState(
         shoppingChecked.clear()
         shoppingIncluded.clear()
 
-        runMutation {
+        runMutation(
+            domains = setOf(
+                CloudSyncDomain.RECIPES,
+                CloudSyncDomain.WEEK,
+                CloudSyncDomain.SHOPPING
+            ),
+            keys = setOf(
+                SyncMutationKey(
+                    domain = CloudSyncDomain.RECIPES,
+                    entityId = "recipe:" + recipeId
+                )
+            )
+        ) {
             repository.deleteRecipe(
                 id = recipeId,
                 imagePath = recipe.imagePath
@@ -1068,7 +1185,18 @@ class MealPlannerState(
         shoppingIncluded.clear()
 
         val id = weeklyPlanId ?: return
-        runMutation {
+        runMutation(
+            domains = setOf(
+                CloudSyncDomain.WEEK,
+                CloudSyncDomain.SHOPPING
+            ),
+            keys = setOf(
+                SyncMutationKey(
+                    domain = CloudSyncDomain.WEEK,
+                    entityId = "week:" + id
+                )
+            )
+        ) {
             repository.clearShoppingChecks(id)
             repository.saveWeekState(
                 weeklyPlanId = id,
@@ -1095,7 +1223,12 @@ class MealPlannerState(
         shoppingChecked.clear()
         shoppingIncluded.clear()
 
-        runMutation {
+        runMutation(
+            domains = setOf(
+                CloudSyncDomain.WEEK,
+                CloudSyncDomain.SHOPPING
+            )
+        ) {
             repository.setHouseholdSandwich(recipeId)
             weeklyPlanId?.let {
                 repository.clearShoppingChecks(it)
@@ -1140,7 +1273,16 @@ class MealPlannerState(
         dayMaxPrepMinutes[day] = normalized
 
         val planId = weeklyPlanId ?: return
-        runMutation {
+        scheduleMutation(
+            coalesceKey = "day-prep:" + day.value,
+            domains = setOf(CloudSyncDomain.WEEK),
+            keys = setOf(
+                SyncMutationKey(
+                    domain = CloudSyncDomain.WEEK,
+                    entityId = "day-prep:" + day.value
+                )
+            )
+        ) {
             repository.setDayPrepLimit(
                 weeklyPlanId = planId,
                 day = day,
@@ -1160,7 +1302,16 @@ class MealPlannerState(
         val base = unit.toBase(amount.coerceAtLeast(0.0))
         pantry[ingredientId] = base
 
-        runMutation {
+        scheduleMutation(
+            coalesceKey = "pantry:" + ingredientId,
+            domains = setOf(CloudSyncDomain.PANTRY),
+            keys = setOf(
+                SyncMutationKey(
+                    domain = CloudSyncDomain.PANTRY,
+                    entityId = "pantry:" + ingredientId
+                )
+            )
+        ) {
             repository.setPantry(ingredientId, base)
         }
     }
@@ -1177,7 +1328,16 @@ class MealPlannerState(
         val next = (pantry[ingredientId] ?: 0.0) + addedBase
         pantry[ingredientId] = next
 
-        runMutation {
+        scheduleMutation(
+            coalesceKey = "pantry:" + ingredientId,
+            domains = setOf(CloudSyncDomain.PANTRY),
+            keys = setOf(
+                SyncMutationKey(
+                    domain = CloudSyncDomain.PANTRY,
+                    entityId = "pantry:" + ingredientId
+                )
+            )
+        ) {
             repository.setPantry(ingredientId, next)
         }
     }
@@ -1194,7 +1354,15 @@ class MealPlannerState(
             pantry[ingredientId] = amountBase
         }
 
-        runMutation {
+        runMutation(
+            domains = setOf(CloudSyncDomain.PANTRY),
+            keys = updates.keys.mapTo(mutableSetOf()) {
+                SyncMutationKey(
+                    domain = CloudSyncDomain.PANTRY,
+                    entityId = "pantry:" + it
+                )
+            }
+        ) {
             repository.setPantryBatch(updates)
         }
     }
@@ -1439,7 +1607,12 @@ class MealPlannerState(
         val planId = weeklyPlanId ?: return
         val position = selectedLunchRecipeIds.indexOf(recipe.id)
 
-        runMutation {
+        runMutation(
+            domains = setOf(
+                CloudSyncDomain.WEEK,
+                CloudSyncDomain.SHOPPING
+            )
+        ) {
             repository.clearShoppingChecks(planId)
             repository.addLunchRecipe(
                 weeklyPlanId = planId,
@@ -1456,7 +1629,12 @@ class MealPlannerState(
         shoppingIncluded.clear()
         val planId = weeklyPlanId ?: return
 
-        runMutation {
+        runMutation(
+            domains = setOf(
+                CloudSyncDomain.WEEK,
+                CloudSyncDomain.SHOPPING
+            )
+        ) {
             repository.clearShoppingChecks(planId)
             repository.removeLunchRecipe(
                 weeklyPlanId = planId,
@@ -1478,7 +1656,20 @@ class MealPlannerState(
         }
 
         val id = weeklyPlanId ?: return
-        runMutation {
+        scheduleMutation(
+            coalesceKey = "shopping-included:" + ingredientId,
+            domains = setOf(CloudSyncDomain.SHOPPING),
+            keys = setOf(
+                SyncMutationKey(
+                    domain = CloudSyncDomain.SHOPPING,
+                    entityId = "included:" + ingredientId
+                ),
+                SyncMutationKey(
+                    domain = CloudSyncDomain.SHOPPING,
+                    entityId = "checked:" + ingredientId
+                )
+            )
+        ) {
             repository.setShoppingIncluded(
                 weeklyPlanId = id,
                 ingredientId = ingredientId,
@@ -1502,7 +1693,16 @@ class MealPlannerState(
         shoppingChecked[ingredientId] = checked
         val id = weeklyPlanId ?: return
 
-        runMutation {
+        scheduleMutation(
+            coalesceKey = "shopping-checked:" + ingredientId,
+            domains = setOf(CloudSyncDomain.SHOPPING),
+            keys = setOf(
+                SyncMutationKey(
+                    domain = CloudSyncDomain.SHOPPING,
+                    entityId = "checked:" + ingredientId
+                )
+            )
+        ) {
             repository.setShoppingChecked(
                 weeklyPlanId = id,
                 ingredientId = ingredientId,
