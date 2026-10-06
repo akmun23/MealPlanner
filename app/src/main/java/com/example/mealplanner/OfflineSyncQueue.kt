@@ -20,6 +20,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.status.SessionStatus
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.serialization.SerialName
@@ -684,6 +685,8 @@ internal class OfflineSyncDrain(
                 if (deleted == 0) {
                     onSuperseded(pending.id)
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 store.markFailure(
                     id = pending.id,
