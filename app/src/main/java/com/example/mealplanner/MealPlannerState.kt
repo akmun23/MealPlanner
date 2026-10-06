@@ -7,8 +7,11 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -31,6 +34,11 @@ class MealPlannerState(
     )
     private val legacyStorage = LocalStorage(context.applicationContext)
     private val reloadMutex = Mutex()
+    private val syncTracker = SyncGenerationTracker()
+    private val coalescedMutations = mutableMapOf<String, Job>()
+    private var pendingSaveCount = 0
+    private var syncHadFailure = false
+    private var syncStatusClearJob: Job? = null
 
     val ingredients = mutableStateListOf<Ingredient>()
     val ingredientCategories = mutableStateListOf<IngredientCategory>()
@@ -64,6 +72,9 @@ class MealPlannerState(
     var lastError by mutableStateOf<String?>(null)
         private set
 
+    var syncIndicator by mutableStateOf(SyncIndicator.IDLE)
+        private set
+
     init {
         orderedWeekDays.forEach { day ->
             dayModes[day] = DayMode.AUTO
@@ -88,8 +99,8 @@ class MealPlannerState(
             }
 
             reload(syncHistory = true)
-            repository.startRealtime(scope) { domain ->
-                reload(domain)
+            repository.startRealtime(scope) { event ->
+                handleRealtime(event)
             }
         } catch (e: Exception) {
             lastError = e.message ?: "Kunne ikke hente data."
@@ -118,53 +129,145 @@ class MealPlannerState(
 
     private suspend fun reload(domain: CloudSyncDomain) {
         reloadMutex.withLock {
+            val generationSnapshot = when (domain) {
+                CloudSyncDomain.WEEK -> mapOf(
+                    CloudSyncDomain.WEEK to
+                        syncTracker.generation(CloudSyncDomain.WEEK),
+                    CloudSyncDomain.SHOPPING to
+                        syncTracker.generation(CloudSyncDomain.SHOPPING)
+                )
+
+                else -> mapOf(
+                    domain to syncTracker.generation(domain)
+                )
+            }
+
             when (domain) {
                 CloudSyncDomain.INGREDIENTS -> {
-                    applyIngredientsSnapshot(
-                        repository.loadIngredientsSnapshot()
-                    )
+                    val snapshot = repository.loadIngredientsSnapshot()
+                    if (!syncTracker.isCurrent(generationSnapshot)) {
+                        return@withLock
+                    }
+                    applyIngredientsSnapshot(snapshot)
                 }
 
                 CloudSyncDomain.RECIPES -> {
-                    applyRecipesSnapshot(
-                        repository.loadRecipesSnapshot()
-                    )
+                    val snapshot = repository.loadRecipesSnapshot()
+                    if (!syncTracker.isCurrent(generationSnapshot)) {
+                        return@withLock
+                    }
+                    applyRecipesSnapshot(snapshot)
                 }
 
                 CloudSyncDomain.PANTRY -> {
+                    val snapshot = repository.loadPantrySnapshot()
+                    if (!syncTracker.isCurrent(generationSnapshot)) {
+                        return@withLock
+                    }
                     syncMap(
                         target = pantry,
-                        incoming = repository.loadPantrySnapshot()
+                        incoming = snapshot
                     )
                 }
 
                 CloudSyncDomain.WEEK -> {
                     val week = repository.loadWeekSnapshot()
-                    applyWeekSnapshot(week)
-                    applyShoppingSnapshot(
-                        repository.loadShoppingSnapshot(
-                            week.weeklyPlanId
-                        )
+                    val shopping = repository.loadShoppingSnapshot(
+                        week.weeklyPlanId
                     )
+                    if (!syncTracker.isCurrent(generationSnapshot)) {
+                        return@withLock
+                    }
+                    applyWeekSnapshot(week)
+                    applyShoppingSnapshot(shopping)
                 }
 
                 CloudSyncDomain.SHOPPING -> {
                     val planId = weeklyPlanId
                         ?: return@withLock
-
-                    applyShoppingSnapshot(
+                    val snapshot =
                         repository.loadShoppingSnapshot(planId)
-                    )
+                    if (!syncTracker.isCurrent(generationSnapshot)) {
+                        return@withLock
+                    }
+                    applyShoppingSnapshot(snapshot)
                 }
 
                 CloudSyncDomain.HISTORY -> {
+                    val snapshot = repository.loadHistorySnapshot()
+                    if (!syncTracker.isCurrent(generationSnapshot)) {
+                        return@withLock
+                    }
                     syncListByKey(
                         target = history,
-                        incoming = repository.loadHistorySnapshot(),
+                        incoming = snapshot,
                         key = {
                             it.recipeId to it.eatenOn
                         }
                     )
+                }
+            }
+        }
+    }
+
+    private suspend fun handleRealtime(
+        event: CloudRealtimeEvent
+    ) {
+        when (event) {
+            is CloudRealtimeEvent.DomainChanged -> {
+                reload(event.domain)
+            }
+
+            is CloudRealtimeEvent.PantryChanged -> {
+                val key = SyncMutationKey(
+                    domain = CloudSyncDomain.PANTRY,
+                    entityId = "pantry:${event.ingredientId}"
+                )
+                if (syncTracker.isPending(key)) return
+
+                if (event.amountBase == null) {
+                    pantry.remove(event.ingredientId)
+                } else if (
+                    pantry[event.ingredientId] != event.amountBase
+                ) {
+                    pantry[event.ingredientId] = event.amountBase
+                }
+            }
+
+            is CloudRealtimeEvent.ShoppingCheckedChanged -> {
+                if (event.weeklyPlanId != weeklyPlanId) return
+                val key = SyncMutationKey(
+                    domain = CloudSyncDomain.SHOPPING,
+                    entityId = "checked:${event.ingredientId}"
+                )
+                if (syncTracker.isPending(key)) return
+
+                if (event.checked == null) {
+                    shoppingChecked.remove(event.ingredientId)
+                } else if (
+                    shoppingChecked[event.ingredientId] != event.checked
+                ) {
+                    shoppingChecked[event.ingredientId] =
+                        event.checked
+                }
+            }
+
+            is CloudRealtimeEvent.ShoppingIncludedChanged -> {
+                if (event.weeklyPlanId != weeklyPlanId) return
+                val key = SyncMutationKey(
+                    domain = CloudSyncDomain.SHOPPING,
+                    entityId = "included:${event.ingredientId}"
+                )
+                if (syncTracker.isPending(key)) return
+
+                if (event.included == null) {
+                    shoppingIncluded.remove(event.ingredientId)
+                } else if (
+                    shoppingIncluded[event.ingredientId] !=
+                    event.included
+                ) {
+                    shoppingIncluded[event.ingredientId] =
+                        event.included
                 }
             }
         }
@@ -323,15 +426,108 @@ class MealPlannerState(
         )
     }
 
-    private fun runMutation(block: suspend () -> Unit) {
-        scope.launch {
-            try {
-                block()
-            } catch (e: Exception) {
-                lastError = e.message ?: "Ændringen kunne ikke gemmes."
-                runCatching { reload() }
+    private fun beginSave() {
+        syncStatusClearJob?.cancel()
+        syncStatusClearJob = null
+        if (pendingSaveCount == 0) {
+            syncHadFailure = false
+        }
+        pendingSaveCount += 1
+        syncIndicator = SyncIndicator.SAVING
+    }
+
+    private fun finishSave(success: Boolean?) {
+        if (success == false) {
+            syncHadFailure = true
+        }
+        pendingSaveCount =
+            (pendingSaveCount - 1).coerceAtLeast(0)
+
+        if (pendingSaveCount > 0) {
+            syncIndicator = SyncIndicator.SAVING
+            return
+        }
+
+        syncIndicator = if (syncHadFailure) {
+            SyncIndicator.ERROR
+        } else {
+            SyncIndicator.SAVED
+        }
+
+        syncStatusClearJob = scope.launch {
+            delay(if (syncHadFailure) 2500L else 1200L)
+            if (pendingSaveCount == 0) {
+                syncIndicator = SyncIndicator.IDLE
             }
         }
+    }
+
+    private fun runMutation(
+        domains: Set<CloudSyncDomain>,
+        keys: Set<SyncMutationKey> = emptySet(),
+        block: suspend () -> Unit
+    ) {
+        syncTracker.markLocalChange(domains)
+        syncTracker.beginPending(keys)
+        beginSave()
+
+        scope.launch {
+            var success: Boolean? = false
+            try {
+                block()
+                success = true
+            } catch (e: CancellationException) {
+                success = null
+                throw e
+            } catch (e: Exception) {
+                lastError =
+                    e.message ?: "Ændringen kunne ikke gemmes."
+                domains.forEach { domain ->
+                    runCatching { reload(domain) }
+                }
+            } finally {
+                syncTracker.endPending(keys)
+                finishSave(success)
+            }
+        }
+    }
+
+    private fun scheduleMutation(
+        coalesceKey: String,
+        domains: Set<CloudSyncDomain>,
+        keys: Set<SyncMutationKey> = emptySet(),
+        delayMillis: Long = 180L,
+        block: suspend () -> Unit
+    ) {
+        syncTracker.markLocalChange(domains)
+        syncTracker.beginPending(keys)
+        beginSave()
+
+        val previous = coalescedMutations.remove(coalesceKey)
+
+        val job = scope.launch {
+            var success: Boolean? = false
+            try {
+                delay(delayMillis)
+                block()
+                success = true
+            } catch (e: CancellationException) {
+                success = null
+                throw e
+            } catch (e: Exception) {
+                lastError =
+                    e.message ?: "Ændringen kunne ikke gemmes."
+                domains.forEach { domain ->
+                    runCatching { reload(domain) }
+                }
+            } finally {
+                syncTracker.endPending(keys)
+                finishSave(success)
+            }
+        }
+
+        coalescedMutations[coalesceKey] = job
+        previous?.cancel()
     }
 
     private fun persistWeek(clearChecks: Boolean = false) {
