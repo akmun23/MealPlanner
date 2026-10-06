@@ -56,9 +56,17 @@ class OfflineSyncDrainTest {
         )
         val store = FakePendingMutationStore(first)
         val applied = mutableListOf<Double>()
+        var rebasedId: String? = null
 
         val drain = OfflineSyncDrain(
             store = store,
+            onSuperseded = { id ->
+                rebasedId = id
+                store.rebaseLatest(
+                    id = id,
+                    baseSnapshotPayload = "remote-after-first"
+                )
+            },
             applyMutation = { mutation ->
                 val pantry = mutation as QueuedMutation.SetPantry
                 applied += pantry.amountBase
@@ -74,6 +82,7 @@ class OfflineSyncDrainTest {
             drain.drain("household")
         )
         assertEquals(listOf(1.0, 2.0), applied)
+        assertEquals(first.id, rebasedId)
         assertNull(store.pending)
     }
 
@@ -186,6 +195,23 @@ class OfflineSyncDrainTest {
                 pending = current.copy(
                     conflict = true,
                     lastError = message
+                )
+                return 1
+            }
+            return 0
+        }
+
+        override suspend fun rebaseLatest(
+            id: String,
+            baseSnapshotPayload: String
+        ): Int {
+            val current = pending
+            if (current?.id == id) {
+                pending = current.copy(
+                    baseSnapshotPayload = baseSnapshotPayload,
+                    conflict = false,
+                    attemptCount = 0,
+                    lastError = null
                 )
                 return 1
             }
