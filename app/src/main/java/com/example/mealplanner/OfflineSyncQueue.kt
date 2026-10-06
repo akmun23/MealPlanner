@@ -191,6 +191,21 @@ internal interface PendingMutationDao : PendingMutationStore {
     @Query(
         """
         update pending_mutations
+        set base_snapshot_payload = :baseSnapshotPayload,
+            conflict = 0,
+            attempt_count = 0,
+            last_error = null
+        where id = :id
+        """
+    )
+    override suspend fun rebaseLatest(
+        id: String,
+        baseSnapshotPayload: String
+    ): Int
+
+    @Query(
+        """
+        update pending_mutations
         set conflict = 0,
             base_snapshot_payload = null,
             attempt_count = 0,
@@ -618,6 +633,11 @@ internal interface PendingMutationStore {
         revision: String,
         message: String?
     ): Int
+
+    suspend fun rebaseLatest(
+        id: String,
+        baseSnapshotPayload: String
+    ): Int
 }
 
 internal enum class OfflineSyncDrainResult {
@@ -631,6 +651,7 @@ internal class OfflineSyncDrain(
         PendingMutationEntity,
         QueuedMutation
     ) -> Boolean = { _, _ -> false },
+    private val onSuperseded: suspend (String) -> Unit = {},
     private val applyMutation: suspend (QueuedMutation) -> Unit
 ) {
     suspend fun drain(
@@ -655,10 +676,14 @@ internal class OfflineSyncDrain(
                 }
 
                 applyMutation(mutation)
-                store.deleteIfCurrent(
+                val deleted = store.deleteIfCurrent(
                     id = pending.id,
                     revision = pending.revision
                 )
+
+                if (deleted == 0) {
+                    onSuperseded(pending.id)
+                }
             } catch (e: Exception) {
                 store.markFailure(
                     id = pending.id,
@@ -709,6 +734,19 @@ internal class OfflineSyncWorker(
                             )
                         }
                         ?: false
+                },
+                onSuperseded = { mutationId ->
+                    val currentRemote =
+                        repository.loadCurrent(
+                            syncHistory = false
+                        )
+                    dao.rebaseLatest(
+                        id = mutationId,
+                        baseSnapshotPayload =
+                            RoomSnapshotCodec.encode(
+                                currentRemote
+                            )
+                    )
                 },
                 applyMutation = { mutation ->
                     applyQueuedMutation(
