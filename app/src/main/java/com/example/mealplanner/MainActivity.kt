@@ -32,7 +32,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -1345,6 +1344,11 @@ private fun RecipeDetailScreen(
             state.ingredients.associateBy { it.id }
         }
     }
+    val ingredientCategoryIndex by remember {
+        derivedStateOf {
+            state.ingredientCategories.associateBy { it.id }
+        }
+    }
     val sortedRecipeIngredients by remember(recipe) {
         derivedStateOf {
             sortByIngredientCategory(
@@ -1503,31 +1507,59 @@ private fun RecipeDetailScreen(
 
             item {
                 SectionCard("Ingredienser") {
-                    sortedRecipeIngredients.forEach { requirement ->
-                        val ingredient =
-                            ingredientIndex[requirement.ingredientId]
+                    sortedRecipeIngredients
+                        .groupBy { requirement ->
+                            ingredientIndex[
+                                requirement.ingredientId
+                            ]?.shoppingCategoryId
+                        }
+                        .forEach { (categoryId, requirements) ->
+                            Text(
+                                ingredientCategoryIndex[categoryId]
+                                    ?.name
+                                    ?: "Andet",
+                                style =
+                                    MaterialTheme.typography.labelSmall,
+                                color =
+                                    MaterialTheme.colorScheme.onSurfaceVariant,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(
+                                    top = 4.dp,
+                                    bottom = 2.dp
+                                )
+                            )
 
-                        if (ingredient != null) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 4.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    ingredient.name,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                Text(
-                                    state.formatBaseAmount(
-                                        ingredient,
-                                        requirement.amountBase
-                                    ),
-                                    fontWeight = FontWeight.SemiBold
-                                )
+                            requirements.forEach { requirement ->
+                                val ingredient =
+                                    ingredientIndex[
+                                        requirement.ingredientId
+                                    ]
+
+                                if (ingredient != null) {
+                                    Row(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(vertical = 4.dp),
+                                        horizontalArrangement =
+                                            Arrangement.SpaceBetween
+                                    ) {
+                                        Text(
+                                            ingredient.name,
+                                            modifier =
+                                                Modifier.weight(1f)
+                                        )
+                                        Text(
+                                            state.formatBaseAmount(
+                                                ingredient,
+                                                requirement.amountBase
+                                            ),
+                                            fontWeight =
+                                                FontWeight.SemiBold
+                                        )
+                                    }
+                                }
                             }
                         }
-                    }
                 }
             }
 
@@ -1702,12 +1734,11 @@ private fun RecipeEditorScreen(
                             prerequisiteDrafts.none {
                                 it.ingredientId == ingredient.id
                             }
-                    }
-                    .take(8),
+                    },
                 ingredientId = Ingredient::id,
                 ingredients = state.ingredients.toList(),
                 categories = state.ingredientCategories.toList()
-            )
+            ).take(8)
         }
     }
 
@@ -1724,12 +1755,11 @@ private fun RecipeEditorScreen(
                             drafts.none {
                                 it.ingredientId == ingredient.id
                             }
-                    }
-                    .take(8),
+                    },
                 ingredientId = Ingredient::id,
                 ingredients = state.ingredients.toList(),
                 categories = state.ingredientCategories.toList()
-            )
+            ).take(8)
         }
     }
 
@@ -2817,7 +2847,7 @@ fun ShoppingScreen(state: MealPlannerState) {
 
                 val uncategorized =
                     sections.missingByCategoryId
-                        .filterKeys { it !in knownIds }
+                        .filterKeys { it == null || it !in knownIds }
                         .values
                         .flatten()
 
