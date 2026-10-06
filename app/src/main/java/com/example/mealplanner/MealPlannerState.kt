@@ -598,42 +598,29 @@ class MealPlannerState(
 
     private fun persistWeek(clearChecks: Boolean = false) {
         val id = weeklyPlanId ?: return
-        val planSnapshot = plan.toMap()
-        val modesSnapshot = dayModes.toMap()
-        val locksSnapshot = lockedDays.toSet()
-        val sandwichRecipe = weeklySandwichRecipeId
-        val selectedSandwichDay = sandwichDay
 
-        scheduleMutation(
-            coalesceKey = "week-state",
-            domains = if (clearChecks) {
-                setOf(
-                    CloudSyncDomain.WEEK,
-                    CloudSyncDomain.SHOPPING
-                )
-            } else {
-                setOf(CloudSyncDomain.WEEK)
-            },
-            keys = setOf(
-                SyncMutationKey(
-                    domain = CloudSyncDomain.WEEK,
-                    entityId = "week:" + id
+        val mutations = buildList {
+            add(
+                QueuedMutation.SetWeekState(
+                    weeklyPlanId = id,
+                    plan = plan.mapKeys { it.key.name },
+                    dayModes = dayModes
+                        .mapKeys { it.key.name }
+                        .mapValues { it.value.name },
+                    lockedDays = lockedDays.map { it.name },
+                    sandwichRecipeId = weeklySandwichRecipeId,
+                    sandwichDay = sandwichDay?.name
                 )
             )
-        ) {
+
             if (clearChecks) {
+                shoppingChecked.clear()
                 shoppingIncluded.clear()
-                repository.clearShoppingChecks(id)
+                add(QueuedMutation.ClearShopping(id))
             }
-            repository.saveWeekState(
-                weeklyPlanId = id,
-                plan = planSnapshot,
-                dayModes = modesSnapshot,
-                lockedDays = locksSnapshot,
-                sandwichRecipeId = sandwichRecipe,
-                sandwichDay = selectedSandwichDay
-            )
         }
+
+        enqueueMutations(mutations)
     }
 
     fun toggleLockDay(day: DayOfWeek) {
@@ -696,20 +683,9 @@ class MealPlannerState(
         )
 
         ingredients += ingredient
-
-        runMutation(
-            domains = setOf(CloudSyncDomain.INGREDIENTS),
-            keys = setOf(
-                SyncMutationKey(
-                    domain = CloudSyncDomain.INGREDIENTS,
-                    entityId = "ingredient:" + ingredient.id
-                )
-            )
-        ) {
-            val saved = repository.upsertIngredient(ingredient)
-            val index = ingredients.indexOfFirst { it.id == saved.id }
-            if (index >= 0) ingredients[index] = saved
-        }
+        enqueueMutation(
+            QueuedMutation.UpsertIngredient(ingredient)
+        )
         return true
     }
 
@@ -743,20 +719,9 @@ class MealPlannerState(
             imageUri = imageUri
         )
         ingredients[index] = updated
-
-        runMutation(
-            domains = setOf(CloudSyncDomain.INGREDIENTS),
-            keys = setOf(
-                SyncMutationKey(
-                    domain = CloudSyncDomain.INGREDIENTS,
-                    entityId = "ingredient:" + id
-                )
-            )
-        ) {
-            val saved = repository.upsertIngredient(updated)
-            val current = ingredients.indexOfFirst { it.id == id }
-            if (current >= 0) ingredients[current] = saved
-        }
+        enqueueMutation(
+            QueuedMutation.UpsertIngredient(updated)
+        )
         return true
     }
 
@@ -778,24 +743,21 @@ class MealPlannerState(
             return false
         }
 
-        val nextPosition =
-            (ingredientCategories.maxOfOrNull { it.position } ?: -1) + 1
+        val category = IngredientCategory(
+            id = UUID.randomUUID().toString(),
+            name = clean,
+            position =
+                (ingredientCategories.maxOfOrNull { it.position } ?: -1) + 1
+        )
 
-        runMutation(
-            domains = setOf(CloudSyncDomain.INGREDIENTS)
-        ) {
-            val saved = repository.createIngredientCategory(
-                name = clean,
-                position = nextPosition
-            )
-            if (ingredientCategories.none { it.id == saved.id }) {
-                ingredientCategories += saved
-                ingredientCategories.sortWith(
-                    compareBy<IngredientCategory> { it.position }
-                        .thenBy { it.name.lowercase() }
-                )
-            }
-        }
+        ingredientCategories += category
+        ingredientCategories.sortWith(
+            compareBy<IngredientCategory> { it.position }
+                .thenBy { it.name.lowercase() }
+        )
+        enqueueMutation(
+            QueuedMutation.UpsertIngredientCategory(category)
+        )
         return true
     }
 
@@ -812,23 +774,13 @@ class MealPlannerState(
         val index = ingredientCategories.indexOfFirst { it.id == categoryId }
         if (index < 0) return false
 
-        ingredientCategories[index] =
+        val updated =
             ingredientCategories[index].copy(name = clean)
+        ingredientCategories[index] = updated
 
-        runMutation(
-            domains = setOf(CloudSyncDomain.INGREDIENTS),
-            keys = setOf(
-                SyncMutationKey(
-                    domain = CloudSyncDomain.INGREDIENTS,
-                    entityId = "ingredient-category:" + categoryId
-                )
-            )
-        ) {
-            repository.renameIngredientCategory(
-                categoryId = categoryId,
-                name = clean
-            )
-        }
+        enqueueMutation(
+            QueuedMutation.UpsertIngredientCategory(updated)
+        )
         return true
     }
 
@@ -856,24 +808,21 @@ class MealPlannerState(
             return false
         }
 
-        val nextPosition =
-            (recipeCategories.maxOfOrNull { it.position } ?: -1) + 1
+        val category = RecipeCategoryOption(
+            id = UUID.randomUUID().toString(),
+            name = clean,
+            position =
+                (recipeCategories.maxOfOrNull { it.position } ?: -1) + 1
+        )
 
-        runMutation(
-            domains = setOf(CloudSyncDomain.RECIPES)
-        ) {
-            val saved = repository.createRecipeCategory(
-                name = clean,
-                position = nextPosition
-            )
-            if (recipeCategories.none { it.id == saved.id }) {
-                recipeCategories += saved
-                recipeCategories.sortWith(
-                    compareBy<RecipeCategoryOption> { it.position }
-                        .thenBy { it.name.lowercase() }
-                )
-            }
-        }
+        recipeCategories += category
+        recipeCategories.sortWith(
+            compareBy<RecipeCategoryOption> { it.position }
+                .thenBy { it.name.lowercase() }
+        )
+        enqueueMutation(
+            QueuedMutation.UpsertRecipeCategory(category)
+        )
         return true
     }
 
@@ -890,23 +839,13 @@ class MealPlannerState(
         val index = recipeCategories.indexOfFirst { it.id == categoryId }
         if (index < 0) return false
 
-        recipeCategories[index] =
+        val updated =
             recipeCategories[index].copy(name = clean)
+        recipeCategories[index] = updated
 
-        runMutation(
-            domains = setOf(CloudSyncDomain.RECIPES),
-            keys = setOf(
-                SyncMutationKey(
-                    domain = CloudSyncDomain.RECIPES,
-                    entityId = "recipe-category:" + categoryId
-                )
-            )
-        ) {
-            repository.renameRecipeCategory(
-                categoryId = categoryId,
-                name = clean
-            )
-        }
+        enqueueMutation(
+            QueuedMutation.UpsertRecipeCategory(updated)
+        )
         return true
     }
 
