@@ -102,6 +102,11 @@ data class RecipeIngredient(
     val amountBase: Double
 )
 
+data class RecipePantryPrerequisite(
+    val ingredientId: String,
+    val minimumAmountBase: Double
+)
+
 enum class MealType {
     DINNER,
     LUNCH
@@ -177,7 +182,8 @@ data class Recipe(
     val notes: String = "",
     val imageUri: String? = null,
     val imagePath: String? = null,
-    val ingredients: List<RecipeIngredient>
+    val ingredients: List<RecipeIngredient>,
+    val pantryPrerequisites: List<RecipePantryPrerequisite> = emptyList()
 )
 
 enum class DayMode {

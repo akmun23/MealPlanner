@@ -1278,6 +1278,40 @@ private fun RecipeDetailScreen(
                 }
             }
 
+            if (recipe.pantryPrerequisites.isNotEmpty()) {
+                item {
+                    SectionCard("Kræver på lager") {
+                        recipe.pantryPrerequisites.forEach { prerequisite ->
+                            val ingredient = state.ingredients.find {
+                                it.id == prerequisite.ingredientId
+                            }
+
+                            if (ingredient != null) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 4.dp),
+                                    horizontalArrangement =
+                                        Arrangement.SpaceBetween
+                                ) {
+                                    Text(
+                                        ingredient.name,
+                                        modifier = Modifier.weight(1f)
+                                    )
+                                    Text(
+                                        state.formatBaseAmount(
+                                            ingredient,
+                                            prerequisite.minimumAmountBase
+                                        ),
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             item {
                 SectionCard("Ingredienser") {
                     recipe.ingredients.forEach { requirement ->
@@ -1401,6 +1435,7 @@ private fun RecipeEditorScreen(
     var notes by remember(recipeId) { mutableStateOf(existing?.notes ?: "") }
     var imageUri by remember(recipeId) { mutableStateOf(existing?.imageUri) }
     var ingredientSearch by remember { mutableStateOf("") }
+    var prerequisiteSearch by remember { mutableStateOf("") }
     val recipeNameAvailable =
         name.isBlank() ||
             state.isRecipeNameAvailable(
@@ -1429,6 +1464,41 @@ private fun RecipeEditorScreen(
             }
         }
     }
+
+    val prerequisiteDrafts = remember(recipeId) {
+        mutableStateListOf<DraftRequirement>().apply {
+            existing?.pantryPrerequisites?.forEach { prerequisite ->
+                val ingredient = state.ingredients.find {
+                    it.id == prerequisite.ingredientId
+                }
+
+                if (ingredient != null) {
+                    add(
+                        DraftRequirement(
+                            ingredientId = ingredient.id,
+                            amount = ingredient.preferredUnit.fromBase(
+                                prerequisite.minimumAmountBase
+                            ),
+                            unit = ingredient.preferredUnit
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    val prerequisiteMatches = state.ingredients
+        .filter { ingredient ->
+            prerequisiteSearch.isNotBlank() &&
+                ingredient.name.contains(
+                    prerequisiteSearch,
+                    ignoreCase = true
+                ) &&
+                prerequisiteDrafts.none {
+                    it.ingredientId == ingredient.id
+                }
+        }
+        .take(8)
 
     val matches = state.ingredients
         .filter { ingredient ->
@@ -1551,6 +1621,79 @@ private fun RecipeEditorScreen(
                 )
             }
 
+            if (mealType == MealType.DINNER) {
+                item {
+                    Text(
+                        "Kræver på lager",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                itemsIndexed(
+                    items = prerequisiteDrafts,
+                    key = { _, item ->
+                        "prerequisite-${item.ingredientId}"
+                    }
+                ) { index, draft ->
+                    val ingredient = state.ingredients.find {
+                        it.id == draft.ingredientId
+                    }
+
+                    if (ingredient != null) {
+                        RequirementEditor(
+                            ingredient = ingredient,
+                            draft = draft,
+                            onChange = {
+                                prerequisiteDrafts[index] = it
+                            },
+                            onRemove = {
+                                prerequisiteDrafts.removeAt(index)
+                            }
+                        )
+                    }
+                }
+
+                item {
+                    SearchField(
+                        value = prerequisiteSearch,
+                        onValueChange = { prerequisiteSearch = it },
+                        placeholder = "Tilføj lagerkrav"
+                    )
+                }
+
+                items(
+                    items = prerequisiteMatches,
+                    key = { "prerequisite-match-${it.id}" }
+                ) { ingredient ->
+                    OutlinedCard(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                prerequisiteDrafts += DraftRequirement(
+                                    ingredientId = ingredient.id,
+                                    amount = 1.0,
+                                    unit = ingredient.preferredUnit
+                                )
+                                prerequisiteSearch = ""
+                            },
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                ingredient.name,
+                                modifier = Modifier.weight(1f),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            Text("Tilføj")
+                        }
+                    }
+                }
+            }
+
             item {
                 Text(
                     "Ingredienser",
@@ -1635,6 +1778,12 @@ private fun RecipeEditorScreen(
                                 categoryId = categoryId,
                                 notes = notes,
                                 imageUri = imageUri,
+                                pantryPrerequisites =
+                                    if (mealType == MealType.DINNER) {
+                                        prerequisiteDrafts.toList()
+                                    } else {
+                                        emptyList()
+                                    },
                                 requirements = drafts.toList()
                             )
 
@@ -1651,6 +1800,12 @@ private fun RecipeEditorScreen(
                                 categoryId = categoryId,
                                 notes = notes,
                                 imageUri = imageUri,
+                                pantryPrerequisites =
+                                    if (mealType == MealType.DINNER) {
+                                        prerequisiteDrafts.toList()
+                                    } else {
+                                        emptyList()
+                                    },
                                 requirements = drafts.toList()
                             )
                             if (saved) {
@@ -1662,7 +1817,8 @@ private fun RecipeEditorScreen(
                         recipeNameAvailable &&
                         prepTimeValid &&
                         drafts.isNotEmpty() &&
-                        drafts.all { it.amount > 0.0 },
+                        drafts.all { it.amount > 0.0 } &&
+                        prerequisiteDrafts.all { it.amount > 0.0 },
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp)
                 ) {

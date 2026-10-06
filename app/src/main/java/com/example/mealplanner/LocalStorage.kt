@@ -60,6 +60,17 @@ class LocalStorage(context: Context) {
                             })
                         }
                     })
+                    put("pantryPrerequisites", JSONArray().apply {
+                        recipe.pantryPrerequisites.forEach { prerequisite ->
+                            put(JSONObject().apply {
+                                put("ingredientId", prerequisite.ingredientId)
+                                put(
+                                    "minimumAmountBase",
+                                    prerequisite.minimumAmountBase
+                                )
+                            })
+                        }
+                    })
                 })
             }
         })
@@ -132,6 +143,24 @@ class LocalStorage(context: Context) {
                         }
                     }
 
+                    val prerequisiteArray =
+                        obj.optJSONArray("pantryPrerequisites") ?: JSONArray()
+                    val pantryPrerequisites = buildList {
+                        for (j in 0 until prerequisiteArray.length()) {
+                            val prerequisite = prerequisiteArray.getJSONObject(j)
+                            add(
+                                RecipePantryPrerequisite(
+                                    ingredientId =
+                                        prerequisite.getString("ingredientId"),
+                                    minimumAmountBase =
+                                        prerequisite.getDouble(
+                                            "minimumAmountBase"
+                                        )
+                                )
+                            )
+                        }
+                    }
+
                     add(
                         Recipe(
                             id = obj.getString("id"),
@@ -158,7 +187,8 @@ class LocalStorage(context: Context) {
                             categoryId = obj.nullableString("categoryId"),
                             notes = obj.optString("notes", ""),
                             imageUri = obj.nullableString("imageUri"),
-                            ingredients = requirements
+                            ingredients = requirements,
+                            pantryPrerequisites = pantryPrerequisites
                         )
                     )
                 }

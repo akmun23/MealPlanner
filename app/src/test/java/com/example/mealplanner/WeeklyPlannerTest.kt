@@ -315,6 +315,106 @@ class WeeklyPlannerTest {
     }
 
     @Test
+    fun pantryPrerequisiteExcludesRecipeFromAutomaticGenerationWhenMissing() {
+        val blocked = Recipe(
+            id = "blocked",
+            name = "Blocked",
+            ingredients = emptyList(),
+            pantryPrerequisites = listOf(
+                RecipePantryPrerequisite(
+                    ingredientId = "pulled-pork",
+                    minimumAmountBase = 1.0
+                )
+            )
+        )
+        val available = Recipe(
+            id = "available",
+            name = "Available",
+            ingredients = emptyList()
+        )
+        val modes = orderedWeekDays.associateWith {
+            if (it == DayOfWeek.MONDAY) DayMode.AUTO else DayMode.AWAY
+        }
+
+        repeat(10) { seed ->
+            val result = WeeklyPlanner.generate(
+                recipes = listOf(blocked, available),
+                pantry = emptyMap(),
+                dayModes = modes,
+                weeklySandwichRecipeId = null,
+                currentPlan = orderedWeekDays.associateWith { null },
+                currentSandwichDay = null,
+                random = Random(seed)
+            )
+
+            assertEquals(available.id, result.plan[DayOfWeek.MONDAY])
+        }
+    }
+
+    @Test
+    fun pantryPrerequisiteAllowsRecipeWhenMinimumStockIsPresent() {
+        val recipe = Recipe(
+            id = "freezer",
+            name = "Freezer meal",
+            ingredients = emptyList(),
+            pantryPrerequisites = listOf(
+                RecipePantryPrerequisite(
+                    ingredientId = "pulled-pork",
+                    minimumAmountBase = 2.0
+                )
+            )
+        )
+
+        assertTrue(
+            WeeklyPlanner.hasRequiredPantryStock(
+                recipe = recipe,
+                pantry = mapOf("pulled-pork" to 2.0)
+            )
+        )
+    }
+
+    @Test
+    fun pantryPrerequisiteIsExcludedFromDayRerollWhenMissing() {
+        val current = Recipe(
+            id = "current",
+            name = "Current",
+            ingredients = emptyList()
+        )
+        val blocked = Recipe(
+            id = "blocked",
+            name = "Blocked",
+            ingredients = emptyList(),
+            pantryPrerequisites = listOf(
+                RecipePantryPrerequisite(
+                    ingredientId = "special",
+                    minimumAmountBase = 1.0
+                )
+            )
+        )
+        val available = Recipe(
+            id = "available",
+            name = "Available",
+            ingredients = emptyList()
+        )
+        val plan = orderedWeekDays.associateWith { null as String? }
+            .toMutableMap()
+            .apply { this[DayOfWeek.MONDAY] = current.id }
+
+        val result = WeeklyPlanner.rerollDay(
+            day = DayOfWeek.MONDAY,
+            recipes = listOf(current, blocked, available),
+            pantry = emptyMap(),
+            dayModes = allHome(),
+            weeklySandwichRecipeId = null,
+            sandwichDay = null,
+            currentPlan = plan,
+            random = Random(5)
+        )
+
+        assertEquals(available.id, result[DayOfWeek.MONDAY])
+    }
+
+    @Test
     fun proteinRepeatPenaltyIsASecondaryPreference() {
         val weights = PlannerWeights()
 
