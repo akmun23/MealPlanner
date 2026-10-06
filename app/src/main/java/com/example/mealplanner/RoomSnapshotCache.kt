@@ -11,6 +11,9 @@ import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.Transaction
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
@@ -45,13 +48,36 @@ internal interface HouseholdSnapshotDao {
     suspend fun upsert(entity: HouseholdSnapshotEntity)
 }
 
+@Dao
+internal interface LocalStateDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertSnapshot(entity: HouseholdSnapshotEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertMutation(entity: PendingMutationEntity)
+
+    @Transaction
+    suspend fun persistSnapshotAndMutation(
+        snapshot: HouseholdSnapshotEntity,
+        mutation: PendingMutationEntity
+    ) {
+        upsertSnapshot(snapshot)
+        upsertMutation(mutation)
+    }
+}
+
 @Database(
-    entities = [HouseholdSnapshotEntity::class],
-    version = 1,
+    entities = [
+        HouseholdSnapshotEntity::class,
+        PendingMutationEntity::class
+    ],
+    version = 2,
     exportSchema = true
 )
 internal abstract class MealPlannerDatabase : RoomDatabase() {
     abstract fun householdSnapshotDao(): HouseholdSnapshotDao
+    abstract fun pendingMutationDao(): PendingMutationDao
+    abstract fun localStateDao(): LocalStateDao
 }
 
 internal object MealPlannerDatabaseProvider {
@@ -64,10 +90,39 @@ internal object MealPlannerDatabaseProvider {
                 context.applicationContext,
                 MealPlannerDatabase::class.java,
                 "meal_planner_local.db"
-            ).build().also {
+            )
+                .addMigrations(MIGRATION_1_2)
+                .build().also {
                 instance = it
             }
         }
+
+    private val MIGRATION_1_2 = object : Migration(1, 2) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                """
+                create table if not exists pending_mutations (
+                    id text not null primary key,
+                    household_id text not null,
+                    mutation_key text not null,
+                    priority integer not null,
+                    domain_mask integer not null,
+                    payload text not null,
+                    updated_at_epoch_ms integer not null,
+                    attempt_count integer not null default 0,
+                    last_error text
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                create index if not exists
+                    index_pending_mutations_household_id
+                on pending_mutations(household_id)
+                """.trimIndent()
+            )
+        }
+    }
 }
 
 internal class RoomSnapshotCache(
