@@ -28,6 +28,7 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.time.DayOfWeek
+import java.util.UUID
 import java.util.concurrent.TimeUnit
 
 @Entity(
@@ -37,6 +38,7 @@ import java.util.concurrent.TimeUnit
 internal data class PendingMutationEntity(
     @PrimaryKey
     val id: String,
+    val revision: String,
     @ColumnInfo(name = "household_id")
     val householdId: String,
     @ColumnInfo(name = "mutation_key")
@@ -66,8 +68,17 @@ internal interface PendingMutationDao {
     )
     suspend fun next(householdId: String): PendingMutationEntity?
 
-    @Query("delete from pending_mutations where id = :id")
-    suspend fun delete(id: String)
+    @Query(
+        """
+        delete from pending_mutations
+        where id = :id
+          and revision = :revision
+        """
+    )
+    suspend fun deleteIfCurrent(
+        id: String,
+        revision: String
+    ): Int
 
     @Query(
         """
@@ -75,9 +86,14 @@ internal interface PendingMutationDao {
         set attempt_count = attempt_count + 1,
             last_error = :message
         where id = :id
+          and revision = :revision
         """
     )
-    suspend fun markFailure(id: String, message: String?)
+    suspend fun markFailure(
+        id: String,
+        revision: String,
+        message: String?
+    ): Int
 
     @Query(
         """
@@ -401,6 +417,7 @@ internal class OfflineSyncQueue(
             val key = mutation.key()
             PendingMutationEntity(
                 id = "$householdId|$key",
+                revision = UUID.randomUUID().toString(),
                 householdId = householdId,
                 mutationKey = key,
                 priority = mutation.priority(),
@@ -489,10 +506,14 @@ internal class OfflineSyncWorker(
                         pending.payload
                     )
                 )
-                dao.delete(pending.id)
+                dao.deleteIfCurrent(
+                    id = pending.id,
+                    revision = pending.revision
+                )
             } catch (e: Exception) {
                 dao.markFailure(
                     id = pending.id,
+                    revision = pending.revision,
                     message = e.message
                 )
                 return if (runAttemptCount >= 5) {
