@@ -460,7 +460,10 @@ class MealPlannerState(
 
     fun deleteIngredient(ingredientId: String) {
         if (recipes.any { recipe ->
-                recipe.ingredients.any { it.ingredientId == ingredientId }
+                recipe.ingredients.any { it.ingredientId == ingredientId } ||
+                    recipe.pantryPrerequisites.any {
+                        it.ingredientId == ingredientId
+                    }
             }
         ) {
             lastError = "Ingrediensen bruges i en opskrift."
