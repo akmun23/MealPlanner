@@ -5,6 +5,7 @@ internal enum class SyncIndicator {
     SAVING,
     SAVED,
     PENDING,
+    DELAYED,
     ERROR,
     OFFLINE
 }
