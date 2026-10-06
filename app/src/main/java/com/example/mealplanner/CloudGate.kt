@@ -824,6 +824,17 @@ private fun HouseholdSetupScreen(
             )
         }
 
+        if (isBusy) {
+            Spacer(
+                modifier = Modifier.height(10.dp)
+            )
+            Text(
+                text = "Arbejder…",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
         Spacer(
             modifier = Modifier.height(18.dp)
         )
