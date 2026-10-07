@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Plate / Bowl background circle -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M34,54C34,43 43,34 54,34C65,34 74,43 74,54C74,65 65,74 54,74C43,74 34,65 34,54Z"
+        android:fillAlpha="0.15" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M38,54C38,45.16 45.16,38 54,38C62.84,38 70,45.16 70,54C70,62.84 62.84,70 54,70C45.16,70 38,62.84 38,54ZM34,54C34,65.05 42.95,74 54,74C65.05,74 74,65.05 74,54C74,42.95 65.05,34 54,34C42.95,34 34,42.95 34,54Z" />
+    <!-- Fork on left -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M24,40L24,56C24,58 26,60 28,60L28,68C28,69.1 28.9,70 30,70C31.1,70 32,69.1 32,68L32,60C34,60 36,58 36,56L36,40C36,38.9 35.1,38 34,38L26,38C24.9,38 24,38.9 24,40ZM28,42L32,42L32,50L28,50L28,42Z" />
+    <!-- Knife on right -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M76,38C74.9,38 74,38.9 74,40L74,60C74,65 78,68 82,70C83.1,70.5 84.4,69.8 84.6,68.6C84.8,67.4 84,66.2 82.8,65.8C80.2,64.8 78,63 78,60L78,40C78,38.9 77.1,38 76,38Z" />
+    <!-- Checkmark in center (Meal Plan symbol) -->
+    <path
+        android:fillColor="#00000000"
+        android:pathData="M44,54L50,60L64,46"
+        android:strokeWidth="5"
+        android:strokeColor="#FFFFFF"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>
