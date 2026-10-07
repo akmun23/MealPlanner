@@ -191,7 +191,7 @@ class RoomOutboxIntegrationTest {
 
     @Test
     fun unresolvedConflictBlocksItsBatchButNotUnrelatedLaterWork() = runBlocking {
-        val database = openVersionTwoDatabase()
+        val database = openVersionTwoDatabase(inMemory = true)
 
         val conflicted = pendingPantry(
             revision = "conflict",
@@ -293,20 +293,20 @@ class RoomOutboxIntegrationTest {
         sqlite.close()
     }
 
-    private fun openVersionTwoDatabase(): MealPlannerDatabase =
-        Room.databaseBuilder(
-            context,
-            MealPlannerDatabase::class.java,
-            databaseName
-        )
-            .addMigrations(
-                MealPlannerDatabaseProvider.MIGRATION_1_2
-            )
+    private fun openVersionTwoDatabase(inMemory: Boolean = false): MealPlannerDatabase {
+        val builder = if (inMemory) {
+            Room.inMemoryDatabaseBuilder(context, MealPlannerDatabase::class.java)
+        } else {
+            Room.databaseBuilder(context, MealPlannerDatabase::class.java, databaseName)
+                .addMigrations(MealPlannerDatabaseProvider.MIGRATION_1_2)
+        }
+        return builder
             .allowMainThreadQueries()
             .build()
             .also {
                 it.openHelper.writableDatabase
             }
+    }
 
     private fun pendingPantry(
         revision: String,

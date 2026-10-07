@@ -202,20 +202,16 @@ val sandwichDayPreference = listOf(
 
 fun prepLimitLabel(minutes: Int?): String = when (minutes) {
     null -> "Tid"
-    20 -> "Meget hurtig"
-    30 -> "Hurtig"
-    45 -> "Normal"
-    60 -> "God tid"
-    else -> "≤ $minutes min"
+    30 -> "⚡ Hurtig"
+    60 -> "⏳ God tid"
+    else -> if (minutes <= 30) "⚡ Hurtig" else "⏳ God tid"
 }
 
 fun prepLimitOptionLabel(minutes: Int?): String = when (minutes) {
-    null -> "Ingen tidsgrænse"
-    20 -> "Meget hurtig · 20 min"
-    30 -> "Hurtig · 30 min"
-    45 -> "Normal · 45 min"
-    60 -> "God tid · 60 min"
-    else -> "Maks. $minutes min"
+    null -> "Alle retter"
+    30 -> "⚡ Hurtig ret (< 30 min)"
+    60 -> "⏳ God tid (> 30 min)"
+    else -> if (minutes <= 30) "⚡ Hurtig ret" else "⏳ God tid"
 }
 
 fun DayOfWeek.danishName(): String = when (this) {

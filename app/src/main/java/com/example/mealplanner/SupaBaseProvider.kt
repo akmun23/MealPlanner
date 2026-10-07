@@ -15,7 +15,7 @@ object SupabaseProvider {
             supabaseKey = BuildConfig.SUPABASE_PUBLISHABLE_KEY
         ) {
             install(Auth) {
-                scheme = "com.example.mealplanner"
+                scheme = "com.mealplan.mealplanner"
                 host = "login-callback"
             }
             install(Postgrest)

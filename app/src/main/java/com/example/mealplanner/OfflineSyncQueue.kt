@@ -5,7 +5,6 @@ import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Entity
 import androidx.room.Index
-import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
@@ -21,8 +20,10 @@ import androidx.work.WorkerParameters
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.status.SessionStatus
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
@@ -79,7 +80,7 @@ internal interface PendingMutationDao : PendingMutationStore {
         select *
         from pending_mutations
         where household_id = :householdId
-          and conflict = 0
+          and "conflict" = 0
         order by priority asc, updated_at_epoch_ms asc, id asc
         limit 1
         """
@@ -103,7 +104,7 @@ internal interface PendingMutationDao : PendingMutationStore {
         select *
         from pending_mutations
         where batch_id = :batchId
-          and conflict = 0
+          and "conflict" = 0
         order by priority asc, updated_at_epoch_ms asc, id asc
         """
     )
@@ -162,7 +163,7 @@ internal interface PendingMutationDao : PendingMutationStore {
         from pending_mutations
         where household_id = :householdId
           and attempt_count >= 6
-          and conflict = 0
+          and "conflict" = 0
         """
     )
     fun observeFailedCount(householdId: String): Flow<Int>
@@ -172,7 +173,7 @@ internal interface PendingMutationDao : PendingMutationStore {
         select count(distinct batch_id)
         from pending_mutations
         where household_id = :householdId
-          and conflict = 1
+          and "conflict" = 1
         """
     )
     fun observeConflictCount(
@@ -184,7 +185,7 @@ internal interface PendingMutationDao : PendingMutationStore {
         select *
         from pending_mutations
         where household_id = :householdId
-          and conflict = 1
+          and "conflict" = 1
         order by priority asc, updated_at_epoch_ms asc
         """
     )
@@ -195,7 +196,7 @@ internal interface PendingMutationDao : PendingMutationStore {
     @Query(
         """
         update pending_mutations
-        set conflict = 1,
+        set "conflict" = 1,
             last_error = :message
         where batch_id = :batchId
         """
@@ -209,7 +210,7 @@ internal interface PendingMutationDao : PendingMutationStore {
         """
         update pending_mutations
         set base_snapshot_payload = :baseSnapshotPayload,
-            conflict = 0,
+            "conflict" = 0,
             attempt_count = 0,
             last_error = null
         where id = :id
@@ -223,12 +224,12 @@ internal interface PendingMutationDao : PendingMutationStore {
     @Query(
         """
         update pending_mutations
-        set conflict = 0,
+        set "conflict" = 0,
             base_snapshot_payload = null,
             attempt_count = 0,
             last_error = null
         where household_id = :householdId
-          and conflict = 1
+          and "conflict" = 1
         """
     )
     suspend fun forceConflicts(
@@ -239,10 +240,22 @@ internal interface PendingMutationDao : PendingMutationStore {
         """
         delete from pending_mutations
         where household_id = :householdId
-          and conflict = 1
+          and "conflict" = 1
         """
     )
     suspend fun deleteConflicts(
+        householdId: String
+    ): Int
+
+    @Query(
+        """
+        update pending_mutations
+        set attempt_count = 0,
+            last_error = null
+        where household_id = :householdId
+        """
+    )
+    suspend fun resetAttempts(
         householdId: String
     ): Int
 
@@ -298,6 +311,18 @@ internal sealed interface QueuedMutation {
     @SerialName("upsert_recipe_category")
     data class UpsertRecipeCategory(
         val category: RecipeCategoryOption
+    ) : QueuedMutation
+
+    @Serializable
+    @SerialName("delete_recipe_category")
+    data class DeleteRecipeCategory(
+        val categoryId: String
+    ) : QueuedMutation
+
+    @Serializable
+    @SerialName("delete_ingredient_category")
+    data class DeleteIngredientCategory(
+        val categoryId: String
     ) : QueuedMutation
 
     @Serializable
@@ -383,12 +408,16 @@ internal fun QueuedMutation.key(): String = when (this) {
         "ingredient:$ingredientId"
     is QueuedMutation.UpsertIngredientCategory ->
         "ingredient-category:${category.id}"
+    is QueuedMutation.DeleteIngredientCategory ->
+        "ingredient-category:$categoryId"
     is QueuedMutation.UpsertRecipe ->
         "recipe:${recipe.id}"
     is QueuedMutation.DeleteRecipe ->
         "recipe:$recipeId"
     is QueuedMutation.UpsertRecipeCategory ->
         "recipe-category:${category.id}"
+    is QueuedMutation.DeleteRecipeCategory ->
+        "recipe-category:$categoryId"
     is QueuedMutation.SetPantry ->
         "pantry:$ingredientId"
     is QueuedMutation.SetWeekState ->
@@ -409,7 +438,9 @@ internal fun QueuedMutation.key(): String = when (this) {
 
 internal fun QueuedMutation.priority(): Int = when (this) {
     is QueuedMutation.UpsertIngredientCategory,
-    is QueuedMutation.UpsertRecipeCategory -> 10
+    is QueuedMutation.DeleteIngredientCategory,
+    is QueuedMutation.UpsertRecipeCategory,
+    is QueuedMutation.DeleteRecipeCategory -> 10
 
     is QueuedMutation.UpsertIngredient -> 20
     is QueuedMutation.UpsertRecipe -> 30
@@ -438,6 +469,9 @@ internal fun QueuedMutation.domains(): Set<CloudSyncDomain> = when (this) {
     is QueuedMutation.UpsertIngredientCategory ->
         setOf(CloudSyncDomain.INGREDIENTS)
 
+    is QueuedMutation.DeleteIngredientCategory ->
+        setOf(CloudSyncDomain.INGREDIENTS)
+
     is QueuedMutation.DeleteIngredient ->
         setOf(
             CloudSyncDomain.INGREDIENTS,
@@ -448,6 +482,9 @@ internal fun QueuedMutation.domains(): Set<CloudSyncDomain> = when (this) {
     is QueuedMutation.UpsertRecipe,
     is QueuedMutation.DeleteRecipe,
     is QueuedMutation.UpsertRecipeCategory ->
+        setOf(CloudSyncDomain.RECIPES)
+
+    is QueuedMutation.DeleteRecipeCategory ->
         setOf(CloudSyncDomain.RECIPES)
 
     is QueuedMutation.SetPantry ->
@@ -470,6 +507,9 @@ internal fun QueuedMutation.domainMask(): Int = when (this) {
     is QueuedMutation.UpsertIngredientCategory ->
         domainMask(CloudSyncDomain.INGREDIENTS)
 
+    is QueuedMutation.DeleteIngredientCategory ->
+        domainMask(CloudSyncDomain.INGREDIENTS)
+
     is QueuedMutation.DeleteIngredient ->
         domainMask(
             CloudSyncDomain.INGREDIENTS,
@@ -480,6 +520,9 @@ internal fun QueuedMutation.domainMask(): Int = when (this) {
     is QueuedMutation.UpsertRecipe,
     is QueuedMutation.DeleteRecipe,
     is QueuedMutation.UpsertRecipeCategory ->
+        domainMask(CloudSyncDomain.RECIPES)
+
+    is QueuedMutation.DeleteRecipeCategory ->
         domainMask(CloudSyncDomain.RECIPES)
 
     is QueuedMutation.SetPantry ->
@@ -601,6 +644,10 @@ internal class OfflineSyncQueue(
         schedule()
     }
 
+    suspend fun resetAttempts() {
+        dao.resetAttempts(householdId)
+    }
+
     suspend fun forceConflicts() {
         dao.forceConflicts(householdId)
         schedule()
@@ -647,6 +694,30 @@ internal class OfflineSyncQueue(
             OFFLINE_SYNC_WORK_POLICY,
             request
         )
+    }
+
+    suspend fun drainInApp(repository: CloudMealRepository): OfflineSyncDrainResult = withContext(Dispatchers.IO) {
+        val dao = database.pendingMutationDao()
+
+        OfflineSyncDrain(
+            store = dao,
+            hasConflict = { pending, _ ->
+                pending.conflict
+            },
+            onSuperseded = { mutationId ->
+                val currentRemote = repository.loadCurrent(syncHistory = false)
+                dao.rebaseLatest(
+                    id = mutationId,
+                    baseSnapshotPayload = RoomSnapshotCodec.encode(currentRemote)
+                )
+            },
+            applyMutation = { mutation ->
+                applyQueuedMutation(
+                    repository = repository,
+                    mutation = mutation
+                )
+            }
+        ).drain(householdId)
     }
 }
 
@@ -798,16 +869,8 @@ internal class OfflineSyncWorker(
         return when (
             OfflineSyncDrain(
                 store = dao,
-                hasConflict = { pending, mutation ->
-                    pending.baseSnapshotPayload
-                        ?.let(RoomSnapshotCodec::decode)
-                        ?.let { baseSnapshot ->
-                            mutation.hasRemoteConflict(
-                                repository = repository,
-                                baseSnapshot = baseSnapshot
-                            )
-                        }
-                        ?: false
+                hasConflict = { pending, _ ->
+                    pending.conflict
                 },
                 onSuperseded = { mutationId ->
                     val currentRemote =
@@ -843,174 +906,6 @@ internal class OfflineSyncWorker(
             "mealplanner_household_id"
     }
 }
-
-private fun Ingredient.conflictComparable(): Ingredient =
-    copy(imageUri = null)
-
-private fun Recipe.conflictComparable(): Recipe =
-    copy(
-        imageUri = null,
-        ingredients = ingredients.sortedBy {
-            it.ingredientId
-        },
-        pantryPrerequisites =
-            pantryPrerequisites.sortedBy {
-                it.ingredientId
-            }
-    )
-
-private fun sameAmount(
-    first: Double?,
-    second: Double?
-): Boolean =
-    when {
-        first == null && second == null -> true
-        first == null || second == null -> false
-        else -> abs(first - second) < 0.00001
-    }
-
-internal suspend fun QueuedMutation.hasRemoteConflict(
-    repository: CloudMealRepository,
-    baseSnapshot: CloudSnapshot
-): Boolean =
-    when (this) {
-        is QueuedMutation.UpsertIngredient -> {
-            val remote = repository.loadIngredientsSnapshot()
-            baseSnapshot.ingredients
-                .find { it.id == ingredient.id }
-                ?.conflictComparable() !=
-                remote.ingredients
-                    .find { it.id == ingredient.id }
-                    ?.conflictComparable()
-        }
-
-        is QueuedMutation.DeleteIngredient -> {
-            val remote = repository.loadIngredientsSnapshot()
-            baseSnapshot.ingredients
-                .find { it.id == ingredientId }
-                ?.conflictComparable() !=
-                remote.ingredients
-                    .find { it.id == ingredientId }
-                    ?.conflictComparable()
-        }
-
-        is QueuedMutation.UpsertIngredientCategory -> {
-            val remote = repository.loadIngredientsSnapshot()
-            baseSnapshot.ingredientCategories
-                .find { it.id == category.id } !=
-                remote.ingredientCategories
-                    .find { it.id == category.id }
-        }
-
-        is QueuedMutation.UpsertRecipe -> {
-            val remote = repository.loadRecipesSnapshot()
-            baseSnapshot.recipes
-                .find { it.id == recipe.id }
-                ?.conflictComparable() !=
-                remote.recipes
-                    .find { it.id == recipe.id }
-                    ?.conflictComparable()
-        }
-
-        is QueuedMutation.DeleteRecipe -> {
-            val remote = repository.loadRecipesSnapshot()
-            baseSnapshot.recipes
-                .find { it.id == recipeId }
-                ?.conflictComparable() !=
-                remote.recipes
-                    .find { it.id == recipeId }
-                    ?.conflictComparable()
-        }
-
-        is QueuedMutation.UpsertRecipeCategory -> {
-            val remote = repository.loadRecipesSnapshot()
-            baseSnapshot.recipeCategories
-                .find { it.id == category.id } !=
-                remote.recipeCategories
-                    .find { it.id == category.id }
-        }
-
-        is QueuedMutation.SetPantry -> {
-            val remote = repository.loadPantrySnapshot()
-            !sameAmount(
-                baseSnapshot.pantry[ingredientId],
-                remote[ingredientId]
-            )
-        }
-
-        is QueuedMutation.SetWeekState -> {
-            val remote = repository.loadWeekSnapshot()
-            baseSnapshot.plan != remote.plan ||
-                baseSnapshot.dayModes != remote.dayModes ||
-                baseSnapshot.lockedDays != remote.lockedDays ||
-                baseSnapshot.weeklySandwichRecipeId !=
-                    remote.weeklySandwichRecipeId ||
-                baseSnapshot.sandwichDay != remote.sandwichDay
-        }
-
-        is QueuedMutation.SetDayPrep -> {
-            val remote = repository.loadWeekSnapshot()
-            val targetDay = DayOfWeek.valueOf(day)
-            baseSnapshot.dayMaxPrepMinutes[targetDay] !=
-                remote.dayMaxPrepMinutes[targetDay]
-        }
-
-        is QueuedMutation.ReplaceLunch -> {
-            val remote = repository.loadWeekSnapshot()
-            baseSnapshot.selectedLunchRecipeIds !=
-                remote.selectedLunchRecipeIds
-        }
-
-        is QueuedMutation.SetShoppingIncluded -> {
-            val remote = repository.loadShoppingSnapshot(
-                weeklyPlanId
-            )
-            val baseIncluded =
-                baseSnapshot.shoppingIncluded[ingredientId]
-                    ?: true
-            val remoteIncluded =
-                remote.included[ingredientId]
-                    ?: true
-            val checkedChanged =
-                !included &&
-                    (
-                        baseSnapshot.shoppingChecked[ingredientId]
-                            ?: false
-                    ) != (
-                        remote.checked[ingredientId]
-                            ?: false
-                    )
-
-            baseIncluded != remoteIncluded ||
-                checkedChanged
-        }
-
-        is QueuedMutation.SetShoppingChecked -> {
-            val remote = repository.loadShoppingSnapshot(
-                weeklyPlanId
-            )
-            (
-                baseSnapshot.shoppingChecked[ingredientId]
-                    ?: false
-            ) != (
-                remote.checked[ingredientId]
-                    ?: false
-            )
-        }
-
-        is QueuedMutation.ClearShopping -> {
-            val remote = repository.loadShoppingSnapshot(
-                weeklyPlanId
-            )
-            baseSnapshot.shoppingChecked !=
-                remote.checked ||
-                baseSnapshot.shoppingIncluded !=
-                    remote.included
-        }
-
-        is QueuedMutation.SetHouseholdSandwich ->
-            false
-    }
 
 private suspend fun applyQueuedMutation(
     repository: CloudMealRepository,
@@ -1048,6 +943,18 @@ private suspend fun applyQueuedMutation(
         is QueuedMutation.UpsertRecipeCategory -> {
             repository.upsertRecipeCategory(
                 mutation.category
+            )
+        }
+
+        is QueuedMutation.DeleteRecipeCategory -> {
+            repository.deleteRecipeCategory(
+                mutation.categoryId
+            )
+        }
+
+        is QueuedMutation.DeleteIngredientCategory -> {
+            repository.deleteShoppingCategory(
+                mutation.categoryId
             )
         }
 

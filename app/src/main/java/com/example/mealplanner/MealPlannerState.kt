@@ -125,7 +125,9 @@ class MealPlannerState(
             }.getOrDefault(false)
 
         if (hasPendingMutations) {
-            offlineSyncQueue.schedule()
+            runCatching {
+                offlineSyncQueue.drainInApp(repository)
+            }
         }
 
         try {
@@ -224,9 +226,15 @@ class MealPlannerState(
 
     fun retryPendingSync() {
         scope.launch {
-            if (offlineSyncQueue.hasPendingMutations()) {
-                syncIndicator = SyncIndicator.PENDING
-                offlineSyncQueue.schedule()
+            syncIndicator = SyncIndicator.SAVING
+            mutationQueueMutex.withLock {
+                offlineSyncQueue.resetAttempts()
+                offlineSyncQueue.drainInApp(repository)
+                if (!offlineSyncQueue.hasPendingMutations()) {
+                    syncIndicator = SyncIndicator.SAVED
+                } else {
+                    syncIndicator = SyncIndicator.PENDING
+                }
             }
         }
     }
@@ -657,10 +665,20 @@ class MealPlannerState(
                         snapshot = snapshot,
                         mutations = mutations
                     )
+                    val drainResult = offlineSyncQueue.drainInApp(repository)
+                    if (!offlineSyncQueue.hasPendingMutations()) {
+                        syncIndicator = SyncIndicator.SAVED
+                    } else if (drainResult == OfflineSyncDrainResult.RETRY) {
+                        syncIndicator = SyncIndicator.PENDING
+                    }
                 } catch (e: Exception) {
-                    lastError =
-                        "Ændringen kunne ikke gemmes på telefonen. Prøv igen."
-                    syncIndicator = SyncIndicator.ERROR
+                    if (offlineSyncQueue.hasPendingMutations()) {
+                        syncIndicator = SyncIndicator.PENDING
+                    } else {
+                        lastError =
+                            "Ændringen kunne ikke gemmes på telefonen. Prøv igen."
+                        syncIndicator = SyncIndicator.ERROR
+                    }
                 }
             }
         }
@@ -930,6 +948,56 @@ class MealPlannerState(
         enqueueMutation(
             QueuedMutation.UpsertRecipeCategory(updated)
         )
+        return true
+    }
+
+    fun deleteRecipeCategory(categoryId: String): Boolean {
+        val index = recipeCategories.indexOfFirst { it.id == categoryId }
+        if (index < 0) return false
+        if (recipeCategories.size <= 1) {
+            lastError = "Der skal være mindst én kategori."
+            return false
+        }
+
+        recipeCategories.removeAt(index)
+        val fallbackId = recipeCategories.firstOrNull()?.id ?: ""
+        recipes.forEach { recipe ->
+            if (recipe.categoryId == categoryId) {
+                val rIndex = recipes.indexOfFirst { it.id == recipe.id }
+                if (rIndex >= 0) {
+                    val updated = recipes[rIndex].copy(categoryId = fallbackId)
+                    recipes[rIndex] = updated
+                    enqueueMutation(QueuedMutation.UpsertRecipe(updated))
+                }
+            }
+        }
+
+        enqueueMutation(QueuedMutation.DeleteRecipeCategory(categoryId))
+        return true
+    }
+
+    fun deleteIngredientCategory(categoryId: String): Boolean {
+        val index = ingredientCategories.indexOfFirst { it.id == categoryId }
+        if (index < 0) return false
+        if (ingredientCategories.size <= 1) {
+            lastError = "Der skal være mindst én kategori."
+            return false
+        }
+
+        ingredientCategories.removeAt(index)
+        val fallbackId = ingredientCategories.firstOrNull()?.id ?: ""
+        ingredients.forEach { ingredient ->
+            if (ingredient.shoppingCategoryId == categoryId) {
+                val iIndex = ingredients.indexOfFirst { it.id == ingredient.id }
+                if (iIndex >= 0) {
+                    val updated = ingredients[iIndex].copy(shoppingCategoryId = fallbackId)
+                    ingredients[iIndex] = updated
+                    enqueueMutation(QueuedMutation.UpsertIngredient(updated))
+                }
+            }
+        }
+
+        enqueueMutation(QueuedMutation.DeleteIngredientCategory(categoryId))
         return true
     }
 
@@ -1358,13 +1426,30 @@ class MealPlannerState(
         )
     }
 
-    fun consumeRecipeIngredients(recipeId: String) {
+    fun consumeRecipeIngredients(
+        recipeId: String,
+        deductions: Map<String, Double>? = null
+    ) {
         val recipe = recipes.find { it.id == recipeId } ?: return
-        val updates = recipe.ingredients.associate { requirement ->
-            val current = pantry[requirement.ingredientId] ?: 0.0
-            requirement.ingredientId to
-                (current - requirement.amountBase).coerceAtLeast(0.0)
+        val updates = mutableMapOf<String, Double>()
+
+        if (deductions != null) {
+            deductions.forEach { (ingredientId, deductBase) ->
+                if (deductBase > 0.0) {
+                    val current = pantry[ingredientId] ?: 0.0
+                    val next = (current - deductBase).coerceAtLeast(0.0)
+                    updates[ingredientId] = next
+                }
+            }
+        } else {
+            recipe.ingredients.forEach { requirement ->
+                val current = pantry[requirement.ingredientId] ?: 0.0
+                val next = (current - requirement.amountBase).coerceAtLeast(0.0)
+                updates[requirement.ingredientId] = next
+            }
         }
+
+        if (updates.isEmpty()) return
 
         updates.forEach { (ingredientId, amountBase) ->
             pantry[ingredientId] = amountBase

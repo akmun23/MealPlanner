@@ -20,7 +20,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.example.mealplanner"
+        applicationId = "com.mealplan.mealplanner"
         minSdk = 26
         targetSdk = 37
         versionCode = 1

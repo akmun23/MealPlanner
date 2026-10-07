@@ -41,7 +41,7 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
-private const val AUTH_REDIRECT_URL = "com.example.mealplanner://login-callback"
+private const val AUTH_REDIRECT_URL = "com.mealplan.mealplanner://login-callback"
 
 internal enum class AuthAction {
     SIGN_IN,

@@ -1011,6 +1011,24 @@ class CloudMealRepository(
         }
     }
 
+    suspend fun deleteRecipeCategory(id: String) = withContext(Dispatchers.IO) {
+        supabase.from("recipe_categories").delete {
+            filter {
+                eq("id", id)
+                eq("household_id", householdId)
+            }
+        }
+    }
+
+    suspend fun deleteShoppingCategory(id: String) = withContext(Dispatchers.IO) {
+        supabase.from("shopping_categories").delete {
+            filter {
+                eq("id", id)
+                eq("household_id", householdId)
+            }
+        }
+    }
+
     suspend fun deleteRecipe(id: String, imagePath: String?) = withContext(Dispatchers.IO) {
         supabase.from("recipes").delete {
             filter {
@@ -1034,12 +1052,13 @@ class CloudMealRepository(
     }
 
     suspend fun setHouseholdSandwich(recipeId: String?) = withContext(Dispatchers.IO) {
-        supabase.from("household_settings").update(
-            {
-                set("sandwich_recipe_id", recipeId)
-            }
+        supabase.from("household_settings").upsert(
+            SettingsRow(
+                householdId = householdId,
+                sandwichRecipeId = recipeId
+            )
         ) {
-            filter { eq("household_id", householdId) }
+            onConflict = "household_id"
         }
     }
 
@@ -1298,16 +1317,17 @@ class CloudMealRepository(
         sandwichRecipeId: String?,
         sandwichDay: DayOfWeek?
     ) {
-        supabase.from("weekly_plans").update(
-            {
-                set("sandwich_recipe_id", sandwichRecipeId)
-                set("sandwich_day", sandwichDay?.value)
-            }
+        val weekStart = LocalDate.now().with(DayOfWeek.MONDAY)
+        supabase.from("weekly_plans").upsert(
+            WeeklyPlanRow(
+                id = weeklyPlanId,
+                householdId = householdId,
+                weekStart = weekStart.toString(),
+                sandwichDay = sandwichDay?.value,
+                sandwichRecipeId = sandwichRecipeId
+            )
         ) {
-            filter {
-                eq("household_id", householdId)
-                eq("id", weeklyPlanId)
-            }
+            onConflict = "id"
         }
     }
 

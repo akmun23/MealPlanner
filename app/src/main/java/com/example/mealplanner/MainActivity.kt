@@ -1,12 +1,12 @@
 package com.example.mealplanner
 
-import android.content.Intent
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.widget.Toast
+import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -30,16 +30,17 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
@@ -56,8 +57,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -74,6 +75,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
@@ -83,16 +85,14 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.launch
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -106,7 +106,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
+import coil.request.ImageRequest
 import io.github.jan.supabase.auth.handleDeeplinks
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 import java.util.Locale
 
@@ -324,6 +327,11 @@ fun MealPlannerApp(
         )
 
         null -> {
+            val pagerState = rememberPagerState(pageCount = { AppTab.entries.size })
+            LaunchedEffect(pagerState.currentPage) {
+                tab = AppTab.entries[pagerState.currentPage]
+            }
+
             Scaffold(
                 containerColor = MaterialTheme.colorScheme.background,
                 topBar = {
@@ -336,7 +344,12 @@ fun MealPlannerApp(
                         AppTab.entries.forEach { item ->
                             NavigationBarItem(
                                 selected = item == tab,
-                                onClick = { tab = item },
+                                onClick = {
+                                    tab = item
+                                    scope.launch {
+                                        pagerState.scrollToPage(item.ordinal)
+                                    }
+                                },
                                 icon = {
                                     Icon(
                                         item.icon,
@@ -364,36 +377,42 @@ fun MealPlannerApp(
                             modifier = Modifier.align(Alignment.Center)
                         )
                     } else {
-                    when (tab) {
-                        AppTab.WEEK -> WeekScreen(
-                            state = state,
-                            onOpenRecipe = {
-                                page = AppPage.RecipeDetail(it)
-                            },
-                            onNewLunchRecipe = {
-                                page = AppPage.RecipeEditor(
-                                    recipeId = null,
-                                    initialMealType = MealType.LUNCH
+                        HorizontalPager(
+                            state = pagerState,
+                            beyondViewportPageCount = 3,
+                            modifier = Modifier.fillMaxSize()
+                        ) { pageIndex ->
+                            when (AppTab.entries[pageIndex]) {
+                                AppTab.WEEK -> WeekScreen(
+                                    state = state,
+                                    onOpenRecipe = {
+                                        page = AppPage.RecipeDetail(it)
+                                    },
+                                    onNewLunchRecipe = {
+                                        page = AppPage.RecipeEditor(
+                                            recipeId = null,
+                                            initialMealType = MealType.LUNCH
+                                        )
+                                    }
                                 )
+                                AppTab.RECIPES -> RecipesScreen(
+                                    state = state,
+                                    onAddRecipe = { page = AppPage.RecipeEditor(null) },
+                                    onOpenRecipe = { page = AppPage.RecipeDetail(it) }
+                                )
+                                AppTab.PANTRY -> PantryScreen(
+                                    state = state,
+                                    listState = pantryListState,
+                                    onAddIngredient = {
+                                        page = AppPage.IngredientEditor(null)
+                                    },
+                                    onEditIngredient = {
+                                        page = AppPage.IngredientEditor(it)
+                                    }
+                                )
+                                AppTab.SHOPPING -> ShoppingScreen(state)
                             }
-                        )
-                        AppTab.RECIPES -> RecipesScreen(
-                            state = state,
-                            onAddRecipe = { page = AppPage.RecipeEditor(null) },
-                            onOpenRecipe = { page = AppPage.RecipeDetail(it) }
-                        )
-                        AppTab.PANTRY -> PantryScreen(
-                            state = state,
-                            listState = pantryListState,
-                            onAddIngredient = {
-                                page = AppPage.IngredientEditor(null)
-                            },
-                            onEditIngredient = {
-                                page = AppPage.IngredientEditor(it)
-                            }
-                        )
-                        AppTab.SHOPPING -> ShoppingScreen(state)
-                    }
+                        }
                     }
                 }
             }
@@ -789,10 +808,13 @@ fun DayCard(
     onOpenRecipe: (String) -> Unit
 ) {
     val away = state.dayModes[day] == DayMode.AWAY
-    val recipe = state.recipeFor(day)
-    val isSandwich = recipe?.id == state.weeklySandwichRecipeId
-    val isLocked = day in state.lockedDays
-    val maxPrepMinutes = state.dayMaxPrepMinutes[day]
+    val recipe = remember(day, state.plan[day], state.recipes.size) { state.recipeFor(day) }
+    val isSandwich = remember(recipe?.id, state.weeklySandwichRecipeId) { recipe?.id != null && recipe.id == state.weeklySandwichRecipeId }
+    val isLocked = remember(day, state.lockedDays.size) { day in state.lockedDays }
+    val maxPrepMinutes = remember(day, state.dayMaxPrepMinutes[day]) { state.dayMaxPrepMinutes[day] }
+    val recipeCategory = remember(recipe?.id, state.ingredientCategories.size) {
+        if (recipe != null) state.recipeCategoryName(recipe) else ""
+    }
 
     var showRecipePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
@@ -812,24 +834,26 @@ fun DayCard(
         Column(modifier = Modifier.padding(14.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.size(44.dp),
+                    shape = RoundedCornerShape(12.dp),
                     color = if (away) {
-                        MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
+                        MaterialTheme.colorScheme.surfaceVariant
                     } else {
                         MaterialTheme.colorScheme.primary
                     }
                 ) {
-                    Text(
-                        day.shortDanishName(),
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = if (away) {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        } else {
-                            MaterialTheme.colorScheme.onPrimary
-                        }
-                    )
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            day.shortDanishName(),
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (away) {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            } else {
+                                MaterialTheme.colorScheme.onPrimary
+                            }
+                        )
+                    }
                 }
 
                 Spacer(Modifier.width(10.dp))
@@ -886,8 +910,15 @@ fun DayCard(
             if (!away) {
                 if (!recipe?.imageUri.isNullOrEmpty()) {
                     Spacer(Modifier.height(10.dp))
+                    val context = LocalContext.current
+                    val imageRequest = remember(recipe.imageUri) {
+                        ImageRequest.Builder(context)
+                            .data(recipe.imageUri)
+                            .crossfade(true)
+                            .build()
+                    }
                     AsyncImage(
-                        model = recipe.imageUri,
+                        model = imageRequest,
                         contentDescription = null,
                         modifier = Modifier
                             .fillMaxWidth()
@@ -897,48 +928,46 @@ fun DayCard(
                     )
                 }
 
-                if (recipe != null) {
-                    Spacer(Modifier.height(8.dp))
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
+                Spacer(Modifier.height(8.dp))
+
+                // INLINE STATUS PILLS & PREP TIME LIMIT FILTER CHIP IN SINGLE ROW
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    if (recipe != null) {
                         if (isSandwich) StatusPill("Ugens sandwich", true)
-                        StatusPill(
-                            state.recipeCategoryName(recipe),
-                            false
-                        )
+                        if (recipeCategory.isNotBlank()) StatusPill(recipeCategory, false)
                         recipe.prepMinutes?.let {
                             StatusPill("${it} min", false)
                         }
                     }
-                }
 
-                Spacer(Modifier.height(6.dp))
+                    Box {
+                        FilterChip(
+                            selected = maxPrepMinutes != null,
+                            onClick = { showTimePicker = true },
+                            label = {
+                                Text(prepLimitLabel(maxPrepMinutes))
+                            }
+                        )
 
-                Box {
-                    FilterChip(
-                        selected = maxPrepMinutes != null,
-                        onClick = { showTimePicker = true },
-                        label = {
-                            Text(prepLimitLabel(maxPrepMinutes))
-                        }
-                    )
-
-                    DropdownMenu(
-                        expanded = showTimePicker,
-                        onDismissRequest = { showTimePicker = false }
-                    ) {
-                        listOf<Int?>(null, 20, 30, 45, 60).forEach { minutes ->
-                            DropdownMenuItem(
-                                text = {
-                                    Text(prepLimitOptionLabel(minutes))
-                                },
-                                onClick = {
-                                    state.setDayMaxPrepMinutes(day, minutes)
-                                    showTimePicker = false
-                                }
-                            )
+                        DropdownMenu(
+                            expanded = showTimePicker,
+                            onDismissRequest = { showTimePicker = false }
+                        ) {
+                            listOf<Int?>(null, 30, 60).forEach { minutes ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(prepLimitOptionLabel(minutes))
+                                    },
+                                    onClick = {
+                                        state.setDayMaxPrepMinutes(day, minutes)
+                                        showTimePicker = false
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -1291,7 +1320,7 @@ private fun RecipeListCard(
 
                 Text(
                     meta.joinToString(" · "),
-                    style = MaterialTheme.typography.bodySmall,
+                    style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
@@ -1301,7 +1330,7 @@ private fun RecipeListCard(
                     Spacer(Modifier.height(3.dp))
                     Text(
                         "Ugens sandwich",
-                        style = MaterialTheme.typography.labelSmall,
+                        style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.primary
                     )
@@ -1318,6 +1347,145 @@ private fun RecipeListCard(
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
+private fun formatNumberSimple(value: Double): String {
+    if (kotlin.math.abs(value - value.toInt()) < 0.00001) {
+        return value.toInt().toString()
+    }
+    return String.format(Locale("da", "DK"), "%.2f", value).trimEnd('0').trimEnd('.')
+}
+
+@Composable
+private fun ConsumeRecipeIngredientsDialog(
+    recipe: Recipe,
+    state: MealPlannerState,
+    onDismiss: () -> Unit
+) {
+    val ingredientSelection = remember(recipe.id) {
+        mutableStateMapOf<String, Pair<Boolean, String>>().apply {
+            recipe.pantryPrerequisites.forEach { req ->
+                val ingredient = state.ingredients.find { it.id == req.ingredientId }
+                if (ingredient != null) {
+                    val unit = ingredient.preferredUnit
+                    val reqAmountUnit = unit.fromBase(req.minimumAmountBase)
+                    put(req.ingredientId, Pair(true, formatNumberSimple(reqAmountUnit)))
+                }
+            }
+        }
+    }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Træk fra lager", fontWeight = FontWeight.Bold) },
+        text = {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    "Vælg ingredienser og mængder der skal trækkes fra dit lager for ${recipe.name}:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                recipe.pantryPrerequisites.forEach { req ->
+                    val ingredient = state.ingredients.find { it.id == req.ingredientId }
+                    if (ingredient != null) {
+                        val selection = ingredientSelection[ingredient.id] ?: Pair(true, "0")
+                        val isChecked = selection.first
+                        val amountStr = selection.second
+                        val unit = ingredient.preferredUnit
+                        val availableBase = state.pantry[ingredient.id] ?: 0.0
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = CardDefaults.cardColors(
+                                containerColor = if (isChecked) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
+                            )
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Checkbox(
+                                        checked = isChecked,
+                                        onCheckedChange = { checked ->
+                                            ingredientSelection[ingredient.id] = Pair(checked, amountStr)
+                                        }
+                                    )
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(ingredient.name, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            "Krav: ${state.formatBaseAmount(ingredient, req.minimumAmountBase)} · Lager: ${state.formatBaseAmount(ingredient, availableBase)}",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                }
+
+                                if (isChecked) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(start = 36.dp, top = 2.dp)
+                                    ) {
+                                        Text("Træk: ", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                        OutlinedTextField(
+                                            value = amountStr,
+                                            onValueChange = { newStr ->
+                                                val clean = newStr.replace(',', '.')
+                                                ingredientSelection[ingredient.id] = Pair(true, clean)
+                                            },
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(48.dp),
+                                            singleLine = true
+                                        )
+                                        Spacer(Modifier.width(6.dp))
+                                        Text(unit.symbol, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val deductions = mutableMapOf<String, Double>()
+                    recipe.pantryPrerequisites.forEach { req ->
+                        val selection = ingredientSelection[req.ingredientId]
+                        if (selection != null && selection.first) {
+                            val ingredient = state.ingredients.find { it.id == req.ingredientId }
+                            if (ingredient != null) {
+                                val amountUnit = selection.second.toDoubleOrNull() ?: 0.0
+                                val deductBase = ingredient.preferredUnit.toBase(amountUnit)
+                                deductions[req.ingredientId] = deductBase
+                            }
+                        }
+                    }
+                    state.consumeRecipeIngredients(recipe.id, deductions)
+                    onDismiss()
+                }
+            ) {
+                Text("Træk fra lager")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Annuller")
+            }
+        }
+    )
+}
+
 @Composable
 private fun RecipeDetailScreen(
     state: MealPlannerState,
@@ -1370,29 +1538,10 @@ private fun RecipeDetailScreen(
     }
 
     if (showConsumeConfirm) {
-        AlertDialog(
-            onDismissRequest = { showConsumeConfirm = false },
-            title = { Text("Brug ingredienser") },
-            text = {
-                Text("Træk opskriftens mængder fra lageret?")
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        state.consumeRecipeIngredients(recipe.id)
-                        showConsumeConfirm = false
-                    }
-                ) {
-                    Text("Brug")
-                }
-            },
-            dismissButton = {
-                TextButton(
-                    onClick = { showConsumeConfirm = false }
-                ) {
-                    Text("Annuller")
-                }
-            }
+        ConsumeRecipeIngredientsDialog(
+            recipe = recipe,
+            state = state,
+            onDismiss = { showConsumeConfirm = false }
         )
     }
 
@@ -2560,7 +2709,8 @@ fun PantryScreen(
                     Column(modifier = Modifier.weight(1f)) {
                         Text(
                             ingredient.name,
-                            fontWeight = FontWeight.SemiBold
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
                         )
                         Text(
                             if (amount > 0.0) {
@@ -2569,10 +2719,14 @@ fun PantryScreen(
                                     amount
                                 )
                             } else {
-                                "Ikke registreret"
+                                "Ikke på lager"
                             },
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = if (amount > 0.0) {
+                                MaterialTheme.colorScheme.primary
+                            } else {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            }
                         )
                     }
 
@@ -2933,7 +3087,7 @@ private fun ShoppingItemCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
             containerColor = if (checked) {
                 MaterialTheme.colorScheme.surfaceVariant
@@ -2944,7 +3098,9 @@ private fun ShoppingItemCard(
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier.padding(10.dp)
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 6.dp)
         ) {
             Checkbox(
                 checked = checked,
@@ -2957,10 +3113,15 @@ private fun ShoppingItemCard(
                 }
             )
 
+            Spacer(Modifier.width(4.dp))
+
             Column(modifier = Modifier.weight(1f)) {
                 Text(
                     item.ingredient.name,
                     fontWeight = FontWeight.Bold,
+                    style = MaterialTheme.typography.bodyMedium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
                     textDecoration = if (checked) {
                         TextDecoration.LineThrough
                     } else {
@@ -2969,24 +3130,25 @@ private fun ShoppingItemCard(
                 )
 
                 Text(
-                    "Behov: " +
-                        state.formatBaseAmount(
-                            item.ingredient,
-                            item.requiredBase
-                        ),
-                    style = MaterialTheme.typography.bodyMedium
+                    "Behov: " + state.formatBaseAmount(item.ingredient, item.requiredBase),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
 
                 Text(
-                    "Lager: " +
-                        state.formatBaseAmount(
-                            item.ingredient,
-                            item.pantryBase
-                        ),
+                    "Lager: " + state.formatBaseAmount(item.ingredient, item.pantryBase),
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
+            }
 
+            Spacer(Modifier.width(6.dp))
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 FilterChip(
                     selected = included,
                     onClick = {
@@ -2995,24 +3157,35 @@ private fun ShoppingItemCard(
                             included = !included
                         )
                     },
-                    label = { Text("Køb") }
+                    label = { Text("Køb", style = MaterialTheme.typography.labelSmall) },
+                    modifier = Modifier.height(32.dp)
                 )
 
                 if (onEditPantry != null) {
-                    TextButton(
+                    IconButton(
                         onClick = onEditPantry,
-                        contentPadding = PaddingValues(0.dp)
+                        modifier = Modifier.size(32.dp)
                     ) {
-                        Text("Ret lager")
+                        Icon(
+                            Icons.Filled.Edit,
+                            contentDescription = "Ret lager",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
                     }
                 }
 
                 if (checked && onAddToPantry != null) {
-                    TextButton(
+                    IconButton(
                         onClick = onAddToPantry,
-                        contentPadding = PaddingValues(0.dp)
+                        modifier = Modifier.size(32.dp)
                     ) {
-                        Text("Til lager")
+                        Icon(
+                            Icons.Filled.Add,
+                            contentDescription = "Til lager",
+                            modifier = Modifier.size(16.dp),
+                            tint = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
             }
@@ -3250,6 +3423,17 @@ private fun RecipeCategoriesScreen(
                                 contentDescription = "Omdøb kategori"
                             )
                         }
+                        IconButton(
+                            onClick = {
+                                state.deleteRecipeCategory(category.id)
+                            }
+                        ) {
+                            Icon(
+                                Icons.Filled.Delete,
+                                contentDescription = "Slet kategori",
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
                     }
                 }
             }
@@ -3395,6 +3579,17 @@ private fun IngredientCategoriesScreen(
                             Icon(
                                 Icons.Filled.Edit,
                                 contentDescription = "Omdøb kategori"
+                            )
+                        }
+                        IconButton(
+                            onClick = {
+                                state.deleteIngredientCategory(category.id)
+                            }
+                        ) {
+                            Icon(
+                                Icons.Filled.Delete,
+                                contentDescription = "Slet kategori",
+                                tint = MaterialTheme.colorScheme.error
                             )
                         }
                     }
@@ -3878,26 +4073,37 @@ private fun LargeImage(
 @Composable
 private fun AppThumbnail(
     imageUri: String?,
-    fallback: String
+    fallback: String,
+    modifier: Modifier = Modifier
 ) {
+    val context = LocalContext.current
+    val boxSize = 60.dp
+    val actualModifier = if (modifier == Modifier) Modifier.size(boxSize) else modifier
+
     if (!imageUri.isNullOrBlank()) {
+        val request = remember(imageUri) {
+            ImageRequest.Builder(context)
+                .data(imageUri)
+                .crossfade(true)
+                .build()
+        }
         AsyncImage(
-            model = imageUri,
+            model = request,
             contentDescription = null,
-            modifier = Modifier
-                .size(52.dp)
-                .clip(RoundedCornerShape(14.dp)),
+            modifier = actualModifier.clip(RoundedCornerShape(16.dp)),
             contentScale = ContentScale.Crop
         )
     } else {
         Surface(
-            modifier = Modifier.size(52.dp),
-            shape = RoundedCornerShape(14.dp),
-            color = MaterialTheme.colorScheme.primaryContainer
+            modifier = actualModifier,
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.primaryContainer,
+            tonalElevation = 2.dp
         ) {
             Box(contentAlignment = Alignment.Center) {
                 Text(
                     fallback,
+                    style = MaterialTheme.typography.headlineMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
