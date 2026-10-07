@@ -93,24 +93,13 @@ dependencies {
      * BOM keeps all Supabase modules on the same version.
      */
     implementation(
-        platform("io.github.jan-tennert.supabase:bom:3.8.0")
+        platform(libs.bom)
     )
 
-    implementation(
-        "io.github.jan-tennert.supabase:auth-kt"
-    )
-
-    implementation(
-        "io.github.jan-tennert.supabase:postgrest-kt"
-    )
-
-    implementation(
-        "io.github.jan-tennert.supabase:realtime-kt"
-    )
-
-    implementation(
-        "io.github.jan-tennert.supabase:storage-kt"
-    )
+    implementation(libs.supabaseAuth)
+    implementation(libs.supabasePostgrest)
+    implementation(libs.supabaseRealtime)
+    implementation(libs.supabaseStorage)
 
     /*
      * KTOR
@@ -122,16 +111,14 @@ dependencies {
      * but Supabase Realtime requires WebSockets.
      */
     implementation(
-        "io.ktor:ktor-client-cio:3.5.1"
+        libs.io.ktor.ktor.client.cio
     )
 
     implementation(
-        "io.coil-kt:coil-compose:2.7.0"
+        libs.coil.compose
     )
 
-    implementation(
-        "androidx.compose.material:material-icons-extended"
-    )
+    implementation(libs.composeMaterialIconsExtended)
 
     testImplementation(libs.junit)
     testImplementation(libs.androidx.test.core.ktx)

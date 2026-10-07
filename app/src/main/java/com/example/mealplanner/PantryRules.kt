@@ -6,9 +6,7 @@ object PantryRules {
         recipe: Recipe,
         pantry: Map<String, Double>
     ): Boolean {
-        if (recipe.ingredients.isEmpty()) return false
-
-        return recipe.ingredients.all { requirement ->
+        return recipe.ingredients.isNotEmpty() && recipe.ingredients.all { requirement ->
             val available = pantry[requirement.ingredientId] ?: 0.0
             available + 0.00001 >= requirement.amountBase
         }

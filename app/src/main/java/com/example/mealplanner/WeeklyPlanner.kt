@@ -269,7 +269,7 @@ object WeeklyPlanner {
 
         repeat(LOCAL_SEARCH_STEPS) {
             val a = swappable[random.nextInt(swappable.size)]
-            var b = swappable[random.nextInt(swappable.size)]
+            val b = swappable[random.nextInt(swappable.size)]
             if (a == b) return@repeat
 
             val candidate = best.toMutableMap()
@@ -314,10 +314,9 @@ object WeeklyPlanner {
         recipe: Recipe,
         maxPrepMinutes: Int?
     ): Boolean {
-        if (maxPrepMinutes == null) return true
-        return recipe.prepMinutes
+        return (maxPrepMinutes == null || recipe.prepMinutes
             ?.let { it <= maxPrepMinutes }
-            ?: false
+                ?: false)
     }
 
     private fun incrementalRecipeScore(

@@ -2,6 +2,7 @@ package com.example.mealplanner
 
 import android.content.Context
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
@@ -23,6 +24,7 @@ import java.time.LocalDate
 import java.time.temporal.TemporalAdjusters
 import java.util.Locale
 import java.util.UUID
+import kotlin.time.Duration.Companion.milliseconds
 
 class MealPlannerState(
     context: Context,
@@ -89,7 +91,7 @@ class MealPlannerState(
     internal var syncIndicator by mutableStateOf(SyncIndicator.IDLE)
         private set
 
-    internal var syncConflictCount by mutableStateOf(0)
+    internal var syncConflictCount by mutableIntStateOf(0)
         private set
 
     init {
@@ -187,7 +189,7 @@ class MealPlannerState(
                             .associateWith(syncTracker::generation)
 
                     syncIndicator = SyncIndicator.SAVED
-                    delay(250L)
+                    delay(250L.milliseconds)
 
                     if (
                         !offlineSyncQueue.hasPendingMutations() &&
@@ -204,7 +206,7 @@ class MealPlannerState(
 
                     syncStatusClearJob?.cancel()
                     syncStatusClearJob = scope.launch {
-                        delay(1200L)
+                        delay(1200L.milliseconds)
                         if (
                             !offlineSyncQueue
                                 .hasPendingMutations()
@@ -230,10 +232,10 @@ class MealPlannerState(
             mutationQueueMutex.withLock {
                 offlineSyncQueue.resetAttempts()
                 offlineSyncQueue.drainInApp(repository)
-                if (!offlineSyncQueue.hasPendingMutations()) {
-                    syncIndicator = SyncIndicator.SAVED
+                syncIndicator = if (!offlineSyncQueue.hasPendingMutations()) {
+                    SyncIndicator.SAVED
                 } else {
-                    syncIndicator = SyncIndicator.PENDING
+                    SyncIndicator.PENDING
                 }
             }
         }
@@ -631,7 +633,7 @@ class MealPlannerState(
 
         cachePersistJob?.cancel()
         cachePersistJob = scope.launch {
-            delay(delayMillis)
+            delay(delayMillis.milliseconds)
             runCatching {
                 roomCache.save(snapshot)
             }
@@ -1010,11 +1012,13 @@ class MealPlannerState(
     fun recipeProteinNames(recipe: Recipe): List<String> {
         val ingredientsById = ingredients.associateBy { it.id }
         return recipe.ingredients
+            .asSequence()
             .mapNotNull { ingredientsById[it.ingredientId] }
             .filter { it.isProtein }
             .map { it.name }
             .distinct()
             .sortedBy { it.lowercase() }
+            .toList()
     }
 
     fun deleteIngredient(ingredientId: String): Boolean {
@@ -1650,7 +1654,7 @@ class MealPlannerState(
                 pantryBase = pantry[ingredientId] ?: 0.0
             )
         }.sortedWith(
-            compareBy<ShoppingItem>(
+            compareBy(
                 {
                     categoriesById[it.ingredient.shoppingCategoryId]
                         ?.position
@@ -1781,12 +1785,6 @@ class MealPlannerState(
         val value = unit.fromBase(amountBase)
         return "${formatNumber(value)} ${unit.labelFor(value)}"
     }
-
-    fun formatEnteredAmount(
-        amount: Double,
-        unit: MeasurementUnit
-    ): String =
-        "${formatNumber(amount)} ${unit.labelFor(amount)}"
 
     private fun currentWeekStart(): LocalDate =
         LocalDate.now().with(

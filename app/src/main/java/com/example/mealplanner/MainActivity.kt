@@ -940,7 +940,7 @@ fun DayCard(
                         if (isSandwich) StatusPill("Ugens sandwich", true)
                         if (recipeCategory.isNotBlank()) StatusPill(recipeCategory, false)
                         recipe.prepMinutes?.let {
-                            StatusPill("${it} min", false)
+                            StatusPill("$it min", false)
                         }
                     }
 
@@ -957,7 +957,7 @@ fun DayCard(
                             expanded = showTimePicker,
                             onDismissRequest = { showTimePicker = false }
                         ) {
-                            listOf<Int?>(null, 30, 60).forEach { minutes ->
+                            listOf(null, 30, 60).forEach { minutes ->
                                 DropdownMenuItem(
                                     text = {
                                         Text(prepLimitOptionLabel(minutes))
@@ -1021,7 +1021,7 @@ fun DayCard(
                                                     buildString {
                                                         append(candidate.name)
                                                         candidate.prepMinutes?.let {
-                                                            append(" · ${it} min")
+                                                            append(" · $it min")
                                                         }
                                                     }
                                                 )
@@ -1312,7 +1312,7 @@ private fun RecipeListCard(
                     ) {
                         add("Kun manuelt")
                     }
-                    recipe.prepMinutes?.let { add("${it} min") }
+                    recipe.prepMinutes?.let { add("$it min") }
                     if (proteinNames.isNotEmpty()) {
                         add(proteinNames.joinToString(" + "))
                     }
@@ -1346,7 +1346,6 @@ private fun RecipeListCard(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 private fun formatNumberSimple(value: Double): String {
     if (kotlin.math.abs(value - value.toInt()) < 0.00001) {
         return value.toInt().toString()
@@ -1618,7 +1617,7 @@ private fun RecipeDetailScreen(
                         ) {
                             add("Kun manuelt")
                         }
-                        recipe.prepMinutes?.let { add("${it} min") }
+                        recipe.prepMinutes?.let { add("$it min") }
                         val proteinNames = state.recipeProteinNames(recipe)
                         if (proteinNames.isNotEmpty()) {
                             add(proteinNames.joinToString(" + "))
@@ -1790,7 +1789,6 @@ private fun RecipeDetailScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RecipeEditorScreen(
     state: MealPlannerState,
@@ -2341,7 +2339,6 @@ private fun RequirementEditor(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun IngredientEditorScreen(
     state: MealPlannerState,
@@ -3285,7 +3282,6 @@ private fun AddPurchasedToPantryDialog(
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun RecipeCategoriesScreen(
     state: MealPlannerState,
@@ -3441,7 +3437,6 @@ private fun RecipeCategoriesScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun IngredientCategoriesScreen(
     state: MealPlannerState,
@@ -3599,7 +3594,6 @@ private fun IngredientCategoriesScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SettingsScreen(
     household: HouseholdDto,
@@ -3811,11 +3805,9 @@ private fun SettingsScreen(
                                 val clipboard = context.getSystemService(
                                     Context.CLIPBOARD_SERVICE
                                 ) as ClipboardManager
-                                clipboard.setPrimaryClip(
-                                    ClipData.newPlainText(
-                                        "Invitationskode",
-                                        household.joinCode
-                                    )
+                                clipboard.primaryClip = ClipData.newPlainText(
+                                    "Invitationskode",
+                                    household.joinCode
                                 )
                                 Toast.makeText(
                                     context,
@@ -3967,6 +3959,7 @@ private fun SearchField(
     )
 }
 
+@Suppress("SameParameterValue")
 @Composable
 private fun ImagePickerBox(
     imageUri: String?,

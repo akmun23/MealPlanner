@@ -12,7 +12,7 @@ internal fun <T> sortByIngredientCategory(
     val categoriesById = categories.associateBy { it.id }
 
     return items.sortedWith(
-        compareBy<T>(
+        compareBy(
             { item ->
                 val ingredient = ingredientsById[ingredientId(item)]
                 categoriesById[ingredient?.shoppingCategoryId]

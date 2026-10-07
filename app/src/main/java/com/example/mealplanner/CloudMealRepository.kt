@@ -40,6 +40,8 @@ import java.time.temporal.TemporalAdjusters
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration.Companion.hours
+import androidx.core.net.toUri
+import kotlin.time.Duration.Companion.milliseconds
 
 @Serializable
 private data class IngredientRow(
@@ -325,6 +327,7 @@ private fun PostgresAction.oldRecordOrNull(): JsonObject? =
 private fun JsonObject.stringValue(name: String): String? =
     get(name)?.jsonPrimitive?.contentOrNull
 
+@Suppress("SameParameterValue")
 private fun JsonObject.doubleValue(name: String): Double? =
     get(name)?.jsonPrimitive?.doubleOrNull
 
@@ -1265,7 +1268,7 @@ class CloudMealRepository(
 
         val reconciliationJobs = domainSignals.map { (domain, signal) ->
             signal
-                .debounce(250)
+                .debounce(250.milliseconds)
                 .onEach {
                     onEvent(
                         CloudRealtimeEvent.DomainChanged(domain)
@@ -1367,8 +1370,7 @@ class CloudMealRepository(
                 MealHistoryRow(
                     householdId = householdId,
                     eatenOn = date.toString(),
-                    recipeId = recipeId,
-                    sourceWeeklyPlanId = week.id
+                    recipeId = recipeId
                 )
             }
         }
@@ -1409,8 +1411,8 @@ class CloudMealRepository(
             return existingPath to imageUri
         }
 
-        val bytes = prepareImage(Uri.parse(imageUri))
-        val path = "$householdId/$kind/$objectId-\${UUID.randomUUID()}.jpg"
+        val bytes = prepareImage(imageUri.toUri())
+        val path = $$"$$householdId/$$kind/$$objectId-${UUID.randomUUID()}.jpg"
         supabase.storage["meal-images"].upload(path, bytes) {
             upsert = false
         }

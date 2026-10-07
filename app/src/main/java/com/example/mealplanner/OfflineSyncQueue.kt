@@ -5,7 +5,6 @@ import androidx.room.ColumnInfo
 import androidx.room.Dao
 import androidx.room.Entity
 import androidx.room.Index
-import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.work.BackoffPolicy
@@ -26,13 +25,10 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.decodeFromString
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.time.DayOfWeek
 import java.util.UUID
 import java.util.concurrent.TimeUnit
-import kotlin.math.abs
 
 @Entity(
     tableName = "pending_mutations",
@@ -570,13 +566,6 @@ internal class OfflineSyncQueue(
             householdId = householdId,
             domainMask = domainMask(domain)
         )
-
-    suspend fun enqueue(
-        snapshot: CloudSnapshot,
-        mutation: QueuedMutation
-    ) {
-        enqueue(snapshot, listOf(mutation))
-    }
 
     suspend fun enqueue(
         snapshot: CloudSnapshot,
