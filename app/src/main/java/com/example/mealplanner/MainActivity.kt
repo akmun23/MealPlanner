@@ -1351,7 +1351,7 @@ private fun formatNumberSimple(value: Double): String {
     if (kotlin.math.abs(value - value.toInt()) < 0.00001) {
         return value.toInt().toString()
     }
-    return String.format(Locale("da", "DK"), "%.2f", value).trimEnd('0').trimEnd('.')
+    return String.format(Locale.forLanguageTag("da-DK"), "%.2f", value).trimEnd('0').trimEnd('.')
 }
 
 @Composable
