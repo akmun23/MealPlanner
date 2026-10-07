@@ -3805,9 +3805,11 @@ private fun SettingsScreen(
                                 val clipboard = context.getSystemService(
                                     Context.CLIPBOARD_SERVICE
                                 ) as ClipboardManager
-                                clipboard.primaryClip = ClipData.newPlainText(
-                                    "Invitationskode",
-                                    household.joinCode
+                                clipboard.setPrimaryClip(
+                                    ClipData.newPlainText(
+                                        "Invitationskode",
+                                        household.joinCode
+                                    )
                                 )
                                 Toast.makeText(
                                     context,
