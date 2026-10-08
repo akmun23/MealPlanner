@@ -1,5 +1,6 @@
 package com.example.mealplanner
 
+import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -296,7 +297,12 @@ fun CloudGate() {
                     CloudScreen.Ready(household)
                 }
             }
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            Log.e(
+                "MealPlannerStartup",
+                "Session or household initialization failed",
+                error
+            )
             CloudScreen.ConnectionIssue
         }
     }
