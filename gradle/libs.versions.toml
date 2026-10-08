@@ -2,21 +2,21 @@
 agp = "9.4.1"
 bom = "3.8.0"
 coilCompose = "2.7.0"
-coreKtx = "1.19.1"
+coreKtx = "1.10.1"
 junit = "4.13.2"
-ktorKtorClientCio = "3.6.0"
-lifecycleRuntimeKtx = "2.11.0"
-activityCompose = "1.13.0"
+ktorKtorClientCio = "3.5.1"
+lifecycleRuntimeKtx = "2.6.1"
+activityCompose = "1.8.0"
 
 # Updated because Supabase 3.8.0 is built with Kotlin 2.4.x
-kotlin = "2.4.20"
+kotlin = "2.4.10"
 
-composeBom = "2026.09.00"
+composeBom = "2026.02.01"
 room = "2.8.5"
 work = "2.12.0"
 androidxTestCore = "1.7.0"
-robolectric = "4.17"
-ksp = "2.3.12"
+robolectric = "4.16.1"
+ksp = "2.3.11"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -35,7 +35,7 @@ androidx-compose-ui = { group = "androidx.compose.ui", name = "ui" }
 androidx-compose-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
 androidx-compose-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
 androidx-compose-material3 = { group = "androidx.compose.material3", name = "material3" }
-composeMaterialIconsExtended = { module = "androidx.compose.material:material-icons-extended", version = "1.7.8" }
+composeMaterialIconsExtended = { module = "androidx.compose.material:material-icons-extended" }
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
 androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
 androidx-room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
