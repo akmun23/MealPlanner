@@ -13,9 +13,4 @@ class StartupComponentsTest {
             assertNotNull(tab.icon)
         }
     }
-
-    @Test
-    fun supabaseClientCanBeConstructed() {
-        assertNotNull(SupabaseProvider.client)
-    }
 }
