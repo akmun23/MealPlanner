@@ -120,7 +120,8 @@ data class HouseholdDto(
 
 class CloudAccountRepository {
 
-    private val supabase = SupabaseProvider.client
+    private val supabase
+        get() = SupabaseProvider.client
 
     suspend fun isLoggedIn(): Boolean {
         val status = supabase.auth.sessionStatus.first {
