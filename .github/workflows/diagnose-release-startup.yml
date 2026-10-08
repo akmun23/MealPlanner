@@ -1,0 +1,66 @@
+name: Diagnose release startup on emulator
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  launch:
+    name: Runtime launch (${{ matrix.variant }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - variant: failing-release
+            ref: ddeaa9652556103b448adafab6b098e7ecabee4f
+          - variant: proposed-hotfix
+            ref: 12b9d20e1c67be8c6658d9c05f573f5c0876e35b
+
+    steps:
+      - name: Check out launch diagnostics
+        uses: actions/checkout@v4
+
+      - name: Check out code under investigation
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.ref }}
+          path: target
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+          cache-dependency-path: target/**/*.gradle*
+
+      - name: Supply harmless build-time credentials for test
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > target/local.properties
+          echo "SUPABASE_URL=https://example.supabase.co" >> target/local.properties
+          echo "SUPABASE_PUBLISHABLE_KEY=sb_publishable_build_check" >> target/local.properties
+
+      - name: Build release APK (including release optimization)
+        working-directory: target
+        run: bash ./gradlew :app:assembleRelease --stacktrace
+
+      - name: Boot Android and launch installed release
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: bash .github/scripts/diagnose-release-startup.sh
+
+      - name: Preserve launch logcat and package metadata
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: runtime-launch-${{ matrix.variant }}
+          path: diagnostics/
+          if-no-files-found: warn
