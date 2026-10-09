@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Row
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -473,10 +475,10 @@ fun DayCard(
 
                 Spacer(Modifier.height(8.dp))
 
-                // INLINE STATUS PILLS & PREP TIME LIMIT FILTER CHIP IN SINGLE ROW
-                Row(
+                // Let long categories and the time filter wrap on small screens.
+                FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     if (recipe != null) {
@@ -611,8 +613,12 @@ private fun StatusPill(
     ) {
         Text(
             text,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            modifier = Modifier
+                .padding(horizontal = 8.dp, vertical = 3.dp)
+                .widthIn(max = 210.dp),
             style = MaterialTheme.typography.labelSmall,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
             color = if (highlighted) {
                 MaterialTheme.colorScheme.onPrimary
             } else {
