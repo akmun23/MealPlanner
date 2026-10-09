@@ -9,6 +9,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -29,8 +31,13 @@ import kotlin.time.Duration.Companion.milliseconds
 class MealPlannerState(
     context: Context,
     householdId: String,
-    private val scope: CoroutineScope
+    parentScope: CoroutineScope
 ) {
+    // Keep household work isolated from other UI and household scopes.
+    private val scope = CoroutineScope(
+        parentScope.coroutineContext +
+            SupervisorJob(parentScope.coroutineContext[Job])
+    )
     private val repository = CloudMealRepository(
         context = context.applicationContext,
         householdId = householdId
@@ -266,8 +273,13 @@ class MealPlannerState(
     }
 
     suspend fun close() {
-        cachePersistJob?.join()
-        repository.stopRealtime()
+        try {
+            cachePersistJob?.join()
+            repository.stopRealtime()
+        } finally {
+            // Stop database observers and pending network work on household exit.
+            scope.cancel()
+        }
     }
 
     fun clearError() {
