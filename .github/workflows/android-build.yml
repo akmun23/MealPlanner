@@ -13,6 +13,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Catch wedged emulator/ADB commands without leaving CI spinning forever.
+    timeout-minutes: 35
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -65,6 +67,9 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      - name: Check emulator smoke script syntax
+        run: bash -n scripts/smoke_optimized_apk.sh
+
       - name: Validate optimized APK startup in emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -72,14 +77,18 @@ jobs:
           target: google_apis
           arch: x86_64
           disable-animations: true
-          script: bash scripts/smoke_optimized_apk.sh
+          emulator-boot-timeout: 420
+          # Fail decisively if login never appears, rather than polling forever.
+          script: timeout --signal=TERM --kill-after=10s 200s bash scripts/smoke_optimized_apk.sh
 
       - name: Archive optimized startup log
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: r8-emulator-startup-log
-          path: r8-emulator-logcat.txt
+          path: |
+            r8-emulator-logcat.txt
+            r8-emulator-activities.txt
           if-no-files-found: ignore
           retention-days: 7
 
