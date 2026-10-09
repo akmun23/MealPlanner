@@ -40,6 +40,21 @@ object PantryRules {
         return total / requirements.size.toDouble()
     }
 
+
+    // Each distinct ingredient contributes at most one unit to planner scoring.
+    fun coveredIngredientUnits(
+        recipe: Recipe,
+        pantry: Map<String, Double>
+    ): Double =
+        requiredByIngredient(recipe).entries.sumOf { (ingredientId, requiredAmount) ->
+            if (requiredAmount <= 0.0) {
+                0.0
+            } else {
+                val available = pantry[ingredientId] ?: 0.0
+                (available / requiredAmount).coerceIn(0.0, 1.0)
+            }
+        }
+
     fun remainingAfterCooking(
         recipe: Recipe,
         pantry: Map<String, Double>
