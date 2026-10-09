@@ -47,6 +47,13 @@ jobs:
         working-directory: target
         run: bash ./gradlew :app:assembleRelease --stacktrace
 
+      - name: Inspect launchable Activity in packaged release
+        working-directory: target
+        run: |
+          APK="$(find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' | head -n 1)"
+          AAPT="$(find "$ANDROID_HOME/build-tools" -maxdepth 2 -name aapt | sort -V | tail -n 1)"
+          "$AAPT" dump badging "$APK" | grep -E 'package:|launchable-activity:|sdkVersion:|targetSdkVersion:'
+
       - name: Boot Android and launch installed release
         uses: reactivecircus/android-emulator-runner@v2
         with:
