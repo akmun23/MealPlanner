@@ -37,6 +37,19 @@ class CloudRegressionTest {
     }
 
     @Test
+    fun weakPasswordExplainsStrongerSignupRulesWithoutChangingLogin() {
+        val error = IllegalStateException("Weak password")
+        assertEquals(
+            "Vælg en adgangskode på mindst 12 tegn.",
+            authErrorMessage(error, AuthAction.SIGN_UP)
+        )
+        assertEquals(
+            "Adgangskoden opfylder ikke kontokravene.",
+            authErrorMessage(error, AuthAction.SIGN_IN)
+        )
+    }
+
+    @Test
     fun unknownAuthErrorsDoNotExposeRawBackendMessage() {
         val message = authErrorMessage(
             error = IllegalStateException(
