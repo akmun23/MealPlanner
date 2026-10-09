@@ -935,6 +935,20 @@ class MealPlannerState(
         return true
     }
 
+    fun moveIngredientCategory(categoryId: String, delta: Int) {
+        val index = ingredientCategories.indexOfFirst { it.id == categoryId }
+        val reordered = reorderCategory(
+            items = ingredientCategories.toList(),
+            index = index,
+            delta = delta,
+            withPosition = { category, position ->
+                category.copy(position = position)
+            }
+        ) ?: return
+        syncListByKey(ingredientCategories, reordered, IngredientCategory::id)
+        enqueueMutations(reordered.map { QueuedMutation.UpsertIngredientCategory(it) })
+    }
+
     fun renameIngredientCategory(
         categoryId: String,
         name: String
@@ -998,6 +1012,20 @@ class MealPlannerState(
             QueuedMutation.UpsertRecipeCategory(category)
         )
         return true
+    }
+
+    fun moveRecipeCategory(categoryId: String, delta: Int) {
+        val index = recipeCategories.indexOfFirst { it.id == categoryId }
+        val reordered = reorderCategory(
+            items = recipeCategories.toList(),
+            index = index,
+            delta = delta,
+            withPosition = { category, position ->
+                category.copy(position = position)
+            }
+        ) ?: return
+        syncListByKey(recipeCategories, reordered, RecipeCategoryOption::id)
+        enqueueMutations(reordered.map { QueuedMutation.UpsertRecipeCategory(it) })
     }
 
     fun renameRecipeCategory(

@@ -31,6 +31,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -45,6 +46,8 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
@@ -655,10 +658,10 @@ private fun RecipeCategoriesScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(
+            itemsIndexed(
                 items = state.recipeCategories,
-                key = { it.id }
-            ) { category ->
+                key = { _, item -> item.id }
+            ) { index, category ->
                 OutlinedCard(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp)
@@ -675,6 +678,24 @@ private fun RecipeCategoriesScreen(
                             modifier = Modifier.weight(1f),
                             fontWeight = FontWeight.SemiBold
                         )
+                        IconButton(
+                            onClick = { state.moveRecipeCategory(category.id, -1) },
+                            enabled = index > 0
+                        ) {
+                            Icon(
+                                Icons.Filled.KeyboardArrowUp,
+                                contentDescription = "Flyt kategori op"
+                            )
+                        }
+                        IconButton(
+                            onClick = { state.moveRecipeCategory(category.id, 1) },
+                            enabled = index < state.recipeCategories.lastIndex
+                        ) {
+                            Icon(
+                                Icons.Filled.KeyboardArrowDown,
+                                contentDescription = "Flyt kategori ned"
+                            )
+                        }
                         IconButton(
                             onClick = {
                                 editing = category
@@ -812,10 +833,10 @@ private fun IngredientCategoriesScreen(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(
+            itemsIndexed(
                 items = state.ingredientCategories,
-                key = { it.id }
-            ) { category ->
+                key = { _, item -> item.id }
+            ) { index, category ->
                 OutlinedCard(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp)
@@ -832,6 +853,24 @@ private fun IngredientCategoriesScreen(
                             modifier = Modifier.weight(1f),
                             fontWeight = FontWeight.SemiBold
                         )
+                        IconButton(
+                            onClick = { state.moveIngredientCategory(category.id, -1) },
+                            enabled = index > 0
+                        ) {
+                            Icon(
+                                Icons.Filled.KeyboardArrowUp,
+                                contentDescription = "Flyt kategori op"
+                            )
+                        }
+                        IconButton(
+                            onClick = { state.moveIngredientCategory(category.id, 1) },
+                            enabled = index < state.ingredientCategories.lastIndex
+                        ) {
+                            Icon(
+                                Icons.Filled.KeyboardArrowDown,
+                                contentDescription = "Flyt kategori ned"
+                            )
+                        }
                         IconButton(
                             onClick = {
                                 editing = category
