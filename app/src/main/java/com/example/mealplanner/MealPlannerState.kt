@@ -8,13 +8,16 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -53,6 +56,8 @@ class MealPlannerState(
     private val plannerSettingsStore = PlannerSettingsStore(
         context.applicationContext
     )
+    private val networkMonitor = NetworkConnectivityMonitor(context.applicationContext)
+    private val reconnectMutex = Mutex()
     private val reloadMutex = Mutex()
     private val mutationQueueMutex = Mutex()
     private var cachePersistJob: Job? = null
@@ -130,8 +135,66 @@ class MealPlannerState(
             observeSyncQueue()
         }
 
-        scope.launch {
+        val initialLoad = scope.launch {
             initialize()
+        }
+        scope.launch {
+            // During initial load, initialize() already attempts a refresh.
+            // Start listening once it has finished, then react to later
+            // offline-to-online transitions without polling.
+            initialLoad.join()
+            networkMonitor.connected.drop(1).collect { online ->
+                if (online) {
+                    try {
+                        reconnectAndRefresh()
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        syncIndicator = SyncIndicator.OFFLINE
+                    }
+                } else if (!offlineSyncQueue.hasPendingMutations()) {
+                    syncIndicator = SyncIndicator.OFFLINE
+                }
+            }
+        }
+    }
+
+    /** Refresh cloud data on demand; pending local edits must sync first. */
+    fun refreshNow() {
+        scope.launch {
+            try {
+                reconnectAndRefresh()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                syncIndicator = if (offlineSyncQueue.hasPendingMutations()) {
+                    SyncIndicator.PENDING
+                } else {
+                    SyncIndicator.OFFLINE
+                }
+                lastError = "Kunne ikke hente nyeste data. De lokale data er stadig tilgængelige."
+            }
+        }
+    }
+
+    private suspend fun reconnectAndRefresh() = reconnectMutex.withLock {
+        mutationQueueMutex.withLock {
+            if (offlineSyncQueue.hasPendingMutations()) {
+                offlineSyncQueue.drainInApp(repository)
+            }
+        }
+        // A full reload is only safe after all optimistic edits have been sent.
+        if (!offlineSyncQueue.hasPendingMutations()) {
+            reload(syncHistory = false)
+        }
+        repository.startRealtime(scope) { event ->
+            handleRealtime(event)
+        }
+        if (
+            syncIndicator == SyncIndicator.OFFLINE &&
+            !offlineSyncQueue.hasPendingMutations()
+        ) {
+            syncIndicator = SyncIndicator.IDLE
         }
     }
 
@@ -152,24 +215,31 @@ class MealPlannerState(
             }.getOrDefault(false)
 
         if (hasPendingMutations) {
-            runCatching {
-                offlineSyncQueue.drainInApp(repository)
+            try {
+                mutationQueueMutex.withLock {
+                    offlineSyncQueue.drainInApp(repository)
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // Local outbox entries remain durable for the next reconnect.
             }
         }
 
         try {
-            if (!hasPendingMutations || !hasCachedSnapshot) {
+            val stillPending = offlineSyncQueue.hasPendingMutations()
+            if (!stillPending) {
+                // Even if there were edits when the app started, a successful
+                // drain must be followed by reconciliation with the server.
                 reload(syncHistory = true)
-            } else if (
-                weeklyPlanId == null &&
-                !offlineSyncQueue.hasPendingMutations()
-            ) {
-                // The cached week is stale, and pending edits have now synced.
-                reload(syncHistory = true)
+            } else if (!hasCachedSnapshot) {
+                lastError = "Lokale ændringer afventer synkronisering. Prøv igen, når du er online."
             }
             repository.startRealtime(scope) { event ->
                 handleRealtime(event)
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             if (hasCachedSnapshot) {
                 syncIndicator = if (hasPendingMutations) {
