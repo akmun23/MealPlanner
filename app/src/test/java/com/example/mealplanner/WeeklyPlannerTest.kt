@@ -639,6 +639,37 @@ class WeeklyPlannerTest {
     }
 
     @Test
+    fun futureHistoryEntryDoesNotMaskRecentlyEatenRecipe() {
+        val modes = orderedWeekDays.associateWith {
+            if (it == DayOfWeek.MONDAY) DayMode.AUTO else DayMode.AWAY
+        }
+        val history = buildList {
+            add(MealHistoryEntry("recent", LocalDate.of(2026, 10, 4)))
+            // A future record must not replace the applicable past meal.
+            add(MealHistoryEntry("recent", LocalDate.of(2026, 11, 2)))
+            repeat(50) { index ->
+                add(MealHistoryEntry("unrelated-$index", LocalDate.of(2026, 9, 1)))
+            }
+        }
+        var freshWins = 0
+        repeat(30) { seed ->
+            val result = WeeklyPlanner.generate(
+                recipes = listOf(recipe("recent"), recipe("fresh")),
+                pantry = emptyMap(),
+                dayModes = modes,
+                weeklySandwichRecipeId = null,
+                currentPlan = orderedWeekDays.associateWith { null },
+                currentSandwichDay = null,
+                history = history,
+                weekStart = LocalDate.of(2026, 10, 5),
+                random = Random(seed)
+            )
+            if (result.plan[DayOfWeek.MONDAY] == "fresh") freshWins++
+        }
+        assertTrue("future history must not suppress past recency", freshWins >= 27)
+    }
+
+    @Test
     fun plannerDoesNotDoubleCountRepeatedIngredientPantryCoverage() {
         val repeated = Recipe(
             id = "repeated-rice",
