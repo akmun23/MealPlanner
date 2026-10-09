@@ -637,4 +637,52 @@ class WeeklyPlannerTest {
 
         assertTrue("fresh recipe should dominate selection", freshWins >= 27)
     }
+
+    @Test
+    fun plannerDoesNotDoubleCountRepeatedIngredientPantryCoverage() {
+        val repeated = Recipe(
+            id = "repeated-rice",
+            name = "Two rice requirements",
+            ingredients = listOf(
+                RecipeIngredient("rice", 100.0),
+                RecipeIngredient("rice", 100.0)
+            )
+        )
+        val stocked = Recipe(
+            id = "stocked-milk",
+            name = "Milk",
+            ingredients = listOf(RecipeIngredient("milk", 100.0))
+        )
+        val modes = orderedWeekDays.associateWith {
+            if (it == DayOfWeek.MONDAY) DayMode.AUTO else DayMode.AWAY
+        }
+        val weights = PlannerWeights(
+            pantryCoverage = 100.0,
+            ingredientReuse = 0.0,
+            duplicateRecipe = 0.0,
+            repeatedProtein = 0.0,
+            adjacentProtein = 0.0,
+            repeatedCategory = 0.0,
+            adjacentCategory = 0.0,
+            recency7Days = 0.0,
+            recency14Days = 0.0,
+            recency30Days = 0.0,
+            keepSameDay = 0.0,
+            jitter = 0.0
+        )
+
+        val result = WeeklyPlanner.generate(
+            recipes = listOf(repeated, stocked),
+            pantry = mapOf("rice" to 100.0, "milk" to 100.0),
+            dayModes = modes,
+            weeklySandwichRecipeId = null,
+            currentPlan = orderedWeekDays.associateWith { null },
+            currentSandwichDay = null,
+            weights = weights,
+            random = Random(12)
+        )
+
+        assertEquals(stocked.id, result.plan[DayOfWeek.MONDAY])
+    }
+
 }
