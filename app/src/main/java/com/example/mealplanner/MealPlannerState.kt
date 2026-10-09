@@ -210,9 +210,11 @@ class MealPlannerState(
     private suspend fun initialize() {
         var hasCachedSnapshot = false
 
-        runCatching { roomCache.load() }
-            .getOrNull()
-            ?.let { cached ->
+        // The Room query itself suspends, but JSON decoding and
+        // projection hydration must also run off the main thread.
+        withContext(Dispatchers.IO) {
+            runCatching { roomCache.load() }.getOrNull()
+        }?.let { cached ->
                 applySnapshot(cached)
                 hasCachedSnapshot = true
                 isLoading = false
@@ -257,7 +259,21 @@ class MealPlannerState(
             if (!stillPending) {
                 // Even if there were edits when the app started, a successful
                 // drain must be followed by reconciliation with the server.
-                reload(syncHistory = true)
+                reload(syncHistory = false)
+                // Historical plan reconciliation can issue many writes. It is
+                // useful, but not needed to display recipes, pantry or week.
+                // Wait until the first frame is visible before doing it.
+                scope.launch {
+                    delay(2_000L)
+                    try {
+                        repository.reconcileRecentHistory()
+                        reload(CloudSyncDomain.HISTORY)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        // The next sync can retry; never block the UI.
+                    }
+                }
             } else if (!hasCachedSnapshot) {
                 lastError = "Lokale ændringer afventer synkronisering. Prøv igen, når du er online."
             }
