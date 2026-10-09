@@ -259,32 +259,26 @@ private fun RecipeListCard(
                     overflow = TextOverflow.Ellipsis
                 )
 
-                val meta = buildList {
-                    add(recipe.mealType.danishName())
-                    val displayCategory =
-                        recipeCategoryDisplayName(categoryName, proteinNames)
-                    add(displayCategory)
-                    if (
-                        recipe.mealType == MealType.DINNER &&
-                        !recipe.autoRotationEnabled
-                    ) {
-                        add("Kun manuelt")
-                    }
-                    recipe.prepMinutes?.let { add("$it min") }
-                    if (proteinNames.isNotEmpty() ||
-                        displayCategory != "Vegetarisk"
-                    ) {
-                        add(recipeProteinLabel(proteinNames))
-                    }
-                }
-
+                val displayCategory =
+                    recipeCategoryDisplayName(categoryName, proteinNames)
                 Text(
-                    meta.joinToString(" · "),
-                    style = MaterialTheme.typography.bodyMedium,
+                    recipeCompactMeta(recipe, displayCategory),
+                    style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+
+                // Protein gets its own readable line instead of disappearing
+                // at the end of a long one-line metadata string.
+                if (proteinNames.isNotEmpty() || displayCategory != "Vegetarisk") {
+                    Text(
+                        if (proteinNames.isEmpty()) "Vegetarisk"
+                        else "Protein: ${recipeProteinLabel(proteinNames)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
 
                 if (isSandwich) {
                     Spacer(Modifier.height(3.dp))
@@ -567,29 +561,23 @@ internal fun RecipeDetailScreen(
             }
 
             item {
-                Text(
-                    buildList {
-                        add(recipe.mealType.danishName())
-                        val proteinNames = state.recipeProteinNames(recipe)
-                        val displayCategory = recipeCategoryDisplayName(
-                            state.recipeCategoryName(recipe), proteinNames
-                        )
-                        add(displayCategory)
-                        if (
-                            recipe.mealType == MealType.DINNER &&
-                            !recipe.autoRotationEnabled
-                        ) {
-                            add("Kun manuelt")
-                        }
-                        recipe.prepMinutes?.let { add("$it min") }
-                        if (proteinNames.isNotEmpty() ||
-                            displayCategory != "Vegetarisk"
-                        ) {
-                            add(recipeProteinLabel(proteinNames))
-                        }
-                    }.joinToString(" · "),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                val proteinNames = state.recipeProteinNames(recipe)
+                val displayCategory = recipeCategoryDisplayName(
+                    state.recipeCategoryName(recipe), proteinNames
                 )
+                Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text(
+                        recipeCompactMeta(recipe, displayCategory),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    if (proteinNames.isNotEmpty() || displayCategory != "Vegetarisk") {
+                        Text(
+                            if (proteinNames.isEmpty()) "Vegetarisk"
+                            else "Protein: ${recipeProteinLabel(proteinNames)}",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
             }
 
             if (
