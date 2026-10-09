@@ -160,6 +160,12 @@ class MealPlannerState(
         try {
             if (!hasPendingMutations || !hasCachedSnapshot) {
                 reload(syncHistory = true)
+            } else if (
+                weeklyPlanId == null &&
+                !offlineSyncQueue.hasPendingMutations()
+            ) {
+                // The cached week is stale, and pending edits have now synced.
+                reload(syncHistory = true)
             }
             repository.startRealtime(scope) { event ->
                 handleRealtime(event)
@@ -308,6 +314,10 @@ class MealPlannerState(
         syncHistory: Boolean = false,
         expectedGenerations: Map<CloudSyncDomain, Long>? = null
     ) {
+        // Avoid applying a server response that began before a local edit.
+        val startingGenerations = CloudSyncDomain.entries
+            .associateWith(syncTracker::generation)
+        if (offlineSyncQueue.hasPendingMutations()) return
         val snapshot = repository.loadCurrent(
             syncHistory = syncHistory
         )
@@ -315,8 +325,10 @@ class MealPlannerState(
         var applied = false
         reloadMutex.withLock {
             if (
-                expectedGenerations != null &&
-                !syncTracker.isCurrent(expectedGenerations)
+                !syncTracker.isCurrent(startingGenerations) ||
+                (expectedGenerations != null &&
+                    !syncTracker.isCurrent(expectedGenerations)) ||
+                offlineSyncQueue.hasPendingMutations()
             ) {
                 return@withLock
             }
@@ -326,9 +338,7 @@ class MealPlannerState(
         }
 
         if (applied) {
-            runCatching {
-                roomCache.save(snapshot)
-            }
+            scheduleCachePersist(delayMillis = 0L)
         }
     }
 
@@ -549,6 +559,7 @@ class MealPlannerState(
         )
 
         weeklyPlanId = snapshot.weeklyPlanId
+            .takeUnless { it.startsWith("offline-week-") }
         weeklySandwichRecipeId = snapshot.weeklySandwichRecipeId
         sandwichDay = snapshot.sandwichDay
     }
@@ -633,7 +644,9 @@ class MealPlannerState(
     }
 
     private fun currentSnapshot(): CloudSnapshot? {
-        val planId = weeklyPlanId ?: return null
+        // A temporary week id lets unrelated pantry and recipe edits
+        // persist even before a real weekly plan is available.
+        val planId = weeklyPlanId ?: "offline-week-${currentWeekStart()}"
 
         return CloudSnapshot(
             ingredients = ingredients.toList(),
@@ -659,13 +672,24 @@ class MealPlannerState(
     private fun scheduleCachePersist(
         delayMillis: Long = 100L
     ) {
-        val snapshot = currentSnapshot() ?: return
+        val generations = CloudSyncDomain.entries
+            .associateWith(syncTracker::generation)
 
         cachePersistJob?.cancel()
         cachePersistJob = scope.launch {
             delay(delayMillis.milliseconds)
-            runCatching {
-                roomCache.save(snapshot)
+            // The outbox transaction must remain the last writer of local
+            // optimistic state. A delayed remote cache write is never allowed
+            // to replace a newer edit or a pending mutation.
+            mutationQueueMutex.withLock {
+                if (
+                    syncTracker.isCurrent(generations) &&
+                    !offlineSyncQueue.hasPendingMutations()
+                ) {
+                    currentSnapshot()?.let { snapshot ->
+                        roomCache.save(snapshot)
+                    }
+                }
             }
         }
     }
@@ -757,7 +781,14 @@ class MealPlannerState(
         enqueueMutations(mutations)
     }
 
+    private fun canEditWeek(): Boolean {
+        if (weeklyPlanId != null) return true
+        lastError = "Ugeplanen kan opdateres, når forbindelsen er tilbage. Lager og opskrifter virker offline."
+        return false
+    }
+
     fun toggleLockDay(day: DayOfWeek) {
+        if (!canEditWeek()) return
         if (dayModes[day] == DayMode.AWAY || recipeFor(day) == null) return
 
         if (day in lockedDays) {
@@ -769,6 +800,7 @@ class MealPlannerState(
     }
 
     fun setRecipeForDay(day: DayOfWeek, recipeId: String?) {
+        if (!canEditWeek()) return
         if (day == sandwichDay) return
 
         plan[day] = recipeId
@@ -1352,6 +1384,7 @@ class MealPlannerState(
     }
 
     fun removeSandwichThisWeek() {
+        if (!canEditWeek()) return
         if (weeklySandwichRecipeId == null && sandwichDay == null) return
 
         weeklySandwichRecipeId = null
@@ -1363,6 +1396,7 @@ class MealPlannerState(
     }
 
     fun setWeeklySandwichRecipe(recipeId: String) {
+        if (!canEditWeek()) return
         if (recipes.none { it.id == recipeId && it.mealType == MealType.DINNER }) return
 
         weeklySandwichRecipeId = recipeId
@@ -1382,6 +1416,7 @@ class MealPlannerState(
     }
 
     fun toggleEatingAtHome(day: DayOfWeek) {
+        if (!canEditWeek()) return
         val result = WeekRules.toggleHome(
             day = day,
             modes = dayModes.toMap(),
@@ -1408,6 +1443,7 @@ class MealPlannerState(
         day: DayOfWeek,
         maxPrepMinutes: Int?
     ) {
+        if (!canEditWeek()) return
         val normalized = maxPrepMinutes?.takeIf { it in 1..1440 }
         dayMaxPrepMinutes[day] = normalized
 
@@ -1555,6 +1591,7 @@ class MealPlannerState(
     }
 
     fun reroll(day: DayOfWeek) {
+        if (!canEditWeek()) return
         if (
             day in lockedDays ||
             dayModes[day] == DayMode.AWAY ||
@@ -1605,6 +1642,7 @@ class MealPlannerState(
     }
 
     fun moveSandwich() {
+        if (!canEditWeek()) return
         if (weeklySandwichRecipeId == null) return
 
         sandwichDay = WeekRules.nextSandwichDay(
@@ -1715,6 +1753,7 @@ class MealPlannerState(
     }
 
     fun addLunchRecipe(recipeId: String) {
+        if (!canEditWeek()) return
         val recipe = recipes.find {
             it.id == recipeId && it.mealType == MealType.LUNCH
         } ?: return
@@ -1738,6 +1777,7 @@ class MealPlannerState(
     }
 
     fun removeLunchRecipe(recipeId: String) {
+        if (!canEditWeek()) return
         if (!selectedLunchRecipeIds.remove(recipeId)) return
 
         shoppingChecked.clear()
@@ -1761,6 +1801,7 @@ class MealPlannerState(
         ingredientId: String,
         included: Boolean
     ) {
+        if (!canEditWeek()) return
         shoppingIncluded[ingredientId] = included
         if (!included) {
             shoppingChecked[ingredientId] = false
@@ -1780,6 +1821,7 @@ class MealPlannerState(
         ingredientId: String,
         checked: Boolean
     ) {
+        if (!canEditWeek()) return
         if (!isShoppingIncluded(ingredientId) && checked) return
         shoppingChecked[ingredientId] = checked
         val id = weeklyPlanId ?: return
