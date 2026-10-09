@@ -132,7 +132,7 @@ class MealPlannerState(
             plan[day] = null
         }
 
-        scope.launch {
+        if (!isLocalOnly) scope.launch {
             observeSyncQueue()
         }
 
