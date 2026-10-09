@@ -1367,8 +1367,15 @@ class CloudMealRepository(
 
         if (weeks.isEmpty()) return
 
+        // Only retrieve meals from the recent weeks being reconciled.
+        // Fetching the entire household history gets slower as the data grows,
+        // and can eventually hit PostgREST's default row limit.
+        val weekIds = weeks.map { it.id }
         val meals = supabase.from("planned_meals").select {
-            filter { eq("household_id", householdId) }
+            filter {
+                eq("household_id", householdId)
+                isIn("weekly_plan_id", weekIds)
+            }
         }.decodeList<PlannedMealRow>()
 
         val mealsByWeek = meals.groupBy { it.weeklyPlanId }
