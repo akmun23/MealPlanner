@@ -1328,6 +1328,11 @@ class CloudMealRepository(
         }
     }
 
+    /** Reconcile older plans after rendering; never block cold-start UI. */
+    internal suspend fun reconcileRecentHistory() = withContext(Dispatchers.IO) {
+        syncRecentHistory()
+    }
+
     private suspend fun syncRecentHistory() {
         val cutoff = LocalDate.now().minusDays(60)
         val today = LocalDate.now()
