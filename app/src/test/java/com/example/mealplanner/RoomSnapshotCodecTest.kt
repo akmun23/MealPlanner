@@ -101,6 +101,44 @@ class RoomSnapshotCodecTest {
     }
 
     @Test
+    fun nextWeekRetainsInventoryWithoutReusingPriorWeekPlan() {
+        val monday = LocalDate.now().with(DayOfWeek.MONDAY)
+        val original = CloudSnapshot.EMPTY.copy(
+            ingredients = listOf(
+                Ingredient(
+                    id = "rice",
+                    name = "Ris",
+                    quantityType = QuantityType.MASS,
+                    preferredUnit = MeasurementUnit.GRAM
+                )
+            ),
+            pantry = mapOf("rice" to 700.0),
+            recipes = listOf(
+                Recipe(id = "risret", name = "Risret")
+            ),
+            plan = orderedWeekDays.associateWith {
+                if (it == DayOfWeek.MONDAY) "risret" else null
+            },
+            shoppingChecked = mapOf("rice" to true),
+            weeklyPlanId = "last-week-uuid",
+            history = listOf(MealHistoryEntry("risret", monday))
+        )
+
+        val nextWeek = RoomSnapshotCodec.decode(
+            RoomSnapshotCodec.encode(original),
+            today = monday.plusWeeks(1)
+        )!!
+
+        assertEquals(original.ingredients, nextWeek.ingredients)
+        assertEquals(original.recipes, nextWeek.recipes)
+        assertEquals(original.pantry, nextWeek.pantry)
+        assertEquals(original.history, nextWeek.history)
+        assertEquals("offline-week-${monday.plusWeeks(1)}", nextWeek.weeklyPlanId)
+        assertEquals(null, nextWeek.plan[DayOfWeek.MONDAY])
+        assertEquals(emptyMap<String, Boolean>(), nextWeek.shoppingChecked)
+    }
+
+    @Test
     fun malformedPayloadIsIgnored() {
         assertNull(RoomSnapshotCodec.decode("{not-json"))
     }
