@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.isImeVisible
@@ -236,6 +237,7 @@ private sealed interface AppPage {
     ) : AppPage
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun MealPlannerApp(
     household: HouseholdDto,
