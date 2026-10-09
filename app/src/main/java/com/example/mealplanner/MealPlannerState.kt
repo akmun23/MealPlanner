@@ -30,7 +30,7 @@ import kotlin.time.Duration.Companion.milliseconds
 
 class MealPlannerState(
     context: Context,
-    householdId: String,
+    private val householdId: String,
     parentScope: CoroutineScope
 ) {
     // Keep household work isolated from other UI and household scopes.
