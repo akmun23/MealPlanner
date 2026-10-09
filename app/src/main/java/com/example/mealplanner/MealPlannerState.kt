@@ -938,7 +938,7 @@ class MealPlannerState(
             }
         ) ?: return
         syncListByKey(ingredientCategories, reordered, IngredientCategory::id)
-        enqueueMutations(reordered.map(QueuedMutation::UpsertIngredientCategory))
+        enqueueMutations(reordered.map { QueuedMutation.UpsertIngredientCategory(it) })
     }
 
     fun renameIngredientCategory(
@@ -1017,7 +1017,7 @@ class MealPlannerState(
             }
         ) ?: return
         syncListByKey(recipeCategories, reordered, RecipeCategoryOption::id)
-        enqueueMutations(reordered.map(QueuedMutation::UpsertRecipeCategory))
+        enqueueMutations(reordered.map { QueuedMutation.UpsertRecipeCategory(it) })
     }
 
     fun renameRecipeCategory(
