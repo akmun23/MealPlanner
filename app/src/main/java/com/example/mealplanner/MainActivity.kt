@@ -108,7 +108,9 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import io.github.jan.supabase.auth.handleDeeplinks
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 import java.util.Locale
@@ -179,7 +181,7 @@ fun MealPlannerApp(
         MealPlannerState(
             context = context.applicationContext,
             householdId = household.id,
-            scope = scope
+            parentScope = scope
         )
     }
 
@@ -187,7 +189,10 @@ fun MealPlannerApp(
         try {
             awaitCancellation()
         } finally {
-            state.close()
+            // Composition cancellation must not skip suspending cleanup.
+            withContext(NonCancellable) {
+                state.close()
+            }
         }
     }
 
@@ -379,7 +384,8 @@ fun MealPlannerApp(
                     } else {
                         HorizontalPager(
                             state = pagerState,
-                            beyondViewportPageCount = 3,
+                            // Only compose the visible tab; other lists build on demand.
+                            beyondViewportPageCount = 0,
                             modifier = Modifier.fillMaxSize()
                         ) { pageIndex ->
                             when (AppTab.entries[pageIndex]) {
@@ -808,13 +814,13 @@ fun DayCard(
     onOpenRecipe: (String) -> Unit
 ) {
     val away = state.dayModes[day] == DayMode.AWAY
-    val recipe = remember(day, state.plan[day], state.recipes.size) { state.recipeFor(day) }
-    val isSandwich = remember(recipe?.id, state.weeklySandwichRecipeId) { recipe?.id != null && recipe.id == state.weeklySandwichRecipeId }
-    val isLocked = remember(day, state.lockedDays.size) { day in state.lockedDays }
-    val maxPrepMinutes = remember(day, state.dayMaxPrepMinutes[day]) { state.dayMaxPrepMinutes[day] }
-    val recipeCategory = remember(recipe?.id, state.ingredientCategories.size) {
-        if (recipe != null) state.recipeCategoryName(recipe) else ""
-    }
+    // Compose observes these lists and maps directly. Remembering by size/id
+    // leaves stale titles, locks and categories when existing rows change.
+    val recipe = state.recipeFor(day)
+    val isSandwich = recipe?.id != null && recipe.id == state.weeklySandwichRecipeId
+    val isLocked = day in state.lockedDays
+    val maxPrepMinutes = state.dayMaxPrepMinutes[day]
+    val recipeCategory = if (recipe != null) state.recipeCategoryName(recipe) else ""
 
     var showRecipePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }

@@ -448,10 +448,6 @@ class CloudMealRepository(
     suspend fun loadCurrent(
         syncHistory: Boolean = false
     ): CloudSnapshot = withContext(Dispatchers.IO) {
-        if (syncHistory) {
-            syncRecentHistory()
-        }
-
         coroutineScope {
             val ingredientsDeferred = async {
                 loadIngredientsSnapshot()
@@ -466,6 +462,9 @@ class CloudMealRepository(
                 loadWeekSnapshot()
             }
             val historyDeferred = async {
+                // History maintenance is independent of the other reads;
+                // do not delay starting recipes, pantry or week requests.
+                if (syncHistory) syncRecentHistory()
                 loadHistorySnapshot()
             }
 
