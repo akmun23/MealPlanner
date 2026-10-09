@@ -284,7 +284,10 @@ private sealed interface CloudScreen {
 
 
 @Composable
-fun CloudGate() {
+fun CloudGate(
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit
+) {
     val context = androidx.compose.ui.platform.LocalContext.current
 
     val repository = remember {
@@ -596,7 +599,9 @@ fun CloudGate() {
                         message = null
                         screen = CloudScreen.Login
                     }
-                }
+                },
+                themeMode = themeMode,
+                onThemeModeChange = onThemeModeChange
             )
         }
     }
