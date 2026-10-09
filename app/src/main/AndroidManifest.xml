@@ -9,6 +9,8 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.MealPlanner">
+        <!-- Allow non-debuggable benchmark builds to collect Android traces. -->
+        <profileable android:shell="true" />
         <activity
             android:name="com.example.mealplanner.MainActivity"
             android:exported="true"
