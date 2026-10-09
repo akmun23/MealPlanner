@@ -26,3 +26,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "MealPlanner"
 include(":app")
+include(":macrobenchmark")
