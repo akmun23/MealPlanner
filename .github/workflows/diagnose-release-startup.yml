@@ -17,7 +17,7 @@ jobs:
           - variant: failing-release
             ref: ddeaa9652556103b448adafab6b098e7ecabee4f
           - variant: proposed-hotfix
-            ref: d9ebd0d50ae309cc9c44d01c080da81096017bc9
+            ref: cb376a397ab1cd3af4fa7dbc1110f9a7ae694285
 
     steps:
       - name: Check out launch diagnostics
