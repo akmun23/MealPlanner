@@ -111,6 +111,11 @@ fun RecipesScreen(
                 (query.isBlank() ||
                     recipe.name.contains(query, ignoreCase = true) ||
                     item.categoryName.contains(query, ignoreCase = true) ||
+                    recipeCategoryDisplayName(
+                        item.categoryName, item.proteinNames
+                    ).contains(query, ignoreCase = true) ||
+                    recipeProteinLabel(item.proteinNames)
+                        .contains(query, ignoreCase = true) ||
                     item.proteinNames.any {
                         it.contains(query, ignoreCase = true)
                     }) &&
@@ -256,7 +261,9 @@ private fun RecipeListCard(
 
                 val meta = buildList {
                     add(recipe.mealType.danishName())
-                    add(categoryName)
+                    val displayCategory =
+                        recipeCategoryDisplayName(categoryName, proteinNames)
+                    add(displayCategory)
                     if (
                         recipe.mealType == MealType.DINNER &&
                         !recipe.autoRotationEnabled
@@ -264,8 +271,10 @@ private fun RecipeListCard(
                         add("Kun manuelt")
                     }
                     recipe.prepMinutes?.let { add("$it min") }
-                    if (proteinNames.isNotEmpty()) {
-                        add(proteinNames.joinToString(" + "))
+                    if (proteinNames.isNotEmpty() ||
+                        displayCategory != "Vegetarisk"
+                    ) {
+                        add(recipeProteinLabel(proteinNames))
                     }
                 }
 
@@ -561,7 +570,11 @@ internal fun RecipeDetailScreen(
                 Text(
                     buildList {
                         add(recipe.mealType.danishName())
-                        add(state.recipeCategoryName(recipe))
+                        val proteinNames = state.recipeProteinNames(recipe)
+                        val displayCategory = recipeCategoryDisplayName(
+                            state.recipeCategoryName(recipe), proteinNames
+                        )
+                        add(displayCategory)
                         if (
                             recipe.mealType == MealType.DINNER &&
                             !recipe.autoRotationEnabled
@@ -569,9 +582,10 @@ internal fun RecipeDetailScreen(
                             add("Kun manuelt")
                         }
                         recipe.prepMinutes?.let { add("$it min") }
-                        val proteinNames = state.recipeProteinNames(recipe)
-                        if (proteinNames.isNotEmpty()) {
-                            add(proteinNames.joinToString(" + "))
+                        if (proteinNames.isNotEmpty() ||
+                            displayCategory != "Vegetarisk"
+                        ) {
+                            add(recipeProteinLabel(proteinNames))
                         }
                     }.joinToString(" · "),
                     color = MaterialTheme.colorScheme.onSurfaceVariant

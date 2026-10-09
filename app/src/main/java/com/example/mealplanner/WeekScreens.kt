@@ -360,7 +360,12 @@ fun DayCard(
     val isSandwich = recipe?.id != null && recipe.id == state.weeklySandwichRecipeId
     val isLocked = day in state.lockedDays
     val maxPrepMinutes = state.dayMaxPrepMinutes[day]
-    val recipeCategory = if (recipe != null) state.recipeCategoryName(recipe) else ""
+    val recipeCategory = if (recipe != null) {
+        recipeCategoryDisplayName(
+            state.recipeCategoryName(recipe),
+            state.recipeProteinNames(recipe)
+        )
+    } else ""
 
     var showRecipePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }

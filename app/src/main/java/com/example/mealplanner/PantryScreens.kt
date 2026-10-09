@@ -72,7 +72,10 @@ fun PantryScreen(
         )
     }
 
-    val filtered by remember {
+    // Derived state only tracks observable Compose reads inside its lambda.
+    // The selected enum values above are plain Kotlin values, so key the
+    // calculation to the persisted selector keys to avoid stale sorting.
+    val filtered by remember(sortOrderKey, stockFilterKey) {
         derivedStateOf {
             visiblePantryIngredients(
                 ingredients = state.ingredients.toList(),
@@ -136,23 +139,21 @@ fun PantryScreen(
         }
 
         item(key = "pantry-view-controls") {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Box(modifier = Modifier.weight(1f)) {
-                    SimpleSelector(
-                        label = stockFilter.label,
-                        options = PantryStockFilter.entries.toList(),
-                        optionText = { it.label },
-                        onSelected = { stockFilterKey = it.name }
-                    )
-                }
-                Box(modifier = Modifier.weight(1f)) {
-                    SimpleSelector(
-                        label = sortOrder.label,
-                        options = PantrySortOrder.entries.toList(),
-                        optionText = { it.label },
-                        onSelected = { sortOrderKey = it.name }
-                    )
-                }
+            // Separate rows leave enough width for long Danish sort labels
+            // even with a larger font setting on a small phone.
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                SimpleSelector(
+                    label = "Status: ${stockFilter.label}",
+                    options = PantryStockFilter.entries.toList(),
+                    optionText = { it.label },
+                    onSelected = { stockFilterKey = it.name }
+                )
+                SimpleSelector(
+                    label = "Sorter: ${sortOrder.label}",
+                    options = PantrySortOrder.entries.toList(),
+                    optionText = { it.label },
+                    onSelected = { sortOrderKey = it.name }
+                )
             }
             Text(
                 "Viser ${filtered.size} af ${state.ingredients.size} ingredienser",

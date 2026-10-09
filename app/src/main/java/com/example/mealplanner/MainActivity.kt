@@ -135,20 +135,45 @@ private val AppColors = lightColorScheme(
     outline = Color(0xFFBBC4BC)
 )
 
-private val DarkAppColors = darkColorScheme(
-    primary = Color(0xFFA2D7B3),
-    onPrimary = Color(0xFF0B3C25),
-    primaryContainer = Color(0xFF24553B),
-    onPrimaryContainer = Color(0xFFD7F4DE),
-    secondary = Color(0xFFD5C98B),
-    secondaryContainer = Color(0xFF514921),
-    background = Color(0xFF121B15),
-    onBackground = Color(0xFFE1EBE3),
-    surface = Color(0xFF1B271F),
-    onSurface = Color(0xFFE1EBE3),
-    surfaceVariant = Color(0xFF33453A),
-    onSurfaceVariant = Color(0xFFC0CEC2),
-    outline = Color(0xFF88998B)
+internal val DarkAppColors = darkColorScheme(
+    // Use a neutral blue-slate foundation; distinguish the background,
+    // elevated cards, dropdowns and disabled/inactive surfaces clearly.
+    primary = Color(0xFFA9E9D2),
+    onPrimary = Color(0xFF073B2C),
+    primaryContainer = Color(0xFF2A5D50),
+    onPrimaryContainer = Color(0xFFEDFFF6),
+    secondary = Color(0xFFFFDB8A),
+    onSecondary = Color(0xFF422D00),
+    secondaryContainer = Color(0xFF635029),
+    onSecondaryContainer = Color(0xFFFFF3D6),
+    tertiary = Color(0xFFAAD6FF),
+    onTertiary = Color(0xFF073453),
+    tertiaryContainer = Color(0xFF31516B),
+    onTertiaryContainer = Color(0xFFECF5FF),
+    background = Color(0xFF10191E),
+    onBackground = Color(0xFFF5FAFD),
+    surface = Color(0xFF26363E),
+    onSurface = Color(0xFFF5FAFD),
+    surfaceVariant = Color(0xFF354B55),
+    onSurfaceVariant = Color(0xFFD4E2E8),
+    surfaceTint = Color(0xFFA9E9D2),
+    inverseSurface = Color(0xFFE4F0F3),
+    inverseOnSurface = Color(0xFF22343C),
+    inversePrimary = Color(0xFF2F785F),
+    outline = Color(0xFF93B3BE),
+    outlineVariant = Color(0xFF698B99),
+    scrim = Color.Black,
+    surfaceBright = Color(0xFF415660),
+    surfaceDim = Color(0xFF10191E),
+    surfaceContainerLowest = Color(0xFF121E23),
+    surfaceContainerLow = Color(0xFF1D2C33),
+    surfaceContainer = Color(0xFF283B44),
+    surfaceContainerHigh = Color(0xFF354B55),
+    surfaceContainerHighest = Color(0xFF415963),
+    error = Color(0xFFFFB4AB),
+    onError = Color(0xFF690005),
+    errorContainer = Color(0xFF93000A),
+    onErrorContainer = Color(0xFFFFDAD6)
 )
 
 class MainActivity : ComponentActivity() {
