@@ -1,5 +1,5 @@
 plugins {
-    id("com.android.test") version "9.4.1"
+    id("com.android.test")
 }
 
 android {
