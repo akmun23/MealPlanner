@@ -165,6 +165,7 @@ data class PlannerResult(
     val sandwichDay: DayOfWeek?
 )
 
+@Serializable
 data class PlannerWeights(
     val pantryCoverage: Double = 20.0,
     val ingredientReuse: Double = 12.0,
@@ -177,6 +178,7 @@ data class PlannerWeights(
     val recency14Days: Double = 55.0,
     val recency30Days: Double = 25.0,
     val keepSameDay: Double = 4.0,
+    val previousPlanReuse: Double = 35.0,
     val jitter: Double = 8.0
 )
 

@@ -10,9 +10,17 @@ import io.github.jan.supabase.storage.Storage
 object SupabaseProvider {
 
     val client: SupabaseClient by lazy {
+        val url = BuildConfig.SUPABASE_URL.takeIf {
+            it.startsWith("http://") || it.startsWith("https://")
+        } ?: "https://placeholder.supabase.co"
+
+        val key = BuildConfig.SUPABASE_PUBLISHABLE_KEY.ifBlank {
+            "placeholder_key"
+        }
+
         createSupabaseClient(
-            supabaseUrl = BuildConfig.SUPABASE_URL,
-            supabaseKey = BuildConfig.SUPABASE_PUBLISHABLE_KEY
+            supabaseUrl = url,
+            supabaseKey = key
         ) {
             install(Auth) {
                 scheme = "com.mealplan.mealplanner"

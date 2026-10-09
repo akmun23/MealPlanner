@@ -13,3 +13,7 @@
 .externalNativeBuild
 .cxx
 local.properties
+
+# Generated Android release artifacts; obtain bundles/mappings from CI instead.
+/app/release/
+**/build/

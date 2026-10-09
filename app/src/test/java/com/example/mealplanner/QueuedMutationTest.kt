@@ -36,6 +36,21 @@ class QueuedMutationTest {
     }
 
     @Test
+    fun confirmingAndRemovingMealShareAKeyAndSyncAsHistory() {
+        val eaten = QueuedMutation.SetMealEaten(
+            eatenOn = "2026-10-09",
+            recipeId = "recipe"
+        )
+        val cleared = eaten.copy(recipeId = null)
+
+        assertEquals(eaten, QueuedMutationCodec.decode(QueuedMutationCodec.encode(eaten)))
+        assertEquals(cleared, QueuedMutationCodec.decode(QueuedMutationCodec.encode(cleared)))
+        assertEquals(eaten.key(), cleared.key())
+        assertEquals("meal-eaten:2026-10-09", eaten.key())
+        assertEquals(setOf(CloudSyncDomain.HISTORY), eaten.domains())
+    }
+
+    @Test
     fun latestLifecycleMutationCoalescesByEntityKey() {
         val ingredient = Ingredient(
             id = "ingredient",

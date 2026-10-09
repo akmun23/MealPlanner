@@ -606,6 +606,87 @@ class WeeklyPlannerTest {
     }
 
     @Test
+    fun generationExploresRecipesBeyondTheHighestScoredFour() {
+        val dinners = (0 until 18).map { recipe("dinner-$it") }
+        val modes = orderedWeekDays.associateWith {
+            if (it == DayOfWeek.MONDAY) DayMode.AUTO else DayMode.AWAY
+        }
+        val chosen = (0 until 35).map { seed ->
+            WeeklyPlanner.generate(
+                recipes = dinners,
+                pantry = emptyMap(),
+                dayModes = modes,
+                weeklySandwichRecipeId = null,
+                currentPlan = orderedWeekDays.associateWith { null },
+                currentSandwichDay = null,
+                random = Random(seed)
+            ).plan[DayOfWeek.MONDAY]
+        }.toSet()
+
+        assertTrue(
+            "the generator should explore more than four equally eligible recipes",
+            chosen.size >= 9
+        )
+    }
+
+    @Test
+    fun rerollExploresAllEligibleAlternatives() {
+        val dinners = (0 until 18).map { recipe("dinner-$it") }
+        val modes = orderedWeekDays.associateWith {
+            if (it == DayOfWeek.MONDAY) DayMode.AUTO else DayMode.AWAY
+        }
+        val current = orderedWeekDays.associateWith { day ->
+            if (day == DayOfWeek.MONDAY) dinners.first().id else null
+        }
+        val chosen = (0 until 35).map { seed ->
+            WeeklyPlanner.rerollDay(
+                day = DayOfWeek.MONDAY,
+                recipes = dinners,
+                pantry = emptyMap(),
+                dayModes = modes,
+                weeklySandwichRecipeId = null,
+                sandwichDay = null,
+                currentPlan = current,
+                random = Random(seed)
+            )[DayOfWeek.MONDAY]
+        }.toSet()
+
+        assertTrue(
+            "a reroll should not be limited to the four highest-ranked meals",
+            chosen.size >= 9
+        )
+        assertTrue(dinners.first().id !in chosen)
+    }
+
+    @Test
+    fun regenerationPrefersRecipesOutsideTheExistingPlan() {
+        val dinners = (0 until 16).map { recipe("dinner-$it") }
+        val currentIds = dinners.take(5).map { it.id }.toSet()
+        val current = orderedWeekDays.associateWith { day ->
+            if (day.value <= 5) dinners[day.value - 1].id else null
+        }
+        val modes = orderedWeekDays.associateWith { day ->
+            if (day.value <= 5) DayMode.AUTO else DayMode.AWAY
+        }
+
+        val result = WeeklyPlanner.generate(
+            recipes = dinners,
+            pantry = emptyMap(),
+            dayModes = modes,
+            weeklySandwichRecipeId = null,
+            currentPlan = current,
+            currentSandwichDay = null,
+            weights = PlannerWeights(previousPlanReuse = 120.0),
+            random = Random(3)
+        )
+
+        assertTrue(
+            "regenerating should introduce different recipes when possible",
+            result.plan.values.filterNotNull().count { it !in currentIds } >= 3
+        )
+    }
+
+    @Test
     fun recentlyEatenRecipeIsStronglyDisfavoured() {
         val recent = recipe("recent")
         val fresh = recipe("fresh")
@@ -637,4 +718,83 @@ class WeeklyPlannerTest {
 
         assertTrue("fresh recipe should dominate selection", freshWins >= 27)
     }
+
+    @Test
+    fun futureHistoryEntryDoesNotMaskRecentlyEatenRecipe() {
+        val modes = orderedWeekDays.associateWith {
+            if (it == DayOfWeek.MONDAY) DayMode.AUTO else DayMode.AWAY
+        }
+        val history = buildList {
+            add(MealHistoryEntry("recent", LocalDate.of(2026, 10, 4)))
+            // A future record must not replace the applicable past meal.
+            add(MealHistoryEntry("recent", LocalDate.of(2026, 11, 2)))
+            repeat(50) { index ->
+                add(MealHistoryEntry("unrelated-$index", LocalDate.of(2026, 9, 1)))
+            }
+        }
+        var freshWins = 0
+        repeat(30) { seed ->
+            val result = WeeklyPlanner.generate(
+                recipes = listOf(recipe("recent"), recipe("fresh")),
+                pantry = emptyMap(),
+                dayModes = modes,
+                weeklySandwichRecipeId = null,
+                currentPlan = orderedWeekDays.associateWith { null },
+                currentSandwichDay = null,
+                history = history,
+                weekStart = LocalDate.of(2026, 10, 5),
+                random = Random(seed)
+            )
+            if (result.plan[DayOfWeek.MONDAY] == "fresh") freshWins++
+        }
+        assertTrue("future history must not suppress past recency", freshWins >= 27)
+    }
+
+    @Test
+    fun plannerDoesNotDoubleCountRepeatedIngredientPantryCoverage() {
+        val repeated = Recipe(
+            id = "repeated-rice",
+            name = "Two rice requirements",
+            ingredients = listOf(
+                RecipeIngredient("rice", 100.0),
+                RecipeIngredient("rice", 100.0)
+            )
+        )
+        val stocked = Recipe(
+            id = "stocked-milk",
+            name = "Milk",
+            ingredients = listOf(RecipeIngredient("milk", 100.0))
+        )
+        val modes = orderedWeekDays.associateWith {
+            if (it == DayOfWeek.MONDAY) DayMode.AUTO else DayMode.AWAY
+        }
+        val weights = PlannerWeights(
+            pantryCoverage = 100.0,
+            ingredientReuse = 0.0,
+            duplicateRecipe = 0.0,
+            repeatedProtein = 0.0,
+            adjacentProtein = 0.0,
+            repeatedCategory = 0.0,
+            adjacentCategory = 0.0,
+            recency7Days = 0.0,
+            recency14Days = 0.0,
+            recency30Days = 0.0,
+            keepSameDay = 0.0,
+            jitter = 0.0
+        )
+
+        val result = WeeklyPlanner.generate(
+            recipes = listOf(repeated, stocked),
+            pantry = mapOf("rice" to 100.0, "milk" to 100.0),
+            dayModes = modes,
+            weeklySandwichRecipeId = null,
+            currentPlan = orderedWeekDays.associateWith { null },
+            currentSandwichDay = null,
+            weights = weights,
+            random = Random(12)
+        )
+
+        assertEquals(stocked.id, result.plan[DayOfWeek.MONDAY])
+    }
+
 }

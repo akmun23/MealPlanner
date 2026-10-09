@@ -1,5 +1,7 @@
 package com.example.mealplanner
 
+import android.content.Context
+import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -8,10 +10,14 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -41,6 +47,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 private const val AUTH_REDIRECT_URL = "com.mealplan.mealplanner://login-callback"
+private const val NEW_ACCOUNT_MIN_PASSWORD_LENGTH = 12
 
 internal enum class AuthAction {
     SIGN_IN,
@@ -81,7 +88,11 @@ internal fun authErrorMessage(
 
         "weak password" in raw ||
             "password should be at least" in raw ->
-            "Adgangskoden skal være mindst 6 tegn."
+            if (action == AuthAction.SIGN_UP) {
+                "Vælg en adgangskode på mindst 12 tegn."
+            } else {
+                "Adgangskoden opfylder ikke kontokravene."
+            }
 
         "rate limit" in raw ||
             "too many requests" in raw ->
@@ -118,9 +129,12 @@ data class HouseholdDto(
     val joinCode: String
 )
 
-class CloudAccountRepository {
+class CloudAccountRepository(context: Context) {
 
-    private val supabase = SupabaseProvider.client
+    private val householdStore = CachedHouseholdStore(context)
+
+    private val supabase
+        get() = SupabaseProvider.client
 
     suspend fun isLoggedIn(): Boolean {
         val status = supabase.auth.sessionStatus.first {
@@ -143,6 +157,9 @@ class CloudAccountRepository {
         email: String,
         password: String
     ) {
+        require(password.length >= NEW_ACCOUNT_MIN_PASSWORD_LENGTH) {
+            "New account passwords must have at least 12 characters"
+        }
         supabase.auth.signUpWith(
             provider = Email,
             redirectUrl = AUTH_REDIRECT_URL
@@ -153,7 +170,14 @@ class CloudAccountRepository {
     }
 
     suspend fun signOut() {
+        val userId = supabase.auth.currentUserOrNull()?.id
         supabase.auth.signOut()
+        if (userId != null) householdStore.remove(userId)
+    }
+
+    fun cachedHousehold(): HouseholdDto? {
+        val userId = supabase.auth.currentUserOrNull()?.id ?: return null
+        return householdStore.get(userId)
     }
 
     suspend fun currentHousehold(): HouseholdDto? {
@@ -172,9 +196,12 @@ class CloudAccountRepository {
                 .decodeList<HouseholdMemberDto>()
 
         val membership = memberships.firstOrNull()
-            ?: return null
+        if (membership == null) {
+            householdStore.remove(user.id)
+            return null
+        }
 
-        return supabase
+        val household = supabase
             .from("households")
             .select {
                 filter {
@@ -183,6 +210,13 @@ class CloudAccountRepository {
             }
             .decodeList<HouseholdDto>()
             .firstOrNull()
+
+        if (household != null) {
+            householdStore.put(user.id, household)
+        } else {
+            householdStore.remove(user.id)
+        }
+        return household
     }
 
     suspend fun renameHousehold(
@@ -252,10 +286,14 @@ private sealed interface CloudScreen {
 
 
 @Composable
-fun CloudGate() {
+fun CloudGate(
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit
+) {
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     val repository = remember {
-        CloudAccountRepository()
+        CloudAccountRepository(context.applicationContext)
     }
 
     val scope = rememberCoroutineScope()
@@ -286,16 +324,36 @@ fun CloudGate() {
             if (!repository.isLoggedIn()) {
                 CloudScreen.Login
             } else {
-                val household =
-                    repository.currentHousehold()
-
-                if (household == null) {
-                    CloudScreen.HouseholdSetup
-                } else {
-                    CloudScreen.Ready(household)
+                val cached = repository.cachedHousehold()
+                if (cached != null) {
+                    // Open Room-backed data without waiting for the network.
+                    screen = CloudScreen.Ready(cached)
+                    try {
+                        val fresh = repository.currentHousehold()
+                        screen = if (fresh == null) {
+                            CloudScreen.HouseholdSetup
+                        } else {
+                            CloudScreen.Ready(fresh)
+                        }
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        // Keep cached data available during a network outage.
+                        Log.w("MealPlannerStartup", "Using cached household", error)
+                    }
+                    return@LaunchedEffect
                 }
+
+                val household = repository.currentHousehold()
+                if (household == null) CloudScreen.HouseholdSetup
+                else CloudScreen.Ready(household)
             }
-        } catch (_: Exception) {
+        } catch (error: Exception) {
+            Log.e(
+                "MealPlannerStartup",
+                "Session or household initialization failed",
+                error
+            )
             CloudScreen.ConnectionIssue
         }
     }
@@ -317,6 +375,16 @@ fun CloudGate() {
             LoginScreen(
                 message = message,
                 isBusy = isBusy,
+
+                onContinueOffline = {
+                    screen = CloudScreen.Ready(
+                        HouseholdDto(
+                            id = "local-household-1",
+                            name = "Min Madplan (Lokal)",
+                            joinCode = "LOCAL"
+                        )
+                    )
+                },
 
                 onLogin = { email, password ->
 
@@ -533,7 +601,9 @@ fun CloudGate() {
                         message = null
                         screen = CloudScreen.Login
                     }
-                }
+                },
+                themeMode = themeMode,
+                onThemeModeChange = onThemeModeChange
             )
         }
     }
@@ -544,9 +614,13 @@ fun CloudGate() {
 private fun LoginScreen(
     message: String?,
     isBusy: Boolean,
+    onContinueOffline: () -> Unit,
     onLogin: (String, String) -> Unit,
     onCreateAccount: (String, String) -> Unit
 ) {
+    val isSupabaseConfigured = BuildConfig.SUPABASE_URL.let {
+        it.isNotBlank() && !it.contains("placeholder")
+    }
 
     var email by remember {
         mutableStateOf("")
@@ -559,6 +633,8 @@ private fun LoginScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            // Login and household fields must scroll above the soft keyboard.
+            .verticalScroll(rememberScrollState())
             .padding(24.dp),
         verticalArrangement = Arrangement.Center
     ) {
@@ -574,11 +650,58 @@ private fun LoginScreen(
         )
 
         Text(
-            text = "Log ind"
+            text = "Log ind eller fortsæt offline"
+        )
+
+        if (!isSupabaseConfigured) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                ),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Supabase ikke konfigureret",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "For online cloud-synkronisering skal SUPABASE_URL og SUPABASE_PUBLISHABLE_KEY tilføjes i local.properties. Du kan fortsætte i offline/lokal tilstand nedenfor.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+        }
+
+        Spacer(
+            modifier = Modifier.height(20.dp)
+        )
+
+        Button(
+            onClick = onContinueOffline,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Text("Fortsæt i lokal tilstand (Offline)")
+        }
+
+        Spacer(
+            modifier = Modifier.height(24.dp)
+        )
+
+        Text(
+            text = "Cloud Log Ind",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
         )
 
         Spacer(
-            modifier = Modifier.height(28.dp)
+            modifier = Modifier.height(12.dp)
         )
 
         OutlinedTextField(
@@ -636,10 +759,10 @@ private fun LoginScreen(
         }
 
         Spacer(
-            modifier = Modifier.height(20.dp)
+            modifier = Modifier.height(16.dp)
         )
 
-        Button(
+        OutlinedButton(
             onClick = {
                 onLogin(
                     email,
@@ -653,12 +776,19 @@ private fun LoginScreen(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp)
         ) {
-            Text("Log ind")
+            Text("Log ind på cloud-konto")
         }
 
         Spacer(
             modifier = Modifier.height(10.dp)
         )
+
+        Text(
+            "Ny konto: mindst 12 tegn i adgangskoden. Login med eksisterende adgangskoder virker fortsat.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(8.dp))
 
         OutlinedButton(
             onClick = {
@@ -670,21 +800,12 @@ private fun LoginScreen(
             enabled =
                 !isBusy &&
                     email.isNotBlank() &&
-                    password.length >= 6,
+                    password.length >= NEW_ACCOUNT_MIN_PASSWORD_LENGTH,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp)
         ) {
-            Text("Opret konto")
+            Text("Opret cloud-konto")
         }
-
-        Spacer(
-            modifier = Modifier.height(8.dp)
-        )
-
-        Text(
-            text = "Mindst 6 tegn",
-            style = MaterialTheme.typography.bodySmall
-        )
     }
 }
 
@@ -709,6 +830,8 @@ private fun HouseholdSetupScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            // Login and household fields must scroll above the soft keyboard.
+            .verticalScroll(rememberScrollState())
             .padding(24.dp),
         verticalArrangement = Arrangement.Center
     ) {

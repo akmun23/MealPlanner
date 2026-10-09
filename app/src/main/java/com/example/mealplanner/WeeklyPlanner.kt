@@ -3,13 +3,14 @@ package com.example.mealplanner
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
+import kotlin.math.exp
 import kotlin.math.max
 import kotlin.random.Random
 
 object WeeklyPlanner {
 
     private const val TRIALS = 400
-    private const val TOP_POOL = 8
+    private const val TOP_POOL = 64
     private const val LOCAL_SEARCH_STEPS = 18
 
     fun preferredSandwichDay(dayModes: Map<DayOfWeek, DayMode>): DayOfWeek? {
@@ -43,6 +44,7 @@ object WeeklyPlanner {
         }
 
         val recipesById = recipes.associateBy { it.id }
+        val historyByRecipe = indexHistory(history)
         val homeDays = orderedWeekDays.filter { dayModes[it] != DayMode.AWAY }
 
         if (homeDays.isEmpty()) {
@@ -66,14 +68,20 @@ object WeeklyPlanner {
             }
         }
 
+        // Preparation constraints do not change between trials. Avoid
+        // refiltering all recipes on every simulated day (400 trials).
+        val unlockedHomeDays = homeDays.filter { it !in lockedDays }
+        val eligibleByDay = unlockedHomeDays.associateWith { day ->
+            dinnerRecipes.filter { recipe ->
+                fitsPrepLimit(recipe, maxPrepMinutesByDay[day])
+            }
+        }
         val candidates = ArrayList<Pair<Double, Map<DayOfWeek, String?>>>(TRIALS)
 
         repeat(TRIALS) {
             val chosen = currentPlan.toMutableMap()
 
-            homeDays.forEach { day ->
-                if (day !in lockedDays) chosen[day] = null
-            }
+            unlockedHomeDays.forEach { day -> chosen[day] = null }
 
             val usedIds = chosen
                 .filterKeys { it in homeDays && it in lockedDays }
@@ -81,15 +89,8 @@ object WeeklyPlanner {
                 .filterNotNull()
                 .toMutableSet()
 
-            homeDays
-                .filter { it !in lockedDays }
-                .forEach { day ->
-                    val eligible = dinnerRecipes.filter { recipe ->
-                        fitsPrepLimit(
-                            recipe = recipe,
-                            maxPrepMinutes = maxPrepMinutesByDay[day]
-                        )
-                    }
+            unlockedHomeDays.forEach { day ->
+                    val eligible = eligibleByDay.getValue(day)
 
                     val available = eligible.filter {
                         it.id != weeklySandwichRecipeId && it.id !in usedIds
@@ -109,7 +110,7 @@ object WeeklyPlanner {
                                     chosenRecipeIds = chosen.values.filterNotNull(),
                                     recipesById = recipesById,
                                     pantry = pantry,
-                                    history = history,
+                                    historyByRecipe = historyByRecipe,
                                     proteinIngredientIds = proteinIngredientIds,
                                     targetDate = weekStart.plusDays(day.value.toLong() - 1),
                                     weights = weights
@@ -118,8 +119,9 @@ object WeeklyPlanner {
                         }
                         .sortedByDescending { it.second }
 
-                    val choicePool = ranked.take(max(1, minOf(4, ranked.size)))
-                    val recipe = weightedPick(choicePool, random)
+                    // Sample every eligible recipe; a top-four cutoff kept recycling
+                    // the same few meals, even when many more were available.
+                    val recipe = weightedPick(ranked, random, weights.jitter)
                     chosen[day] = recipe.id
                     usedIds += recipe.id
                 }
@@ -133,7 +135,7 @@ object WeeklyPlanner {
                 recipesById = recipesById,
                 maxPrepMinutesByDay = maxPrepMinutesByDay,
                 pantry = pantry,
-                history = history,
+                historyByRecipe = historyByRecipe,
                 proteinIngredientIds = proteinIngredientIds,
                 weekStart = weekStart,
                 previousPlan = currentPlan,
@@ -148,7 +150,7 @@ object WeeklyPlanner {
                 dayModes = dayModes,
                 recipesById = recipesById,
                 pantry = pantry,
-                history = history,
+                historyByRecipe = historyByRecipe,
                 proteinIngredientIds = proteinIngredientIds,
                 weekStart = weekStart,
                 previousPlan = currentPlan,
@@ -158,9 +160,19 @@ object WeeklyPlanner {
 
         val top = candidates
             .sortedByDescending { it.first }
+            // Different day orders of the same meals should not monopolize
+            // the shortlist when a fresh collection of recipes is available.
+            .distinctBy { (_, candidate) ->
+                unlockedHomeDays
+                    .filter { it != sandwichDay }
+                    .mapNotNull { candidate[it] }
+                    .sorted()
+            }
             .take(TOP_POOL)
 
-        val plan = if (top.isEmpty()) currentPlan else weightedPickPlans(top, random)
+        val plan = if (top.isEmpty()) currentPlan else {
+            weightedPickPlans(top, random, weights.jitter)
+        }
         return PlannerResult(plan, sandwichDay)
     }
 
@@ -187,6 +199,7 @@ object WeeklyPlanner {
                 hasRequiredPantryStock(it, pantry)
         }
         val recipesById = recipes.associateBy { it.id }
+        val historyByRecipe = indexHistory(history)
         val oldId = currentPlan[day]
         val usedElsewhere = orderedWeekDays
             .filter { it != day && dayModes[it] != DayMode.AWAY }
@@ -224,7 +237,7 @@ object WeeklyPlanner {
                     dayModes = dayModes,
                     recipesById = recipesById,
                     pantry = pantry,
-                    history = history,
+                    historyByRecipe = historyByRecipe,
                     proteinIngredientIds = proteinIngredientIds,
                     weekStart = weekStart,
                     previousPlan = currentPlan,
@@ -235,7 +248,7 @@ object WeeklyPlanner {
             }
             .sortedByDescending { it.second }
 
-        val chosen = weightedPick(ranked.take(minOf(4, ranked.size)), random)
+        val chosen = weightedPick(ranked, random, weights.jitter)
         return currentPlan.toMutableMap().apply { this[day] = chosen.id }
     }
 
@@ -248,7 +261,7 @@ object WeeklyPlanner {
         recipesById: Map<String, Recipe>,
         maxPrepMinutesByDay: Map<DayOfWeek, Int?>,
         pantry: Map<String, Double>,
-        history: List<MealHistoryEntry>,
+        historyByRecipe: Map<String, List<LocalDate>>,
         proteinIngredientIds: Set<String>,
         weekStart: LocalDate,
         previousPlan: Map<DayOfWeek, String?>,
@@ -259,12 +272,15 @@ object WeeklyPlanner {
             it !in lockedDays && it != sandwichDay
         }
         if (swappable.size < 2) return plan
+        val activeDayModes = orderedWeekDays.associateWith {
+            if (it in homeDays) DayMode.AUTO else DayMode.AWAY
+        }
 
         var best = plan.toMutableMap()
         var bestScore = scoreWholeWeek(
             best, sandwichDay, sandwichRecipeId,
-            orderedWeekDays.associateWith { if (it in homeDays) DayMode.AUTO else DayMode.AWAY },
-            recipesById, pantry, history, proteinIngredientIds, weekStart, previousPlan, weights
+            activeDayModes,
+            recipesById, pantry, historyByRecipe, proteinIngredientIds, weekStart, previousPlan, weights
         )
 
         repeat(LOCAL_SEARCH_STEPS) {
@@ -289,8 +305,8 @@ object WeeklyPlanner {
 
             val score = scoreWholeWeek(
                 candidate, sandwichDay, sandwichRecipeId,
-                orderedWeekDays.associateWith { if (it in homeDays) DayMode.AUTO else DayMode.AWAY },
-                recipesById, pantry, history, proteinIngredientIds, weekStart, previousPlan, weights
+                activeDayModes,
+                recipesById, pantry, historyByRecipe, proteinIngredientIds, weekStart, previousPlan, weights
             )
             if (score > bestScore) {
                 best = candidate
@@ -324,7 +340,7 @@ object WeeklyPlanner {
         chosenRecipeIds: List<String>,
         recipesById: Map<String, Recipe>,
         pantry: Map<String, Double>,
-        history: List<MealHistoryEntry>,
+        historyByRecipe: Map<String, List<LocalDate>>,
         proteinIngredientIds: Set<String>,
         targetDate: LocalDate,
         weights: PlannerWeights
@@ -332,12 +348,7 @@ object WeeklyPlanner {
         val chosenRecipes = chosenRecipeIds.mapNotNull(recipesById::get)
         var score = 0.0
 
-        recipe.ingredients.forEach { req ->
-            val available = pantry[req.ingredientId] ?: 0.0
-            if (req.amountBase > 0.0) {
-                score += minOf(available / req.amountBase, 1.0) * weights.pantryCoverage
-            }
-        }
+        score += PantryRules.coveredIngredientUnits(recipe, pantry) * weights.pantryCoverage
 
         val alreadyNeeded = chosenRecipes
             .flatMap { it.ingredients }
@@ -368,7 +379,7 @@ object WeeklyPlanner {
             score -= sameCategory * weights.repeatedCategory
         }
 
-        score -= recencyPenalty(recipe.id, history, targetDate, weights)
+        score -= recencyPenalty(recipe.id, historyByRecipe, targetDate, weights)
         return score
     }
 
@@ -379,7 +390,7 @@ object WeeklyPlanner {
         dayModes: Map<DayOfWeek, DayMode>,
         recipesById: Map<String, Recipe>,
         pantry: Map<String, Double>,
-        history: List<MealHistoryEntry>,
+        historyByRecipe: Map<String, List<LocalDate>>,
         proteinIngredientIds: Set<String>,
         weekStart: LocalDate,
         previousPlan: Map<DayOfWeek, String?>,
@@ -400,12 +411,17 @@ object WeeklyPlanner {
         var score = 0.0
         val selected = visible.mapNotNull { it.second }
 
+        val previousRecipeIds = orderedWeekDays
+            .filter { dayModes[it] != DayMode.AWAY && it != sandwichDay }
+            .mapNotNull { previousPlan[it] }
+            .toSet()
+
         selected.forEach { recipe ->
-            recipe.ingredients.forEach { req ->
-                val available = pantry[req.ingredientId] ?: 0.0
-                if (req.amountBase > 0.0) {
-                    score += minOf(available / req.amountBase, 1.0) * weights.pantryCoverage
-                }
+            score += PantryRules.coveredIngredientUnits(recipe, pantry) * weights.pantryCoverage
+            // Avoid returning the same collection of meals after "Ny madplan".
+            // Keep the sandwich exempt because it is fixed by the user.
+            if (recipe.id != sandwichRecipeId && recipe.id in previousRecipeIds) {
+                score -= weights.previousPlanReuse
             }
         }
 
@@ -422,7 +438,7 @@ object WeeklyPlanner {
             if (recipe == null) return@forEachIndexed
             score -= recencyPenalty(
                 recipe.id,
-                history,
+                historyByRecipe,
                 weekStart.plusDays(day.value.toLong() - 1),
                 weights
             )
@@ -503,19 +519,27 @@ object WeeklyPlanner {
     private fun categoryKey(recipe: Recipe): String =
         recipe.categoryId.orEmpty()
 
+    // Build once per planning operation, rather than scanning all meal history
+    // for every recipe in every search trial and scoring pass.
+    private fun indexHistory(
+        history: List<MealHistoryEntry>
+    ): Map<String, List<LocalDate>> =
+        history.groupBy { it.recipeId }
+            .mapValues { (_, meals) ->
+                meals.map { it.eatenOn }.sortedDescending()
+            }
+
     private fun recencyPenalty(
         recipeId: String,
-        history: List<MealHistoryEntry>,
+        historyByRecipe: Map<String, List<LocalDate>>,
         targetDate: LocalDate,
         weights: PlannerWeights
     ): Double {
-        val latest = history
-            .asSequence()
-            .filter { it.recipeId == recipeId && !it.eatenOn.isAfter(targetDate) }
-            .maxByOrNull { it.eatenOn }
+        val latest = historyByRecipe[recipeId]
+            ?.firstOrNull { !it.isAfter(targetDate) }
             ?: return 0.0
 
-        return when (ChronoUnit.DAYS.between(latest.eatenOn, targetDate)) {
+        return when (ChronoUnit.DAYS.between(latest, targetDate)) {
             in 0..7 -> weights.recency7Days
             in 8..14 -> weights.recency14Days
             in 15..30 -> weights.recency30Days
@@ -533,13 +557,21 @@ object WeeklyPlanner {
             0.0
         }
 
+    // Exponential score weights keep strongly disfavoured recipes rare while
+    // still letting similarly scored recipes throughout the entire list compete.
+    private fun scoreWeight(score: Double, best: Double, jitter: Double): Double {
+        val temperature = max(1.0, jitter * 2.0)
+        return exp(((score - best) / temperature).coerceAtLeast(-40.0))
+    }
+
     private fun weightedPick(
         ranked: List<Pair<Recipe, Double>>,
-        random: Random
+        random: Random,
+        jitter: Double
     ): Recipe {
         if (ranked.size == 1) return ranked.first().first
-        val minimum = ranked.minOf { it.second }
-        val weights = ranked.map { (_, score) -> (score - minimum) + 1.0 }
+        val best = ranked.maxOf { it.second }
+        val weights = ranked.map { (_, score) -> scoreWeight(score, best, jitter) }
         val total = weights.sum()
         var roll = random.nextDouble(0.0, total)
 
@@ -547,16 +579,17 @@ object WeeklyPlanner {
             roll -= weights[index]
             if (roll <= 0.0) return ranked[index].first
         }
-        return ranked.first().first
+        return ranked.last().first
     }
 
     private fun weightedPickPlans(
         ranked: List<Pair<Double, Map<DayOfWeek, String?>>>,
-        random: Random
+        random: Random,
+        jitter: Double
     ): Map<DayOfWeek, String?> {
         if (ranked.size == 1) return ranked.first().second
-        val minimum = ranked.minOf { it.first }
-        val weights = ranked.map { (score, _) -> (score - minimum) + 1.0 }
+        val best = ranked.maxOf { it.first }
+        val weights = ranked.map { (score, _) -> scoreWeight(score, best, jitter) }
         val total = weights.sum()
         var roll = random.nextDouble(0.0, total)
 
@@ -564,6 +597,6 @@ object WeeklyPlanner {
             roll -= weights[index]
             if (roll <= 0.0) return ranked[index].second
         }
-        return ranked.first().second
+        return ranked.last().second
     }
 }

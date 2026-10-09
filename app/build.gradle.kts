@@ -9,7 +9,27 @@ plugins {
 }
 
 val localProperties = Properties().apply {
-    load(rootProject.file("local.properties").inputStream())
+    val file = rootProject.file("local.properties")
+    if (file.exists()) {
+        file.inputStream().use { load(it) }
+    }
+}
+
+val rawSupabaseUrl: String? = localProperties.getProperty("SUPABASE_URL")
+val supabaseUrl = if (!rawSupabaseUrl.isNullOrBlank() && rawSupabaseUrl != "null") {
+    rawSupabaseUrl
+} else {
+    "https://placeholder.supabase.co"
+}
+
+val rawSupabaseKey: String? = localProperties.getProperty("SUPABASE_PUBLISHABLE_KEY")
+    ?: localProperties.getProperty("SUPABASE_ANON_KEY")
+    ?: localProperties.getProperty("SUPABASE_KEY")
+
+val supabaseKey = if (!rawSupabaseKey.isNullOrBlank() && rawSupabaseKey != "null") {
+    rawSupabaseKey
+} else {
+    "placeholder_key"
 }
 
 android {
@@ -23,32 +43,43 @@ android {
         applicationId = "com.mealplan.mealplanner"
         minSdk = 26
         targetSdk = 37
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 7
+        versionName = "1.2.3"
 
         buildConfigField(
             "String",
             "SUPABASE_URL",
-            "\"${localProperties.getProperty("SUPABASE_URL")}\""
+            "\"$supabaseUrl\""
         )
 
         buildConfigField(
             "String",
             "SUPABASE_PUBLISHABLE_KEY",
-            "\"${localProperties.getProperty("SUPABASE_PUBLISHABLE_KEY")}\""
+            "\"$supabaseKey\""
         )
     }
 
     buildTypes {
         release {
+            // Stability hotfix: re-enable release shrinking only after a
+            // physical-device startup test with a captured crash trace.
+            optimization {
+                enable = false
+            }
+        }
+        create("benchmark") {
+            initWith(getByName("release"))
+            // Evaluate R8's optimized DEX and resource shrinking before
+            // restoring it to production. The existing release build stays
+            // non-minified until a real-device launch + local/cloud flow test.
             optimization {
                 enable = true
-                packageScope = setOf(
-                    "androidx.**",
-                    "kotlin.**",
-                    "kotlinx.**"
-                )
             }
+            // Non-debuggable for realistic startup/frame tracing; do NOT
+            // install over a release-signed app (different signing keys).
+            signingConfig = signingConfigs.getByName("debug")
+            isDebuggable = false
+            matchingFallbacks += listOf("release")
         }
     }
 

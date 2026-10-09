@@ -31,7 +31,7 @@ class RoomOutboxIntegrationTest {
     fun migrationPreservesSnapshotAndOutboxSurvivesReopen() = runBlocking {
         createVersionOneDatabase()
 
-        var database = openVersionTwoDatabase()
+        var database = openCurrentDatabase()
 
         val migratedSnapshot =
             database.householdSnapshotDao()
@@ -71,7 +71,7 @@ class RoomOutboxIntegrationTest {
         )
         database.close()
 
-        database = openVersionTwoDatabase()
+        database = openCurrentDatabase()
 
         assertEquals(
             "after",
@@ -95,7 +95,7 @@ class RoomOutboxIntegrationTest {
 
     @Test
     fun replacingSameMutationKeyKeepsOnlyLatestRevision() = runBlocking {
-        val database = openVersionTwoDatabase()
+        val database = openCurrentDatabase()
 
         val first = pendingPantry(
             revision = "first",
@@ -144,7 +144,7 @@ class RoomOutboxIntegrationTest {
 
     @Test
     fun conflictedMutationIsPausedUntilExplicitResolution() = runBlocking {
-        val database = openVersionTwoDatabase()
+        val database = openCurrentDatabase()
         val pending = pendingPantry(
             revision = "conflict",
             amount = 3.0,
@@ -191,7 +191,7 @@ class RoomOutboxIntegrationTest {
 
     @Test
     fun unresolvedConflictBlocksItsBatchButNotUnrelatedLaterWork() = runBlocking {
-        val database = openVersionTwoDatabase(inMemory = true)
+        val database = openCurrentDatabase(inMemory = true)
 
         val conflicted = pendingPantry(
             revision = "conflict",
@@ -265,6 +265,64 @@ class RoomOutboxIntegrationTest {
         database.close()
     }
 
+    @Test
+    fun normalizedRowsAreUpdatedAtomicallyWithOfflineOutbox() = runBlocking {
+        val database = openCurrentDatabase()
+        val first = CloudSnapshot.EMPTY.copy(
+            ingredients = listOf(
+                Ingredient(
+                    id = "rice",
+                    name = "Ris",
+                    quantityType = QuantityType.MASS,
+                    preferredUnit = MeasurementUnit.GRAM
+                )
+            ),
+            recipes = listOf(
+                Recipe(id = "meal", name = "Risret", ingredients = emptyList())
+            ),
+            pantry = mapOf("rice" to 800.0)
+        )
+        val mutation = pendingPantry("first", 800.0, 1L)
+        database.localStateDao().persistSnapshotAndMutations(
+            snapshot = HouseholdSnapshotEntity(
+                householdId = "household",
+                payload = RoomSnapshotCodec.encode(first),
+                updatedAtEpochMs = 1L
+            ),
+            mutations = listOf(mutation)
+        )
+
+        assertEquals(
+            true,
+            database.householdSnapshotDao().find("household")?.normalizedV3
+        )
+        assertEquals("Ris", database.localDomainDao().ingredients("household").single().name)
+        assertEquals("Risret", database.localDomainDao().recipes("household").single().name)
+        assertEquals(800.0, database.localDomainDao().pantry("household").single().amountBase, 0.0)
+        assertEquals(1, database.pendingMutationDao().count("household"))
+
+        // A later edit can remove every item. An empty normalized table is
+        // valid, not a signal to resurrect data from the old snapshot.
+        val cleared = first.copy(
+            ingredients = emptyList(),
+            recipes = emptyList(),
+            pantry = emptyMap()
+        )
+        database.localStateDao().persistSnapshotAndMutations(
+            snapshot = HouseholdSnapshotEntity(
+                householdId = "household",
+                payload = RoomSnapshotCodec.encode(cleared),
+                updatedAtEpochMs = 2L
+            ),
+            mutations = emptyList()
+        )
+        assertEquals(0, database.localDomainDao().ingredients("household").size)
+        assertEquals(0, database.localDomainDao().recipes("household").size)
+        assertEquals(0, database.localDomainDao().pantry("household").size)
+        assertEquals(1, database.pendingMutationDao().count("household"))
+        database.close()
+    }
+
     private fun createVersionOneDatabase() {
         val sqlite = context.openOrCreateDatabase(
             databaseName,
@@ -293,12 +351,15 @@ class RoomOutboxIntegrationTest {
         sqlite.close()
     }
 
-    private fun openVersionTwoDatabase(inMemory: Boolean = false): MealPlannerDatabase {
+    private fun openCurrentDatabase(inMemory: Boolean = false): MealPlannerDatabase {
         val builder = if (inMemory) {
             Room.inMemoryDatabaseBuilder(context, MealPlannerDatabase::class.java)
         } else {
             Room.databaseBuilder(context, MealPlannerDatabase::class.java, databaseName)
-                .addMigrations(MealPlannerDatabaseProvider.MIGRATION_1_2)
+                .addMigrations(
+                    MealPlannerDatabaseProvider.MIGRATION_1_2,
+                    MealPlannerDatabaseProvider.MIGRATION_2_3
+                )
         }
         return builder
             .allowMainThreadQueries()

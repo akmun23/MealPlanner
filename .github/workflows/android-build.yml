@@ -13,6 +13,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Pure Gradle + DEX checks: no emulator/ADB blocking the required build.
+    timeout-minutes: 35
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -35,3 +37,46 @@ jobs:
 
       - name: Build debug APK
         run: bash ./gradlew :app:assembleDebug --stacktrace
+
+      - name: Build unoptimized release APK and release bundle
+        # bundleRelease produces an AAB, not an APK. The shrinkage comparison
+        # requires an assembleRelease baseline with the same app sources.
+        run: bash ./gradlew :app:assembleRelease :app:bundleRelease --stacktrace
+
+      - name: Build R8-optimized benchmark APK
+        run: bash ./gradlew :app:assembleBenchmark --stacktrace
+
+      - name: Verify DEX shrinkage against unoptimized release
+        run: |
+          set -euo pipefail
+          RELEASE_APK="$(find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -print -quit)"
+          BENCHMARK_APK="$(find app/build/outputs/apk/benchmark -maxdepth 1 -name '*.apk' -print -quit)"
+          if [[ ! -f "$RELEASE_APK" || ! -f "$BENCHMARK_APK" ]]; then
+            echo "::error::Both the unoptimized release APK and optimized benchmark APK are required for DEX comparison."
+            exit 1
+          fi
+          python3 scripts/check_dex_optimization.py \
+            --release "$RELEASE_APK" \
+            --optimized "$BENCHMARK_APK" \
+            --report dex-optimization-report.json
+          cat dex-optimization-report.json >> "$GITHUB_STEP_SUMMARY"
+
+      # Emulator startup has proved unreliable on hosted runners and previously
+      # stalled until the workflow was cancelled. Keep build/R8 verification
+      # deterministic. Emulator runtime validation is a separate, explicitly
+      # opt-in workflow (.github/workflows/r8-emulator-smoke.yml).
+      - name: Check optional emulator smoke script syntax
+        run: bash -n scripts/smoke_optimized_apk.sh
+
+      - name: Archive shrinker metrics and R8 mapping
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r8-dex-report-and-mapping
+          path: |
+            dex-optimization-report.json
+            app/build/outputs/mapping/benchmark/mapping.txt
+          retention-days: 14
+
+      - name: Compile on-device benchmark harness
+        run: bash ./gradlew :macrobenchmark:assembleBenchmark --stacktrace

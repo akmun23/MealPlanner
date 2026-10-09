@@ -27,7 +27,9 @@ internal data class HouseholdSnapshotEntity(
     val householdId: String,
     val payload: String,
     @ColumnInfo(name = "updated_at_epoch_ms")
-    val updatedAtEpochMs: Long
+    val updatedAtEpochMs: Long,
+    @ColumnInfo(name = "normalized_v3", defaultValue = "0")
+    val normalizedV3: Boolean = false
 )
 
 @Dao
@@ -48,6 +50,34 @@ internal interface HouseholdSnapshotDao {
 
 @Dao
 internal abstract class LocalStateDao {
+    @Query("select * from household_snapshots where household_id = :householdId limit 1")
+    protected abstract suspend fun previousSnapshot(
+        householdId: String
+    ): HouseholdSnapshotEntity?
+
+    @Query("delete from local_ingredients where household_id = :householdId")
+    protected abstract suspend fun clearIngredients(householdId: String)
+
+    @Query("delete from local_recipes where household_id = :householdId")
+    protected abstract suspend fun clearRecipes(householdId: String)
+
+    @Query("delete from local_pantry where household_id = :householdId")
+    protected abstract suspend fun clearPantry(householdId: String)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    protected abstract suspend fun insertIngredients(
+        entities: List<LocalIngredientEntity>
+    )
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    protected abstract suspend fun insertRecipes(
+        entities: List<LocalRecipeEntity>
+    )
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    protected abstract suspend fun insertPantry(
+        entities: List<LocalPantryEntity>
+    )
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     abstract suspend fun upsertSnapshot(
         entity: HouseholdSnapshotEntity
@@ -63,23 +93,61 @@ internal abstract class LocalStateDao {
         snapshot: HouseholdSnapshotEntity,
         mutations: List<PendingMutationEntity>
     ) {
-        upsertSnapshot(snapshot)
-        upsertMutations(mutations)
+        val previous = previousSnapshot(snapshot.householdId)
+        val decoded = RoomSnapshotCodec.decode(snapshot.payload)
+        upsertSnapshot(snapshot.copy(normalizedV3 = decoded != null))
+        if (mutations.isNotEmpty()) upsertMutations(mutations)
+        if (decoded != null) {
+            val old = previous
+                ?.takeIf { it.normalizedV3 }
+                ?.let { RoomSnapshotCodec.decode(it.payload) }
+
+            // Skip unnecessary SQL writes on frequent shopping/plan updates.
+            // All updates run in the same transaction as the outbox entry.
+            if (old?.ingredients != decoded.ingredients) {
+                clearIngredients(snapshot.householdId)
+                insertIngredients(
+                    LocalDomainCodec.ingredientRows(
+                        snapshot.householdId, decoded.ingredients
+                    )
+                )
+            }
+            if (old?.recipes != decoded.recipes) {
+                clearRecipes(snapshot.householdId)
+                insertRecipes(
+                    LocalDomainCodec.recipeRows(
+                        snapshot.householdId, decoded.recipes
+                    )
+                )
+            }
+            if (old?.pantry != decoded.pantry) {
+                clearPantry(snapshot.householdId)
+                insertPantry(
+                    LocalDomainCodec.pantryRows(
+                        snapshot.householdId, decoded.pantry
+                    )
+                )
+            }
+        }
     }
 }
 
 @Database(
     entities = [
         HouseholdSnapshotEntity::class,
-        PendingMutationEntity::class
+        PendingMutationEntity::class,
+        LocalIngredientEntity::class,
+        LocalRecipeEntity::class,
+        LocalPantryEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 internal abstract class MealPlannerDatabase : RoomDatabase() {
     abstract fun householdSnapshotDao(): HouseholdSnapshotDao
     abstract fun pendingMutationDao(): PendingMutationDao
     abstract fun localStateDao(): LocalStateDao
+    abstract fun localDomainDao(): LocalDomainDao
 }
 
 internal object MealPlannerDatabaseProvider {
@@ -93,7 +161,9 @@ internal object MealPlannerDatabaseProvider {
                 MealPlannerDatabase::class.java,
                 "meal_planner_local.db"
             )
-                .addMigrations(MIGRATION_1_2)
+                // Never delete pending offline edits just to recover from a
+                // missing migration. Fail visibly instead of losing user data.
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build().also {
                 instance = it
             }
@@ -136,28 +206,98 @@ internal object MealPlannerDatabaseProvider {
             )
         }
     }
+
+    internal val MIGRATION_2_3 = object : Migration(2, 3) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "alter table household_snapshots add column normalized_v3 integer not null default 0"
+            )
+            db.execSQL(
+                """
+                create table if not exists local_ingredients (
+                    household_id text not null,
+                    ingredient_id text not null,
+                    name text not null,
+                    category_id text,
+                    payload text not null,
+                    primary key (household_id, ingredient_id)
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                create index if not exists index_local_ingredients_household_id_name
+                on local_ingredients(household_id, name)
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                create table if not exists local_recipes (
+                    household_id text not null,
+                    recipe_id text not null,
+                    name text not null,
+                    category_id text,
+                    meal_type text not null,
+                    payload text not null,
+                    primary key (household_id, recipe_id)
+                )
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                create index if not exists index_local_recipes_household_id_name
+                on local_recipes(household_id, name)
+                """.trimIndent()
+            )
+            db.execSQL(
+                """
+                create table if not exists local_pantry (
+                    household_id text not null,
+                    ingredient_id text not null,
+                    amount_base real not null,
+                    primary key (household_id, ingredient_id)
+                )
+                """.trimIndent()
+            )
+        }
+    }
 }
 
 internal class RoomSnapshotCache(
     context: Context,
     private val householdId: String
 ) {
-    private val dao = MealPlannerDatabaseProvider
-        .get(context)
-        .householdSnapshotDao()
+    private val database = MealPlannerDatabaseProvider.get(context)
+    private val snapshots = database.householdSnapshotDao()
+    private val localState = database.localStateDao()
+    private val domains = database.localDomainDao()
 
     suspend fun load(): CloudSnapshot? {
-        val entity = dao.find(householdId) ?: return null
-        return RoomSnapshotCodec.decode(entity.payload)
+        val entity = snapshots.find(householdId) ?: return null
+        val snapshot = RoomSnapshotCodec.decode(entity.payload) ?: return null
+
+        // Existing installs have a v2 snapshot but no normalized rows.
+        // Materialize it once without requiring a network connection.
+        if (!entity.normalizedV3) {
+            localState.persistSnapshotAndMutations(entity, emptyList())
+        }
+
+        return LocalDomainCodec.hydrate(
+            snapshot = snapshot,
+            ingredients = domains.ingredients(householdId),
+            recipes = domains.recipes(householdId),
+            pantry = domains.pantry(householdId)
+        ) ?: snapshot
     }
 
     suspend fun save(snapshot: CloudSnapshot) {
-        dao.upsert(
-            HouseholdSnapshotEntity(
+        localState.persistSnapshotAndMutations(
+            snapshot = HouseholdSnapshotEntity(
                 householdId = householdId,
                 payload = RoomSnapshotCodec.encode(snapshot),
                 updatedAtEpochMs = System.currentTimeMillis()
-            )
+            ),
+            mutations = emptyList()
         )
     }
 }
@@ -244,20 +384,40 @@ internal object RoomSnapshotCodec {
     fun encode(snapshot: CloudSnapshot): String =
         json.encodeToString(snapshot.toCached())
 
-    fun decode(payload: String): CloudSnapshot? =
+    fun decode(
+        payload: String,
+        today: LocalDate = LocalDate.now()
+    ): CloudSnapshot? =
         runCatching {
-            val cached =
-                json.decodeFromString<CachedCloudSnapshot>(payload)
-            if (cached.weekStart != currentWeekStart().toString()) {
-                return null
+            val cached = json.decodeFromString<CachedCloudSnapshot>(payload)
+            val snapshot = cached.toCloudSnapshot()
+            val weekStart = currentWeekStart(today).toString()
+            if (cached.weekStart == weekStart) {
+                snapshot
+            } else {
+                // Week-sensitive identifiers cannot be written into the new
+                // week's server plan. Keep pantry, recipes and history offline.
+                val defaults = CloudSnapshot.EMPTY
+                snapshot.copy(
+                    dayModes = defaults.dayModes,
+                    dayMaxPrepMinutes = defaults.dayMaxPrepMinutes,
+                    plan = defaults.plan,
+                    lockedDays = emptySet(),
+                    shoppingChecked = emptyMap(),
+                    shoppingIncluded = emptyMap(),
+                    selectedLunchRecipeIds = emptyList(),
+                    weeklyPlanId = "offline-week-$weekStart",
+                    weeklySandwichRecipeId = null,
+                    sandwichDay = null
+                )
             }
-            cached.toCloudSnapshot()
         }.getOrNull()
 
-    private fun currentWeekStart(): LocalDate =
-        LocalDate.now().with(
-            TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)
-        )
+    private fun currentWeekStart(
+        today: LocalDate = LocalDate.now()
+    ): LocalDate = today.with(
+        TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)
+    )
 
     private fun CloudSnapshot.toCached() = CachedCloudSnapshot(
         weekStart = currentWeekStart().toString(),

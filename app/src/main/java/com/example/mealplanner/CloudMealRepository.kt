@@ -4,14 +4,15 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
+import androidx.core.net.toUri
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.from
 import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.realtime.HasOldRecord
 import io.github.jan.supabase.realtime.HasRecord
 import io.github.jan.supabase.realtime.PostgresAction
-import io.github.jan.supabase.realtime.channel
 import io.github.jan.supabase.realtime.RealtimeChannel
+import io.github.jan.supabase.realtime.channel
 import io.github.jan.supabase.realtime.postgresChangeFlow
 import io.github.jan.supabase.realtime.realtime
 import io.github.jan.supabase.storage.storage
@@ -19,7 +20,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.debounce
@@ -38,9 +38,6 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.temporal.TemporalAdjusters
 import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
-import kotlin.time.Duration.Companion.hours
-import androidx.core.net.toUri
 import kotlin.time.Duration.Companion.milliseconds
 
 @Serializable
@@ -221,7 +218,28 @@ data class CloudSnapshot(
     val weeklySandwichRecipeId: String?,
     val sandwichDay: DayOfWeek?,
     val history: List<MealHistoryEntry>
-)
+) {
+    companion object {
+        val EMPTY = CloudSnapshot(
+            ingredients = emptyList(),
+            ingredientCategories = emptyList(),
+            recipeCategories = emptyList(),
+            recipes = emptyList(),
+            pantry = emptyMap(),
+            dayModes = DayOfWeek.entries.associateWith { DayMode.AUTO },
+            dayMaxPrepMinutes = DayOfWeek.entries.associateWith { null },
+            plan = DayOfWeek.entries.associateWith { null },
+            lockedDays = emptySet(),
+            shoppingChecked = emptyMap(),
+            shoppingIncluded = emptyMap(),
+            selectedLunchRecipeIds = emptyList(),
+            weeklyPlanId = "local-week",
+            weeklySandwichRecipeId = null,
+            sandwichDay = null,
+            history = emptyList()
+        )
+    }
+}
 
 internal enum class CloudSyncDomain {
     INGREDIENTS,
@@ -410,14 +428,8 @@ class CloudMealRepository(
     private val context: Context,
     private val householdId: String
 ) {
-    private data class CachedSignedImageUrl(
-        val url: String,
-        val refreshAtEpochMillis: Long
-    )
-
     private val supabase = SupabaseProvider.client
-    private val signedImageUrls =
-        ConcurrentHashMap<String, CachedSignedImageUrl>()
+    private val imageUrls = SignedMealImageUrls.get(context.applicationContext)
     private var realtimeChannel: RealtimeChannel? = null
     private var realtimeJobs: List<Job> = emptyList()
 
@@ -425,12 +437,7 @@ class CloudMealRepository(
         LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
 
     suspend fun loadCurrent(
-        syncHistory: Boolean = false
     ): CloudSnapshot = withContext(Dispatchers.IO) {
-        if (syncHistory) {
-            syncRecentHistory()
-        }
-
         coroutineScope {
             val ingredientsDeferred = async {
                 loadIngredientsSnapshot()
@@ -445,6 +452,10 @@ class CloudMealRepository(
                 loadWeekSnapshot()
             }
             val historyDeferred = async {
+                // History maintenance is independent of the other reads;
+                // do not delay starting recipes, pantry or week requests.
+                // Only explicit meal confirmations belong in meal_history.
+                // A planned recipe is not proof that someone actually ate it.
                 loadHistorySnapshot()
             }
 
@@ -505,15 +516,6 @@ class CloudMealRepository(
                 val ingredientRows = ingredientsDeferred.await()
                 val categoryRows = categoriesDeferred.await()
                 val proteinRows = proteinFlagsDeferred.await()
-                val urls = ingredientRows
-                    .mapNotNull { it.imagePath }
-                    .distinct()
-                    .map { path ->
-                        async { path to signedImageUrl(path) }
-                    }
-                    .awaitAll()
-                    .toMap()
-
                 val proteinByIngredient =
                     proteinRows.associateBy { it.ingredientId }
 
@@ -534,7 +536,7 @@ class CloudMealRepository(
                             shoppingCategoryId = row.shoppingCategoryId,
                             isProtein =
                                 proteinByIngredient[row.id]?.isProtein == true,
-                            imageUri = row.imagePath?.let(urls::get),
+                            imageUri = row.imagePath?.let(MealImageReference::forPath),
                             imagePath = row.imagePath
                         )
                     },
@@ -611,15 +613,6 @@ class CloudMealRepository(
                 val pantryPrerequisiteRows =
                     pantryPrerequisitesDeferred.await()
 
-                val urls = recipeRows
-                    .mapNotNull { it.imagePath }
-                    .distinct()
-                    .map { path ->
-                        async { path to signedImageUrl(path) }
-                    }
-                    .awaitAll()
-                    .toMap()
-
                 val requirements = ingredientRows.groupBy { it.recipeId }
                 val pantryPrerequisites =
                     pantryPrerequisiteRows.groupBy { it.recipeId }
@@ -659,7 +652,7 @@ class CloudMealRepository(
                             categoryId =
                                 categoryByRecipe[row.id]?.categoryId,
                             notes = row.notes,
-                            imageUri = row.imagePath?.let(urls::get),
+                            imageUri = row.imagePath?.let(MealImageReference::forPath),
                             imagePath = row.imagePath,
                             ingredients =
                                 requirements[row.id].orEmpty().map {
@@ -829,6 +822,34 @@ class CloudMealRepository(
                     )
                 }
         }
+
+    /**
+     * Meal history is explicit: users record what they ate, including the
+     * ability to correct or remove an entry. Never infer it from the plan.
+     */
+    suspend fun setMealEaten(
+        eatenOn: LocalDate,
+        recipeId: String?
+    ) = withContext(Dispatchers.IO) {
+        if (recipeId == null) {
+            supabase.from("meal_history").delete {
+                filter {
+                    eq("household_id", householdId)
+                    eq("eaten_on", eatenOn.toString())
+                }
+            }
+        } else {
+            supabase.from("meal_history").upsert(
+                MealHistoryRow(
+                    householdId = householdId,
+                    eatenOn = eatenOn.toString(),
+                    recipeId = recipeId
+                )
+            ) {
+                onConflict = "household_id,eaten_on"
+            }
+        }
+    }
 
     suspend fun upsertIngredient(ingredient: Ingredient): Ingredient = withContext(Dispatchers.IO) {
         val finalImage = resolveImage(
@@ -1334,68 +1355,6 @@ class CloudMealRepository(
         }
     }
 
-    private suspend fun syncRecentHistory() {
-        val cutoff = LocalDate.now().minusDays(60)
-        val today = LocalDate.now()
-
-        val weeks = supabase.from("weekly_plans").select {
-            filter {
-                eq("household_id", householdId)
-                gte("week_start", cutoff.toString())
-            }
-        }.decodeList<WeeklyPlanRow>()
-
-        if (weeks.isEmpty()) return
-
-        val meals = supabase.from("planned_meals").select {
-            filter { eq("household_id", householdId) }
-        }.decodeList<PlannedMealRow>()
-
-        val mealsByWeek = meals.groupBy { it.weeklyPlanId }
-        val rows = weeks.flatMap { week ->
-            val start = LocalDate.parse(week.weekStart)
-            mealsByWeek[week.id].orEmpty().mapNotNull { meal ->
-                val date = start.plusDays(meal.dayOfWeek.toLong() - 1)
-                if (date >= today || meal.mode == "AWAY") return@mapNotNull null
-
-                val recipeId = if (
-                    week.sandwichDay == meal.dayOfWeek &&
-                    week.sandwichRecipeId != null
-                ) {
-                    week.sandwichRecipeId
-                } else {
-                    meal.recipeId
-                } ?: return@mapNotNull null
-
-                MealHistoryRow(
-                    householdId = householdId,
-                    eatenOn = date.toString(),
-                    recipeId = recipeId
-                )
-            }
-        }
-
-        if (rows.isNotEmpty()) {
-            val existing = supabase.from("meal_history").select {
-                filter {
-                    eq("household_id", householdId)
-                    gte("eaten_on", cutoff.toString())
-                }
-            }.decodeList<MealHistoryRow>()
-                .associateBy { it.eatenOn }
-
-            val changedRows = rows.filter { candidate ->
-                existing[candidate.eatenOn]?.recipeId != candidate.recipeId
-            }
-
-            if (changedRows.isNotEmpty()) {
-                supabase.from("meal_history").upsert(changedRows) {
-                    onConflict = "household_id,eaten_on"
-                }
-            }
-        }
-    }
-
     private suspend fun resolveImage(
         kind: String,
         objectId: String,
@@ -1421,28 +1380,7 @@ class CloudMealRepository(
             deleteImage(existingPath)
         }
 
-        return path to signedImageUrl(path)
-    }
-
-    private suspend fun signedImageUrl(path: String): String {
-        val now = System.currentTimeMillis()
-        signedImageUrls[path]
-            ?.takeIf {
-                it.refreshAtEpochMillis > now
-            }
-            ?.let {
-                return it.url
-            }
-
-        val url = supabase.storage["meal-images"]
-            .createSignedUrl(path, 24.hours)
-
-        signedImageUrls[path] = CachedSignedImageUrl(
-            url = url,
-            refreshAtEpochMillis =
-                now + 23L * 60L * 60L * 1000L
-        )
-        return url
+        return path to MealImageReference.forPath(path)
     }
 
     private suspend fun deleteImage(path: String?) {
@@ -1450,7 +1388,7 @@ class CloudMealRepository(
         runCatching {
             supabase.storage["meal-images"].delete(path)
         }
-        signedImageUrls.remove(path)
+        imageUrls.invalidate(path)
     }
 
     private fun prepareImage(uri: Uri): ByteArray {
