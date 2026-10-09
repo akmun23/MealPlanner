@@ -12,6 +12,21 @@ class RecipeLabelsTest {
     }
 
     @Test
+    fun compactMetadataDoesNotHideProteinBehindDinnerLabel() {
+        val dinner = Recipe(
+            id = "dinner",
+            name = "Dinner",
+            categoryId = "soups",
+            prepMinutes = 25,
+            ingredients = emptyList()
+        )
+        val lunch = dinner.copy(mealType = MealType.LUNCH)
+
+        assertEquals("Supper · 25 min", recipeCompactMeta(dinner, "Supper"))
+        assertEquals("Frokost · Supper · 25 min", recipeCompactMeta(lunch, "Supper"))
+    }
+
+    @Test
     fun proteinAndExplicitCategoryArePreserved() {
         assertEquals("Kylling + Æg", recipeProteinLabel(listOf("Kylling", "Æg")))
         assertEquals("Andet", recipeCategoryDisplayName("Andet", listOf("Kylling")))
