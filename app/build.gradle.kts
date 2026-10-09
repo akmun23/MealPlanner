@@ -23,8 +23,8 @@ android {
         applicationId = "com.mealplan.mealplanner"
         minSdk = 26
         targetSdk = 37
-        versionCode = 2
-        versionName = "1.1"
+        versionCode = 3
+        versionName = "1.1.1"
 
         buildConfigField(
             "String",
@@ -41,13 +41,10 @@ android {
 
     buildTypes {
         release {
+            // Stability hotfix: re-enable release shrinking only after a
+            // physical-device startup test with a captured crash trace.
             optimization {
-                enable = true
-                packageScope = setOf(
-                    "androidx.**",
-                    "kotlin.**",
-                    "kotlinx.**"
-                )
+                enable = false
             }
         }
     }
