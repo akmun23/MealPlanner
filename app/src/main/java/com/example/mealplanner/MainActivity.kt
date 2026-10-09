@@ -19,6 +19,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -190,7 +193,7 @@ class MainActivity : ComponentActivity() {
                 ThemeMode.LIGHT -> false
             }
             MaterialTheme(colorScheme = if (dark) DarkAppColors else AppColors) {
-                Surface(modifier = Modifier.fillMaxSize()) {
+                Surface(modifier = Modifier.fillMaxSize().imePadding()) {
                     CloudGate(
                         themeMode = themeMode,
                         onThemeModeChange = { selected ->
@@ -436,6 +439,8 @@ fun MealPlannerApp(
                     )
                 },
                 bottomBar = {
+                    // Give the editor the full height when the keyboard is open.
+                    if (!WindowInsets.isImeVisible) {
                     NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                         AppTab.entries.forEach { item ->
                             NavigationBarItem(
@@ -460,6 +465,7 @@ fun MealPlannerApp(
                                 }
                             )
                         }
+                    }
                     }
                 }
             ) { padding ->
