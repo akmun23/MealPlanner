@@ -13,9 +13,7 @@ object PantryRules {
         recipe: Recipe,
         pantry: Map<String, Double>
     ): Boolean {
-        if (recipe.ingredients.isEmpty()) return false
-
-        return requiredByIngredient(recipe).all { (ingredientId, requiredAmount) ->
+        return recipe.ingredients.isNotEmpty() && requiredByIngredient(recipe).all { (ingredientId, requiredAmount) ->
             val available = pantry[ingredientId] ?: 0.0
             available + 0.00001 >= requiredAmount
         }

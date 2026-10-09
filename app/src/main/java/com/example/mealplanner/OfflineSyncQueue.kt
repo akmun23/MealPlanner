@@ -711,7 +711,7 @@ internal class OfflineSyncQueue(
                 pending.conflict
             },
             onSuperseded = { mutationId ->
-                val currentRemote = repository.loadCurrent(syncHistory = false)
+                val currentRemote = repository.loadCurrent()
                 dao.rebaseLatest(
                     id = mutationId,
                     baseSnapshotPayload = RoomSnapshotCodec.encode(currentRemote)
@@ -886,7 +886,6 @@ internal class OfflineSyncWorker(
                 onSuperseded = { mutationId ->
                     val currentRemote =
                         repository.loadCurrent(
-                            syncHistory = false
                         )
                     dao.rebaseLatest(
                         id = mutationId,

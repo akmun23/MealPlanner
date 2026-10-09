@@ -11,16 +11,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -189,7 +188,7 @@ class MealPlannerState(
             initialLoad.join()
             // Cache images for the other tabs without composing those screens
             // and without blocking the first household frame.
-            delay(2_500L)
+            delay(2_500L.milliseconds)
             val recipesById = recipes.associateBy { it.id }
             val imageReferences = buildList {
                 orderedWeekDays.mapNotNull { plan[it] }.forEach { id ->
@@ -248,7 +247,7 @@ class MealPlannerState(
         }
         // A full reload is only safe after all optimistic edits have been sent.
         if (!offlineSyncQueue.hasPendingMutations()) {
-            reload(syncHistory = false)
+            reload()
         }
         repository.startRealtime(scope) { event ->
             handleRealtime(event)
@@ -313,7 +312,7 @@ class MealPlannerState(
             if (!stillPending) {
                 // Even if there were edits when the app started, a successful
                 // drain must be followed by reconciliation with the server.
-                reload(syncHistory = false)
+                reload()
                 // No automatic backfill: planned dishes must never be
                 // recorded as eaten without user confirmation.
             } else if (!hasCachedSnapshot) {
@@ -384,7 +383,6 @@ class MealPlannerState(
                     ) {
                         runCatching {
                             reload(
-                                syncHistory = false,
                                 expectedGenerations =
                                     generationSnapshot
                             )
@@ -467,7 +465,6 @@ class MealPlannerState(
     }
 
     private suspend fun reload(
-        syncHistory: Boolean = false,
         expectedGenerations: Map<CloudSyncDomain, Long>? = null
     ) {
         // Avoid applying a server response that began before a local edit.
@@ -475,7 +472,6 @@ class MealPlannerState(
             .associateWith(syncTracker::generation)
         if (offlineSyncQueue.hasPendingMutations()) return
         val snapshot = repository.loadCurrent(
-            syncHistory = syncHistory
         )
 
         var applied = false
@@ -799,7 +795,7 @@ class MealPlannerState(
         )
     }
 
-    private fun currentSnapshot(): CloudSnapshot? {
+    private fun currentSnapshot(): CloudSnapshot {
         // A temporary week id lets unrelated pantry and recipe edits
         // persist even before a real weekly plan is available.
         val planId = weeklyPlanId ?: "offline-week-${currentWeekStart()}"

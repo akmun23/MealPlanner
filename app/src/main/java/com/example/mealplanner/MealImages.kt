@@ -4,7 +4,6 @@ import android.content.Context
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -13,7 +12,6 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
@@ -23,13 +21,15 @@ import io.github.jan.supabase.storage.storage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.sync.withPermit
-import kotlin.time.Duration.Companion.hours
+import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
+import kotlin.time.Duration.Companion.hours
+import androidx.core.content.edit
+import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * An image reference is a cheap, stable value carried in Room snapshots.
@@ -73,13 +73,13 @@ internal class SignedMealImageUrls private constructor(context: Context) {
                     SupabaseProvider.client.storage["meal-images"]
                         .createSignedUrl(path, 24.hours)
                 }
-                preferences.edit()
-                    .putString("url:$path", signed)
-                    .putLong(
-                        "expires:$path",
-                        now + 23L * 60L * 60L * 1000L
-                    )
-                    .apply()
+                preferences.edit {
+                        putString("url:$path", signed)
+                            .putLong(
+                                "expires:$path",
+                                now + 23L * 60L * 60L * 1000L
+                            )
+                }
                 signed
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -92,15 +92,16 @@ internal class SignedMealImageUrls private constructor(context: Context) {
     }
 
     fun invalidate(path: String) {
-        preferences.edit()
-            .remove("url:$path")
-            .remove("expires:$path")
-            .apply()
+        preferences.edit {
+                remove("url:$path")
+                .remove("expires:$path")
+        }
         locks.remove(path)
     }
 
     companion object {
-        @Volatile private var instance: SignedMealImageUrls? = null
+        @Volatile
+        private var instance: SignedMealImageUrls? = null
 
         fun get(context: Context): SignedMealImageUrls =
             instance ?: synchronized(this) {
@@ -139,7 +140,7 @@ internal object MealImagePrefetcher {
                     } catch (_: Exception) {
                         // Preview failure must not affect meal data or scrolling.
                     }
-                    delay(100L)
+                    delay(100L.milliseconds)
                 }
         }
     }
@@ -157,7 +158,7 @@ internal fun MealImage(
     val resolver = remember(context.applicationContext) {
         SignedMealImageUrls.get(context.applicationContext)
     }
-    val resolved by produceState<String?>(
+    val resolved by produceState(
         initialValue = if (MealImageReference.pathFrom(imageUri) != null) {
             null
         } else {

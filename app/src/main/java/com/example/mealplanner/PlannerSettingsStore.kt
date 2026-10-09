@@ -1,8 +1,8 @@
 package com.example.mealplanner
 
 import android.content.Context
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import androidx.core.content.edit
 
 /** Local, household-scoped planner preferences. They work without a network. */
 internal class PlannerSettingsStore(context: Context) {
@@ -19,13 +19,13 @@ internal class PlannerSettingsStore(context: Context) {
 
     fun save(householdId: String, weights: PlannerWeights) {
         require(valid(weights)) { "Invalid planner scoring preference" }
-        preferences.edit()
-            .putString(key(householdId), Json.encodeToString(weights))
-            .apply()
+        preferences.edit {
+            putString(key(householdId), Json.encodeToString(weights))
+        }
     }
 
     fun reset(householdId: String) {
-        preferences.edit().remove(key(householdId)).apply()
+        preferences.edit {remove(key(householdId))}
     }
 
     private fun valid(weights: PlannerWeights): Boolean =

@@ -50,13 +50,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import coil.compose.AsyncImage
-import coil.request.ImageRequest
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.temporal.TemporalAdjusters
@@ -475,7 +471,7 @@ fun DayCard(
                 if (!recipe?.imageUri.isNullOrEmpty()) {
                     Spacer(Modifier.height(10.dp))
                     MealImage(
-                        imageUri = recipe.imageUri.orEmpty(),
+                        imageUri = recipe.imageUri,
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(96.dp)

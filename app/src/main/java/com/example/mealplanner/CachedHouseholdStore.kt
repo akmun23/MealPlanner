@@ -1,8 +1,8 @@
 package com.example.mealplanner
 
 import android.content.Context
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import androidx.core.content.edit
 
 /**
  * Retains only the most recently selected household metadata for each account.
@@ -23,13 +23,13 @@ internal class CachedHouseholdStore(context: Context) {
         }
 
     fun put(userId: String, household: HouseholdDto) {
-        preferences.edit()
-            .putString(key(userId), Json.encodeToString(household))
-            .apply()
+        preferences.edit {
+            putString(key(userId), Json.encodeToString(household))
+        }
     }
 
     fun remove(userId: String) {
-        preferences.edit().remove(key(userId)).apply()
+        preferences.edit {remove(key(userId))}
     }
 
     private fun key(userId: String) = "account-household-$userId"

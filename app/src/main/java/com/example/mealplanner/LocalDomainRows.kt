@@ -5,7 +5,6 @@ import androidx.room.Dao
 import androidx.room.Entity
 import androidx.room.Index
 import androidx.room.Query
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 /**
