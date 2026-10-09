@@ -332,12 +332,7 @@ object WeeklyPlanner {
         val chosenRecipes = chosenRecipeIds.mapNotNull(recipesById::get)
         var score = 0.0
 
-        recipe.ingredients.forEach { req ->
-            val available = pantry[req.ingredientId] ?: 0.0
-            if (req.amountBase > 0.0) {
-                score += minOf(available / req.amountBase, 1.0) * weights.pantryCoverage
-            }
-        }
+        score += PantryRules.coveredIngredientUnits(recipe, pantry) * weights.pantryCoverage
 
         val alreadyNeeded = chosenRecipes
             .flatMap { it.ingredients }
@@ -401,12 +396,7 @@ object WeeklyPlanner {
         val selected = visible.mapNotNull { it.second }
 
         selected.forEach { recipe ->
-            recipe.ingredients.forEach { req ->
-                val available = pantry[req.ingredientId] ?: 0.0
-                if (req.amountBase > 0.0) {
-                    score += minOf(available / req.amountBase, 1.0) * weights.pantryCoverage
-                }
-            }
+            score += PantryRules.coveredIngredientUnits(recipe, pantry) * weights.pantryCoverage
         }
 
         selected
