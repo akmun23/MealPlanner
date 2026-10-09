@@ -438,21 +438,13 @@ fun DayCard(
             if (!away) {
                 if (!recipe?.imageUri.isNullOrEmpty()) {
                     Spacer(Modifier.height(10.dp))
-                    val context = LocalContext.current
-                    val imageRequest = remember(recipe.imageUri) {
-                        ImageRequest.Builder(context)
-                            .data(recipe.imageUri)
-                            .crossfade(true)
-                            .build()
-                    }
-                    AsyncImage(
-                        model = imageRequest,
-                        contentDescription = null,
+                    MealImage(
+                        imageUri = recipe.imageUri.orEmpty(),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(96.dp)
                             .clip(RoundedCornerShape(12.dp)),
-                        contentScale = ContentScale.Crop
+                        fallback = recipe.name.take(1).uppercase()
                     )
                 }
 
