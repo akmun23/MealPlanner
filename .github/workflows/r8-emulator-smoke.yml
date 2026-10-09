@@ -1,0 +1,63 @@
+name: R8 emulator runtime smoke (manual)
+
+# Emulators can hang on hosted runners and must not block required DEX build
+# verification. Run explicitly when diagnosing optimized runtime startup.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  optimized-startup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: gradle
+
+      - name: Create test-only local properties
+        run: |
+          echo "sdk.dir=$ANDROID_HOME" > local.properties
+          echo "SUPABASE_URL=https://example.supabase.co" >> local.properties
+          echo "SUPABASE_PUBLISHABLE_KEY=sb_publishable_build_check" >> local.properties
+
+      - name: Assemble R8 candidate APK
+        run: bash ./gradlew :app:assembleBenchmark --stacktrace
+
+      - name: Enable emulator acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Check smoke script syntax
+        run: bash -n scripts/smoke_optimized_apk.sh
+
+      - name: Validate R8 APK startup (bounded)
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-boot-timeout: 240
+          script: timeout --signal=TERM --kill-after=10s 150s bash scripts/smoke_optimized_apk.sh
+
+      - name: Upload emulator diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r8-emulator-diagnostics
+          path: |
+            r8-emulator-logcat.txt
+            r8-emulator-activities.txt
+          if-no-files-found: ignore
+          retention-days: 7
