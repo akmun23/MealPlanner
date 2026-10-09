@@ -142,6 +142,12 @@ class MealPlannerState(
         try {
             if (!hasPendingMutations || !hasCachedSnapshot) {
                 reload(syncHistory = true)
+            } else if (
+                weeklyPlanId == null &&
+                !offlineSyncQueue.hasPendingMutations()
+            ) {
+                // The cached week is stale, and pending edits have now synced.
+                reload(syncHistory = true)
             }
             repository.startRealtime(scope) { event ->
                 handleRealtime(event)
@@ -290,6 +296,10 @@ class MealPlannerState(
         syncHistory: Boolean = false,
         expectedGenerations: Map<CloudSyncDomain, Long>? = null
     ) {
+        // Avoid applying a server response that began before a local edit.
+        val startingGenerations = CloudSyncDomain.entries
+            .associateWith(syncTracker::generation)
+        if (offlineSyncQueue.hasPendingMutations()) return
         val snapshot = repository.loadCurrent(
             syncHistory = syncHistory
         )
@@ -297,8 +307,10 @@ class MealPlannerState(
         var applied = false
         reloadMutex.withLock {
             if (
-                expectedGenerations != null &&
-                !syncTracker.isCurrent(expectedGenerations)
+                !syncTracker.isCurrent(startingGenerations) ||
+                (expectedGenerations != null &&
+                    !syncTracker.isCurrent(expectedGenerations)) ||
+                offlineSyncQueue.hasPendingMutations()
             ) {
                 return@withLock
             }
@@ -531,6 +543,7 @@ class MealPlannerState(
         )
 
         weeklyPlanId = snapshot.weeklyPlanId
+            .takeUnless { it.startsWith("offline-week-") }
         weeklySandwichRecipeId = snapshot.weeklySandwichRecipeId
         sandwichDay = snapshot.sandwichDay
     }
@@ -615,7 +628,9 @@ class MealPlannerState(
     }
 
     private fun currentSnapshot(): CloudSnapshot? {
-        val planId = weeklyPlanId ?: return null
+        // A temporary week id lets unrelated pantry and recipe edits
+        // persist even before a real weekly plan is available.
+        val planId = weeklyPlanId ?: "offline-week-${currentWeekStart()}"
 
         return CloudSnapshot(
             ingredients = ingredients.toList(),
