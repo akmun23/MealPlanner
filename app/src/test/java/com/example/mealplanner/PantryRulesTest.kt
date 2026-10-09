@@ -130,4 +130,25 @@ class PantryRulesTest {
         )
     }
 
+
+    @Test
+    fun duplicateIngredientContributesOnlyItsCombinedPantryCoverage() {
+        assertEquals(
+            1.5,
+            PantryRules.coveredIngredientUnits(
+                repeatedIngredientRecipe,
+                mapOf("rice" to 175.0, "milk" to 500.0)
+            ),
+            0.0001
+        )
+        assertEquals(
+            0.0,
+            PantryRules.coveredIngredientUnits(
+                repeatedIngredientRecipe,
+                emptyMap()
+            ),
+            0.0001
+        )
+    }
+
 }
