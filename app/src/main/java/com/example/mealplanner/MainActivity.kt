@@ -108,7 +108,9 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import io.github.jan.supabase.auth.handleDeeplinks
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import java.time.DayOfWeek
 import java.util.Locale
@@ -179,7 +181,7 @@ fun MealPlannerApp(
         MealPlannerState(
             context = context.applicationContext,
             householdId = household.id,
-            scope = scope
+            parentScope = scope
         )
     }
 
@@ -187,7 +189,10 @@ fun MealPlannerApp(
         try {
             awaitCancellation()
         } finally {
-            state.close()
+            // Composition cancellation must not skip suspending cleanup.
+            withContext(NonCancellable) {
+                state.close()
+            }
         }
     }
 
@@ -379,7 +384,8 @@ fun MealPlannerApp(
                     } else {
                         HorizontalPager(
                             state = pagerState,
-                            beyondViewportPageCount = 3,
+                            // Only compose the visible tab; other lists build on demand.
+                            beyondViewportPageCount = 0,
                             modifier = Modifier.fillMaxSize()
                         ) { pageIndex ->
                             when (AppTab.entries[pageIndex]) {
