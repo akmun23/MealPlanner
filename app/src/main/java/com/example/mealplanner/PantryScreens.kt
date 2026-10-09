@@ -32,6 +32,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -44,8 +45,8 @@ fun PantryScreen(
     onAddIngredient: () -> Unit,
     onEditIngredient: (String) -> Unit
 ) {
-    var searchQuery by remember { mutableStateOf("") }
-    var selectedCategoryId by remember {
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var selectedCategoryId by rememberSaveable {
         mutableStateOf<String?>(null)
     }
     var editing by remember { mutableStateOf<Ingredient?>(null) }
