@@ -41,6 +41,7 @@ class MealPlannerState(
         parentScope.coroutineContext +
             SupervisorJob(parentScope.coroutineContext[Job])
     )
+    private val isLocalOnly = householdId == "local-household-1"
     private val repository = CloudMealRepository(
         context = context.applicationContext,
         householdId = householdId
@@ -138,7 +139,7 @@ class MealPlannerState(
         val initialLoad = scope.launch {
             initialize()
         }
-        scope.launch {
+        if (!isLocalOnly) scope.launch {
             // During initial load, initialize() already attempts a refresh.
             // Start listening once it has finished, then react to later
             // offline-to-online transitions without polling.
@@ -161,6 +162,7 @@ class MealPlannerState(
 
     /** Refresh cloud data on demand; pending local edits must sync first. */
     fun refreshNow() {
+        if (isLocalOnly) return
         scope.launch {
             try {
                 reconnectAndRefresh()
@@ -208,6 +210,23 @@ class MealPlannerState(
                 hasCachedSnapshot = true
                 isLoading = false
             }
+
+        if (isLocalOnly) {
+            // No credentials or cloud household exist in local-only mode.
+            // Use a fresh local week ID after rollover and never schedule
+            // mutations for a household that cannot authenticate to Supabase.
+            if (!hasCachedSnapshot || weeklyPlanId == null) {
+                weeklyPlanId = "local-week-${currentWeekStart()}"
+            }
+            try {
+                roomCache.save(currentSnapshot()!!)
+            } catch (_: Exception) {
+                lastError = "Den lokale madplan kunne ikke gemmes."
+            }
+            isLoading = false
+            syncIndicator = SyncIndicator.IDLE
+            return
+        }
 
         val hasPendingMutations =
             runCatching {
@@ -783,6 +802,26 @@ class MealPlannerState(
         syncIndicator = SyncIndicator.SAVING
 
         val snapshot = currentSnapshot() ?: return
+
+        if (isLocalOnly) {
+            // Local-only updates are durable in Room, without creating an
+            // outbox entry or a WorkManager task requiring cloud credentials.
+            cachePersistJob?.cancel()
+            cachePersistJob = scope.launch {
+                try {
+                    mutationQueueMutex.withLock {
+                        roomCache.save(snapshot)
+                    }
+                    syncIndicator = SyncIndicator.SAVED
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    syncIndicator = SyncIndicator.ERROR
+                    lastError = "Ændringen kunne ikke gemmes lokalt."
+                }
+            }
+            return
+        }
 
         scope.launch {
             mutationQueueMutex.withLock {
