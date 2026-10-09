@@ -36,17 +36,23 @@ jobs:
       - name: Build debug APK
         run: bash ./gradlew :app:assembleDebug --stacktrace
 
-      - name: Build release bundle
-        run: bash ./gradlew :app:bundleRelease --stacktrace
+      - name: Build unoptimized release APK and release bundle
+        # bundleRelease produces an AAB, not an APK. The shrinkage comparison
+        # requires an assembleRelease baseline with the same app sources.
+        run: bash ./gradlew :app:assembleRelease :app:bundleRelease --stacktrace
 
       - name: Build R8-optimized benchmark APK
         run: bash ./gradlew :app:assembleBenchmark --stacktrace
 
       - name: Verify DEX shrinkage against unoptimized release
         run: |
-          RELEASE_APK="$(find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' | head -n 1)"
-          BENCHMARK_APK="$(find app/build/outputs/apk/benchmark -maxdepth 1 -name '*.apk' | head -n 1)"
-          test -n "$RELEASE_APK" && test -n "$BENCHMARK_APK"
+          set -euo pipefail
+          RELEASE_APK="$(find app/build/outputs/apk/release -maxdepth 1 -name '*.apk' -print -quit)"
+          BENCHMARK_APK="$(find app/build/outputs/apk/benchmark -maxdepth 1 -name '*.apk' -print -quit)"
+          if [[ ! -f "$RELEASE_APK" || ! -f "$BENCHMARK_APK" ]]; then
+            echo "::error::Both the unoptimized release APK and optimized benchmark APK are required for DEX comparison."
+            exit 1
+          fi
           python3 scripts/check_dex_optimization.py \
             --release "$RELEASE_APK" \
             --optimized "$BENCHMARK_APK" \
