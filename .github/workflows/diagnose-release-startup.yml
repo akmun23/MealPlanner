@@ -17,7 +17,7 @@ jobs:
           - variant: failing-release
             ref: ddeaa9652556103b448adafab6b098e7ecabee4f
           - variant: proposed-hotfix
-            ref: 12b9d20e1c67be8c6658d9c05f573f5c0876e35b
+            ref: d9ebd0d50ae309cc9c44d01c080da81096017bc9
 
     steps:
       - name: Check out launch diagnostics
@@ -50,10 +50,12 @@ jobs:
       - name: Boot Android and launch installed release
         uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 35
-          target: google_apis
+          api-level: 30
+          target: default
           arch: x86_64
-          profile: pixel_6
+          profile: pixel_2
+          emulator-boot-timeout: 900
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
           disable-animations: true
           script: bash .github/scripts/diagnose-release-startup.sh
 
