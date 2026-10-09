@@ -38,3 +38,6 @@ jobs:
 
       - name: Build release bundle
         run: bash ./gradlew :app:bundleRelease --stacktrace
+
+      - name: Compile on-device benchmark harness
+        run: bash ./gradlew :macrobenchmark:assembleBenchmark --stacktrace
