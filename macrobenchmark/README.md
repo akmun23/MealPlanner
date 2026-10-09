@@ -21,8 +21,10 @@ python3 scripts/check_dex_optimization.py \
 
 Use the actual APK filenames if your AGP version generates different names.
 CI performs this measurement automatically and saves the R8 obfuscation mapping
-and report for 14 days. DEX byte savings **do not prove** smoother scrolling
-or even runtime correctness.
+and report for 14 days. CI also boots a clean Android emulator, installs
+the optimized benchmark APK, verifies that the Compose login page appears,
+and retains startup logcat traces. DEX byte savings **do not prove** smoother
+scrolling or runtime correctness beyond this initial launch path.
 
 **Required before enabling R8 for production:**
 
