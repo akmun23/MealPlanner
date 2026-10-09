@@ -249,7 +249,7 @@ object WeeklyPlanner {
         recipesById: Map<String, Recipe>,
         maxPrepMinutesByDay: Map<DayOfWeek, Int?>,
         pantry: Map<String, Double>,
-        historyByRecipe: List<MealHistoryEntry>,
+        historyByRecipe: Map<String, List<LocalDate>>,
         proteinIngredientIds: Set<String>,
         weekStart: LocalDate,
         previousPlan: Map<DayOfWeek, String?>,
@@ -328,7 +328,7 @@ object WeeklyPlanner {
         chosenRecipeIds: List<String>,
         recipesById: Map<String, Recipe>,
         pantry: Map<String, Double>,
-        historyByRecipe: List<MealHistoryEntry>,
+        historyByRecipe: Map<String, List<LocalDate>>,
         proteinIngredientIds: Set<String>,
         targetDate: LocalDate,
         weights: PlannerWeights
@@ -378,7 +378,7 @@ object WeeklyPlanner {
         dayModes: Map<DayOfWeek, DayMode>,
         recipesById: Map<String, Recipe>,
         pantry: Map<String, Double>,
-        historyByRecipe: List<MealHistoryEntry>,
+        historyByRecipe: Map<String, List<LocalDate>>,
         proteinIngredientIds: Set<String>,
         weekStart: LocalDate,
         previousPlan: Map<DayOfWeek, String?>,
@@ -509,7 +509,7 @@ object WeeklyPlanner {
 
     private fun recencyPenalty(
         recipeId: String,
-        historyByRecipe: List<MealHistoryEntry>,
+        historyByRecipe: Map<String, List<LocalDate>>,
         targetDate: LocalDate,
         weights: PlannerWeights
     ): Double {
