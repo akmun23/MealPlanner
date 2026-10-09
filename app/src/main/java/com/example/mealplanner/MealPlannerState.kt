@@ -119,6 +119,12 @@ class MealPlannerState(
     internal var syncConflictCount by mutableIntStateOf(0)
         private set
 
+    internal var pendingSyncCount by mutableIntStateOf(0)
+        private set
+
+    internal var failedSyncCount by mutableIntStateOf(0)
+        private set
+
     init {
         orderedWeekDays.forEach { day ->
             dayModes[day] = DayMode.AUTO
@@ -196,6 +202,8 @@ class MealPlannerState(
         ) { count, failedCount, conflictCount ->
             Triple(count, failedCount, conflictCount)
         }.collectLatest { (count, failedCount, conflictCount) ->
+            pendingSyncCount = count
+            failedSyncCount = failedCount
             syncConflictCount = conflictCount
 
             when {
