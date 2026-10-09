@@ -1100,7 +1100,7 @@ private fun SettingsScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SubpageScaffold(
+internal fun SubpageScaffold(
     title: String,
     onBack: () -> Unit,
     action: (@Composable () -> Unit)? = null,
