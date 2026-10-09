@@ -4,6 +4,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -172,8 +174,17 @@ fun WeekScreen(
         )
     }
 
-    ScreenColumn {
-        Text(
+    // Day cards are expensive to measure (photos, menus, status chips).
+    // Compose only the visible days instead of laying out the whole week
+    // for every scroll frame.
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(16.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        item(key = "week-summary") {
+            Column {
+                Text(
             "Madplan",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold
@@ -259,15 +270,22 @@ fun WeekScreen(
 
         Spacer(Modifier.height(14.dp))
 
-        orderedWeekDays.forEach { day ->
+            }
+        }
+
+        items(
+            items = orderedWeekDays,
+            key = { it.name },
+            contentType = { "day-card" }
+        ) { day ->
             DayCard(
                 day = day,
                 state = state,
                 onOpenRecipe = onOpenRecipe
             )
-            Spacer(Modifier.height(10.dp))
         }
 
+        item(key = "week-generate") {
         Button(
             onClick = { state.generateWeek() },
             enabled = state.recipes.any { it.mealType == MealType.DINNER } &&
@@ -290,7 +308,7 @@ fun WeekScreen(
             Text("Ny madplan", fontWeight = FontWeight.Bold)
         }
 
-        Spacer(Modifier.height(20.dp))
+        }
     }
 }
 
