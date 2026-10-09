@@ -174,13 +174,14 @@ fun ShoppingScreen(state: MealPlannerState) {
             }
         } else {
             if (missing.isNotEmpty()) {
-                val categories = state.ingredientCategories.toList()
+                val categories = state.ingredientCategories.sortedBy { it.name.lowercase() }
                 val knownIds = categories.map { it.id }.toSet()
 
                 categories.forEach { category ->
                     val categoryItems =
                         sections.missingByCategoryId[category.id]
                             .orEmpty()
+                            .sortedBy { it.ingredient.name.lowercase() }
 
                     if (categoryItems.isNotEmpty()) {
                         item(key = "category-${category.id}") {
@@ -214,6 +215,7 @@ fun ShoppingScreen(state: MealPlannerState) {
                         .filterKeys { it == null || it !in knownIds }
                         .values
                         .flatten()
+                        .sortedBy { it.ingredient.name.lowercase() }
 
                 if (uncategorized.isNotEmpty()) {
                     item(key = "category-other") {
@@ -252,7 +254,7 @@ fun ShoppingScreen(state: MealPlannerState) {
                     )
                 }
 
-                items(bought, key = { it.ingredient.id }) { item ->
+                items(bought.sortedBy { it.ingredient.name.lowercase() }, key = { it.ingredient.id }) { item ->
                     ShoppingItemCard(
                         item = item,
                         state = state,
@@ -279,7 +281,7 @@ fun ShoppingScreen(state: MealPlannerState) {
                 }
 
                 items(
-                    items = excluded,
+                    items = excluded.sortedBy { it.ingredient.name.lowercase() },
                     key = { "excluded-${it.ingredient.id}" }
                 ) { item ->
                     ShoppingItemCard(

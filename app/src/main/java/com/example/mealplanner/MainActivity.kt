@@ -203,6 +203,13 @@ fun MealPlannerApp(
     }
 
     var tab by remember { mutableStateOf(AppTab.WEEK) }
+    val pagerState = rememberPagerState(
+        initialPage = tab.ordinal,
+        pageCount = { AppTab.entries.size }
+    )
+    LaunchedEffect(pagerState.currentPage) {
+        tab = AppTab.entries[pagerState.currentPage]
+    }
     var page by remember { mutableStateOf<AppPage?>(null) }
     var showSyncConflictDialog by remember {
         mutableStateOf(false)
@@ -359,11 +366,6 @@ fun MealPlannerApp(
         )
 
         null -> {
-            val pagerState = rememberPagerState(pageCount = { AppTab.entries.size })
-            LaunchedEffect(pagerState.currentPage) {
-                tab = AppTab.entries[pagerState.currentPage]
-            }
-
             Scaffold(
                 containerColor = MaterialTheme.colorScheme.background,
                 topBar = {
@@ -1342,11 +1344,9 @@ internal fun ImagePickerBox(
         contentAlignment = Alignment.Center
     ) {
         if (!imageUri.isNullOrBlank()) {
-            AsyncImage(
-                model = imageUri,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
+            MealImage(
+                imageUri = imageUri,
+                modifier = Modifier.fillMaxSize()
             )
 
             TextButton(
@@ -1383,14 +1383,12 @@ internal fun LargeImage(
     fallback: String
 ) {
     if (!imageUri.isNullOrBlank()) {
-        AsyncImage(
-            model = imageUri,
-            contentDescription = null,
+        MealImage(
+            imageUri = imageUri,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(210.dp)
-                .clip(RoundedCornerShape(22.dp)),
-            contentScale = ContentScale.Crop
+                .clip(RoundedCornerShape(22.dp))
         )
     } else {
         Surface(
@@ -1418,22 +1416,15 @@ internal fun AppThumbnail(
     fallback: String,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
     val boxSize = 60.dp
     val actualModifier = if (modifier == Modifier) Modifier.size(boxSize) else modifier
 
     if (!imageUri.isNullOrBlank()) {
-        val request = remember(imageUri) {
-            ImageRequest.Builder(context)
-                .data(imageUri)
-                .crossfade(true)
-                .build()
-        }
-        AsyncImage(
-            model = request,
-            contentDescription = null,
+        MealImage(
+            imageUri = imageUri,
             modifier = actualModifier.clip(RoundedCornerShape(16.dp)),
-            contentScale = ContentScale.Crop
+            thumbnail = true,
+            fallback = fallback
         )
     } else {
         Surface(
