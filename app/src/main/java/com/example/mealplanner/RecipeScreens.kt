@@ -44,6 +44,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -63,85 +64,62 @@ fun RecipesScreen(
     onAddRecipe: () -> Unit,
     onOpenRecipe: (String) -> Unit
 ) {
-    var searchQuery by remember { mutableStateOf("") }
-    var mealFilter by remember { mutableStateOf("Alle måltider") }
-    var categoryFilter by remember { mutableStateOf("Alle kategorier") }
-    var canMakeOnly by remember { mutableStateOf(false) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var mealFilter by rememberSaveable { mutableStateOf("Alle måltider") }
+    var categoryFilter by rememberSaveable { mutableStateOf("Alle kategorier") }
+    var canMakeOnly by rememberSaveable { mutableStateOf(false) }
 
     val mealOptions = listOf("Alle måltider") +
         MealType.entries.map { it.danishName() }
     val categoryOptions = listOf("Alle kategorier") +
         state.recipeCategories.sortedBy { it.name.lowercase() }.map { it.name }
 
-    val filteredRecipes by remember {
+    // Build recipe metadata only when recipes, ingredient protein flags, or
+    // categories change. Search typing / pantry checkboxes only filter cached
+    // rows instead of rebuilding protein names for every recipe each time.
+    val recipeRows by remember {
         derivedStateOf {
-            val ingredientsById =
-                state.ingredients.associateBy { it.id }
-            val categoryNamesById =
-                state.recipeCategories.associate {
-                    it.id to it.name
-                }
-            val query = searchQuery.trim()
+            val ingredientsById = state.ingredients.associateBy { it.id }
+            val categoryNamesById = state.recipeCategories.associate {
+                it.id to it.name
+            }
 
-            state.recipes.mapNotNull { recipe ->
-                val categoryName =
-                    categoryNamesById[recipe.categoryId]
-                        ?: "Andet"
-                val proteinNames = recipe.ingredients
-                    .asSequence()
-                    .mapNotNull {
-                        ingredientsById[it.ingredientId]
-                    }
+            state.recipes.map { recipe ->
+                val proteinNames = recipe.ingredients.asSequence()
+                    .mapNotNull { ingredientsById[it.ingredientId] }
                     .filter { it.isProtein }
                     .map { it.name }
                     .distinct()
                     .sortedBy { it.lowercase() }
                     .toList()
 
-                val matchesSearch =
-                    query.isBlank() ||
-                        recipe.name.contains(
-                            query,
-                            ignoreCase = true
-                        ) ||
-                        categoryName.contains(
-                            query,
-                            ignoreCase = true
-                        ) ||
-                        proteinNames.any {
-                            it.contains(
-                                query,
-                                ignoreCase = true
-                            )
-                        }
-
-                val matchesMeal =
-                    mealFilter == "Alle måltider" ||
-                        recipe.mealType.danishName() ==
-                            mealFilter
-
-                val matchesCategory =
-                    categoryFilter == "Alle kategorier" ||
-                        categoryName == categoryFilter
-
-                val matchesPantry =
-                    !canMakeOnly || state.canMake(recipe)
-
-                if (
-                    matchesSearch &&
-                    matchesMeal &&
-                    matchesCategory &&
-                    matchesPantry
-                ) {
-                    RecipeListUi(
-                        recipe = recipe,
-                        categoryName = categoryName,
-                        proteinNames = proteinNames
-                    )
-                } else {
-                    null
-                }
+                RecipeListUi(
+                    recipe = recipe,
+                    categoryName =
+                        categoryNamesById[recipe.categoryId] ?: "Andet",
+                    proteinNames = proteinNames
+                )
             }.sortedBy { it.recipe.name.lowercase() }
+        }
+    }
+
+    val filteredRecipes by remember {
+        derivedStateOf {
+            val query = searchQuery.trim()
+            recipeRows.filter { item ->
+                val recipe = item.recipe
+                (query.isBlank() ||
+                    recipe.name.contains(query, ignoreCase = true) ||
+                    item.categoryName.contains(query, ignoreCase = true) ||
+                    item.proteinNames.any {
+                        it.contains(query, ignoreCase = true)
+                    }) &&
+                    (mealFilter == "Alle måltider" ||
+                        recipe.mealType.danishName() == mealFilter) &&
+                    (categoryFilter == "Alle kategorier" ||
+                        item.categoryName == categoryFilter) &&
+                    (!canMakeOnly || state.canMake(recipe))
+            }
         }
     }
 

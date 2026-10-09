@@ -97,6 +97,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -248,6 +249,7 @@ fun MealPlannerApp(
         mutableStateOf(false)
     }
     val pantryListState = rememberLazyListState()
+    val tabStateHolder = rememberSaveableStateHolder()
     val messageHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(state.lastError) {
@@ -452,7 +454,9 @@ fun MealPlannerApp(
                             beyondViewportPageCount = 0,
                             modifier = Modifier.fillMaxSize()
                         ) { pageIndex ->
-                            when (AppTab.entries[pageIndex]) {
+                            val visibleTab = AppTab.entries[pageIndex]
+                            tabStateHolder.SaveableStateProvider(visibleTab.name) {
+                            when (visibleTab) {
                                 AppTab.WEEK -> WeekScreen(
                                     state = state,
                                     onOpenRecipe = {
@@ -481,6 +485,7 @@ fun MealPlannerApp(
                                     }
                                 )
                                 AppTab.SHOPPING -> ShoppingScreen(state)
+                            }
                             }
                         }
                     }
