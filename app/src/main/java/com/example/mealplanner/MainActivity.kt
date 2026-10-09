@@ -1325,11 +1325,9 @@ internal fun ImagePickerBox(
         contentAlignment = Alignment.Center
     ) {
         if (!imageUri.isNullOrBlank()) {
-            AsyncImage(
-                model = imageUri,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
+            MealImage(
+                imageUri = imageUri,
+                modifier = Modifier.fillMaxSize()
             )
 
             TextButton(
@@ -1366,14 +1364,12 @@ internal fun LargeImage(
     fallback: String
 ) {
     if (!imageUri.isNullOrBlank()) {
-        AsyncImage(
-            model = imageUri,
-            contentDescription = null,
+        MealImage(
+            imageUri = imageUri,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(210.dp)
-                .clip(RoundedCornerShape(22.dp)),
-            contentScale = ContentScale.Crop
+                .clip(RoundedCornerShape(22.dp))
         )
     } else {
         Surface(
@@ -1401,22 +1397,15 @@ internal fun AppThumbnail(
     fallback: String,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
     val boxSize = 60.dp
     val actualModifier = if (modifier == Modifier) Modifier.size(boxSize) else modifier
 
     if (!imageUri.isNullOrBlank()) {
-        val request = remember(imageUri) {
-            ImageRequest.Builder(context)
-                .data(imageUri)
-                .crossfade(true)
-                .build()
-        }
-        AsyncImage(
-            model = request,
-            contentDescription = null,
+        MealImage(
+            imageUri = imageUri,
             modifier = actualModifier.clip(RoundedCornerShape(16.dp)),
-            contentScale = ContentScale.Crop
+            thumbnail = true,
+            fallback = fallback
         )
     } else {
         Surface(
