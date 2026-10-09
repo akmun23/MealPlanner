@@ -38,8 +38,6 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.temporal.TemporalAdjusters
 import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
-import kotlin.time.Duration.Companion.hours
 import androidx.core.net.toUri
 import kotlin.time.Duration.Companion.milliseconds
 
@@ -431,14 +429,8 @@ class CloudMealRepository(
     private val context: Context,
     private val householdId: String
 ) {
-    private data class CachedSignedImageUrl(
-        val url: String,
-        val refreshAtEpochMillis: Long
-    )
-
     private val supabase = SupabaseProvider.client
-    private val signedImageUrls =
-        ConcurrentHashMap<String, CachedSignedImageUrl>()
+    private val imageUrls = SignedMealImageUrls.get(context.applicationContext)
     private var realtimeChannel: RealtimeChannel? = null
     private var realtimeJobs: List<Job> = emptyList()
 
@@ -525,15 +517,6 @@ class CloudMealRepository(
                 val ingredientRows = ingredientsDeferred.await()
                 val categoryRows = categoriesDeferred.await()
                 val proteinRows = proteinFlagsDeferred.await()
-                val urls = ingredientRows
-                    .mapNotNull { it.imagePath }
-                    .distinct()
-                    .map { path ->
-                        async { path to signedImageUrl(path) }
-                    }
-                    .awaitAll()
-                    .toMap()
-
                 val proteinByIngredient =
                     proteinRows.associateBy { it.ingredientId }
 
@@ -554,7 +537,7 @@ class CloudMealRepository(
                             shoppingCategoryId = row.shoppingCategoryId,
                             isProtein =
                                 proteinByIngredient[row.id]?.isProtein == true,
-                            imageUri = row.imagePath?.let(urls::get),
+                            imageUri = row.imagePath?.let(MealImageReference::forPath),
                             imagePath = row.imagePath
                         )
                     },
@@ -631,15 +614,6 @@ class CloudMealRepository(
                 val pantryPrerequisiteRows =
                     pantryPrerequisitesDeferred.await()
 
-                val urls = recipeRows
-                    .mapNotNull { it.imagePath }
-                    .distinct()
-                    .map { path ->
-                        async { path to signedImageUrl(path) }
-                    }
-                    .awaitAll()
-                    .toMap()
-
                 val requirements = ingredientRows.groupBy { it.recipeId }
                 val pantryPrerequisites =
                     pantryPrerequisiteRows.groupBy { it.recipeId }
@@ -679,7 +653,7 @@ class CloudMealRepository(
                             categoryId =
                                 categoryByRecipe[row.id]?.categoryId,
                             notes = row.notes,
-                            imageUri = row.imagePath?.let(urls::get),
+                            imageUri = row.imagePath?.let(MealImageReference::forPath),
                             imagePath = row.imagePath,
                             ingredients =
                                 requirements[row.id].orEmpty().map {
@@ -1354,6 +1328,11 @@ class CloudMealRepository(
         }
     }
 
+    /** Reconcile older plans after rendering; never block cold-start UI. */
+    internal suspend fun reconcileRecentHistory() = withContext(Dispatchers.IO) {
+        syncRecentHistory()
+    }
+
     private suspend fun syncRecentHistory() {
         val cutoff = LocalDate.now().minusDays(60)
         val today = LocalDate.now()
@@ -1448,28 +1427,7 @@ class CloudMealRepository(
             deleteImage(existingPath)
         }
 
-        return path to signedImageUrl(path)
-    }
-
-    private suspend fun signedImageUrl(path: String): String {
-        val now = System.currentTimeMillis()
-        signedImageUrls[path]
-            ?.takeIf {
-                it.refreshAtEpochMillis > now
-            }
-            ?.let {
-                return it.url
-            }
-
-        val url = supabase.storage["meal-images"]
-            .createSignedUrl(path, 24.hours)
-
-        signedImageUrls[path] = CachedSignedImageUrl(
-            url = url,
-            refreshAtEpochMillis =
-                now + 23L * 60L * 60L * 1000L
-        )
-        return url
+        return path to MealImageReference.forPath(path)
     }
 
     private suspend fun deleteImage(path: String?) {
@@ -1477,7 +1435,7 @@ class CloudMealRepository(
         runCatching {
             supabase.storage["meal-images"].delete(path)
         }
-        signedImageUrls.remove(path)
+        imageUrls.invalidate(path)
     }
 
     private fun prepareImage(uri: Uri): ByteArray {
