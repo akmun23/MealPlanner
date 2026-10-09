@@ -381,6 +381,13 @@ internal sealed interface QueuedMutation {
     data class ClearShopping(
         val weeklyPlanId: String
     ) : QueuedMutation
+
+    @Serializable
+    @SerialName("set_meal_eaten")
+    data class SetMealEaten(
+        val eatenOn: String,
+        val recipeId: String?
+    ) : QueuedMutation
 }
 
 internal object QueuedMutationCodec {
@@ -430,6 +437,8 @@ internal fun QueuedMutation.key(): String = when (this) {
         "shopping-checked:$weeklyPlanId:$ingredientId"
     is QueuedMutation.ClearShopping ->
         "shopping-clear:$weeklyPlanId"
+    is QueuedMutation.SetMealEaten ->
+        "meal-eaten:$eatenOn"
 }
 
 internal fun QueuedMutation.priority(): Int = when (this) {
@@ -450,6 +459,8 @@ internal fun QueuedMutation.priority(): Int = when (this) {
     is QueuedMutation.ClearShopping,
     is QueuedMutation.SetShoppingIncluded,
     is QueuedMutation.SetShoppingChecked -> 50
+
+    is QueuedMutation.SetMealEaten -> 55
 
     is QueuedMutation.DeleteRecipe -> 60
     is QueuedMutation.DeleteIngredient -> 70
@@ -496,6 +507,9 @@ internal fun QueuedMutation.domains(): Set<CloudSyncDomain> = when (this) {
     is QueuedMutation.SetShoppingIncluded,
     is QueuedMutation.SetShoppingChecked ->
         setOf(CloudSyncDomain.SHOPPING)
+
+    is QueuedMutation.SetMealEaten ->
+        setOf(CloudSyncDomain.HISTORY)
 }
 
 internal fun QueuedMutation.domainMask(): Int = when (this) {
@@ -534,6 +548,9 @@ internal fun QueuedMutation.domainMask(): Int = when (this) {
     is QueuedMutation.SetShoppingIncluded,
     is QueuedMutation.SetShoppingChecked ->
         domainMask(CloudSyncDomain.SHOPPING)
+
+    is QueuedMutation.SetMealEaten ->
+        domainMask(CloudSyncDomain.HISTORY)
 }
 
 internal val OFFLINE_SYNC_WORK_POLICY =
@@ -949,6 +966,13 @@ private suspend fun applyQueuedMutation(
         is QueuedMutation.DeleteIngredientCategory -> {
             repository.deleteShoppingCategory(
                 mutation.categoryId
+            )
+        }
+
+        is QueuedMutation.SetMealEaten -> {
+            repository.setMealEaten(
+                eatenOn = java.time.LocalDate.parse(mutation.eatenOn),
+                recipeId = mutation.recipeId
             )
         }
 

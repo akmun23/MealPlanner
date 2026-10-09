@@ -58,7 +58,8 @@ internal fun PlannerSettingsScreen(
         PlannerOption("last7", "Spist de sidste 7 dage", "Undgå retter, som du lige har lavet.", w.recency7Days, 300f) { w.copy(recency7Days = it) },
         PlannerOption("last14", "Spist for 8–14 dage siden", "Undgå nylige gentagelser.", w.recency14Days, 300f) { w.copy(recency14Days = it) },
         PlannerOption("last30", "Spist for 15–30 dage siden", "Læg vægt på længere variation.", w.recency30Days, 300f) { w.copy(recency30Days = it) },
-        PlannerOption("sameDay", "Skift ret på samme ugedag", "Foretræk en ny ret i stedet for sidste uges valg.", w.keepSameDay, 100f) { w.copy(keepSameDay = it) },
+        PlannerOption("sameDay", "Skift ret på samme ugedag", "Foretræk en anden ret på samme ugedag.", w.keepSameDay, 100f) { w.copy(keepSameDay = it) },
+        PlannerOption("newPlan", "Undgå gentagelser fra nuværende plan", "Foretræk retter, der ikke allerede er med i den nuværende madplan.", w.previousPlanReuse, 150f) { w.copy(previousPlanReuse = it) },
         PlannerOption("jitter", "Tilfældighed", "Højere tal giver mere overraskelse, lavere mere ensartede planer.", w.jitter, 100f) { w.copy(jitter = it) }
     )
 

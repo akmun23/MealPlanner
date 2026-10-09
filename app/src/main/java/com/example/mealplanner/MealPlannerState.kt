@@ -314,20 +314,8 @@ class MealPlannerState(
                 // Even if there were edits when the app started, a successful
                 // drain must be followed by reconciliation with the server.
                 reload(syncHistory = false)
-                // Historical plan reconciliation can issue many writes. It is
-                // useful, but not needed to display recipes, pantry or week.
-                // Wait until the first frame is visible before doing it.
-                scope.launch {
-                    delay(2_000L)
-                    try {
-                        repository.reconcileRecentHistory()
-                        reload(CloudSyncDomain.HISTORY)
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (_: Exception) {
-                        // The next sync can retry; never block the UI.
-                    }
-                }
+                // No automatic backfill: planned dishes must never be
+                // recorded as eaten without user confirmation.
             } else if (!hasCachedSnapshot) {
                 lastError = "Lokale ændringer afventer synkronisering. Prøv igen, når du er online."
             }
@@ -1749,6 +1737,35 @@ class MealPlannerState(
                     amountBase = amountBase
                 )
             }
+        )
+    }
+
+    /**
+     * Confirm or correct the actual dinner eaten on a date. Unconfirmed
+     * planning entries are intentionally excluded from meal history.
+     */
+    fun recordEaten(date: LocalDate, recipeId: String?) {
+        if (date.isAfter(LocalDate.now()) ||
+            date.isBefore(LocalDate.now().minusDays(89))) {
+            lastError = "Vælg en dag inden for de seneste 90 dage."
+            return
+        }
+        if (recipeId != null && recipes.none { it.id == recipeId }) {
+            lastError = "Opskriften findes ikke længere."
+            return
+        }
+        val previous = history.find { it.eatenOn == date }?.recipeId
+        if (previous == recipeId) return
+
+        history.removeAll { it.eatenOn == date }
+        if (recipeId != null) {
+            history.add(MealHistoryEntry(recipeId, date))
+        }
+        enqueueMutation(
+            QueuedMutation.SetMealEaten(
+                eatenOn = date.toString(),
+                recipeId = recipeId
+            )
         )
     }
 

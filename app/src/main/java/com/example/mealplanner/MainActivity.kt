@@ -19,6 +19,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -190,7 +194,7 @@ class MainActivity : ComponentActivity() {
                 ThemeMode.LIGHT -> false
             }
             MaterialTheme(colorScheme = if (dark) DarkAppColors else AppColors) {
-                Surface(modifier = Modifier.fillMaxSize()) {
+                Surface(modifier = Modifier.fillMaxSize().imePadding()) {
                     CloudGate(
                         themeMode = themeMode,
                         onThemeModeChange = { selected ->
@@ -218,6 +222,7 @@ enum class AppTab(val label: String, val icon: ImageVector) {
 }
 
 private sealed interface AppPage {
+    data object MealHistory : AppPage
     data object Settings : AppPage
     data object PlannerSettings : AppPage
     data object SyncStatus : AppPage
@@ -232,6 +237,7 @@ private sealed interface AppPage {
     ) : AppPage
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun MealPlannerApp(
     household: HouseholdDto,
@@ -289,6 +295,7 @@ fun MealPlannerApp(
     fun navigateBack() {
         page = when (val current = page) {
             AppPage.Settings -> null
+            AppPage.MealHistory -> null
             AppPage.PlannerSettings -> AppPage.Settings
             AppPage.SyncStatus -> AppPage.Settings
             AppPage.DataBackup -> AppPage.Settings
@@ -363,6 +370,11 @@ fun MealPlannerApp(
 
     Box(modifier = Modifier.fillMaxSize()) {
         when (val current = page) {
+        AppPage.MealHistory -> MealHistoryScreen(
+            state = state,
+            onBack = { navigateBack() }
+        )
+
         AppPage.Settings -> SettingsScreen(
             household = household,
             state = state,
@@ -436,6 +448,8 @@ fun MealPlannerApp(
                     )
                 },
                 bottomBar = {
+                    // Give the editor the full height when the keyboard is open.
+                    if (!WindowInsets.isImeVisible) {
                     NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                         AppTab.entries.forEach { item ->
                             NavigationBarItem(
@@ -461,6 +475,7 @@ fun MealPlannerApp(
                             )
                         }
                     }
+                    }
                 }
             ) { padding ->
                 Box(
@@ -484,6 +499,7 @@ fun MealPlannerApp(
                             when (visibleTab) {
                                 AppTab.WEEK -> WeekScreen(
                                     state = state,
+                                    onMealHistory = { page = AppPage.MealHistory },
                                     onOpenRecipe = {
                                         page = AppPage.RecipeDetail(it)
                                     },

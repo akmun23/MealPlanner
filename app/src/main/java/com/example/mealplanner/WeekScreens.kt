@@ -4,6 +4,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Row
@@ -14,6 +15,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -56,12 +58,15 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import java.time.DayOfWeek
+import java.time.LocalDate
+import java.time.temporal.TemporalAdjusters
 
 @Composable
 fun WeekScreen(
     state: MealPlannerState,
     onOpenRecipe: (String) -> Unit,
-    onNewLunchRecipe: () -> Unit
+    onNewLunchRecipe: () -> Unit,
+    onMealHistory: () -> Unit
 ) {
     val sandwichDay = state.sandwichDay()
     val homeCount = orderedWeekDays.count { state.dayModes[it] != DayMode.AWAY }
@@ -190,7 +195,11 @@ fun WeekScreen(
             fontWeight = FontWeight.Bold
         )
 
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(6.dp))
+        TextButton(onClick = onMealHistory) {
+            Text("Spiste måltider / Madhistorik")
+        }
+        Spacer(Modifier.height(8.dp))
 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             SummaryCard("Hjemme", "$homeCount dage", Modifier.weight(1f))
@@ -360,6 +369,10 @@ fun DayCard(
     val isSandwich = recipe?.id != null && recipe.id == state.weeklySandwichRecipeId
     val isLocked = day in state.lockedDays
     val maxPrepMinutes = state.dayMaxPrepMinutes[day]
+    val mealDate = LocalDate.now()
+        .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+        .plusDays((day.value - 1).toLong())
+    val eatenId = state.history.find { it.eatenOn == mealDate }?.recipeId
     val recipeCategory = if (recipe != null) {
         recipeCategoryDisplayName(
             state.recipeCategoryName(recipe),
@@ -473,10 +486,10 @@ fun DayCard(
 
                 Spacer(Modifier.height(8.dp))
 
-                // INLINE STATUS PILLS & PREP TIME LIMIT FILTER CHIP IN SINGLE ROW
-                Row(
+                // Let long categories and the time filter wrap on small screens.
+                FlowRow(
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     if (recipe != null) {
@@ -512,6 +525,25 @@ fun DayCard(
                                 )
                             }
                         }
+                    }
+                }
+
+                if (mealDate <= LocalDate.now() && recipe != null) {
+                    Spacer(Modifier.height(5.dp))
+                    if (eatenId == null) {
+                        TextButton(onClick = {
+                            state.recordEaten(mealDate, recipe.id)
+                        }) {
+                            Text("Bekræft spist")
+                        }
+                    } else {
+                        val eatenName = state.recipes.find { it.id == eatenId }?.name
+                            ?: "Ukendt opskrift"
+                        Text(
+                            "Spist: $eatenName",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
 
@@ -611,8 +643,12 @@ private fun StatusPill(
     ) {
         Text(
             text,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+            modifier = Modifier
+                .padding(horizontal = 8.dp, vertical = 3.dp)
+                .widthIn(max = 210.dp),
             style = MaterialTheme.typography.labelSmall,
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
             color = if (highlighted) {
                 MaterialTheme.colorScheme.onPrimary
             } else {

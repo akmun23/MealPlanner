@@ -606,6 +606,87 @@ class WeeklyPlannerTest {
     }
 
     @Test
+    fun generationExploresRecipesBeyondTheHighestScoredFour() {
+        val dinners = (0 until 18).map { recipe("dinner-$it") }
+        val modes = orderedWeekDays.associateWith {
+            if (it == DayOfWeek.MONDAY) DayMode.AUTO else DayMode.AWAY
+        }
+        val chosen = (0 until 35).map { seed ->
+            WeeklyPlanner.generate(
+                recipes = dinners,
+                pantry = emptyMap(),
+                dayModes = modes,
+                weeklySandwichRecipeId = null,
+                currentPlan = orderedWeekDays.associateWith { null },
+                currentSandwichDay = null,
+                random = Random(seed)
+            ).plan[DayOfWeek.MONDAY]
+        }.toSet()
+
+        assertTrue(
+            "the generator should explore more than four equally eligible recipes",
+            chosen.size >= 9
+        )
+    }
+
+    @Test
+    fun rerollExploresAllEligibleAlternatives() {
+        val dinners = (0 until 18).map { recipe("dinner-$it") }
+        val modes = orderedWeekDays.associateWith {
+            if (it == DayOfWeek.MONDAY) DayMode.AUTO else DayMode.AWAY
+        }
+        val current = orderedWeekDays.associateWith { day ->
+            if (day == DayOfWeek.MONDAY) dinners.first().id else null
+        }
+        val chosen = (0 until 35).map { seed ->
+            WeeklyPlanner.rerollDay(
+                day = DayOfWeek.MONDAY,
+                recipes = dinners,
+                pantry = emptyMap(),
+                dayModes = modes,
+                weeklySandwichRecipeId = null,
+                sandwichDay = null,
+                currentPlan = current,
+                random = Random(seed)
+            )[DayOfWeek.MONDAY]
+        }.toSet()
+
+        assertTrue(
+            "a reroll should not be limited to the four highest-ranked meals",
+            chosen.size >= 9
+        )
+        assertTrue(dinners.first().id !in chosen)
+    }
+
+    @Test
+    fun regenerationPrefersRecipesOutsideTheExistingPlan() {
+        val dinners = (0 until 16).map { recipe("dinner-$it") }
+        val currentIds = dinners.take(5).map { it.id }.toSet()
+        val current = orderedWeekDays.associateWith { day ->
+            if (day.value <= 5) dinners[day.value - 1].id else null
+        }
+        val modes = orderedWeekDays.associateWith { day ->
+            if (day.value <= 5) DayMode.AUTO else DayMode.AWAY
+        }
+
+        val result = WeeklyPlanner.generate(
+            recipes = dinners,
+            pantry = emptyMap(),
+            dayModes = modes,
+            weeklySandwichRecipeId = null,
+            currentPlan = current,
+            currentSandwichDay = null,
+            weights = PlannerWeights(previousPlanReuse = 120.0),
+            random = Random(3)
+        )
+
+        assertTrue(
+            "regenerating should introduce different recipes when possible",
+            result.plan.values.filterNotNull().count { it !in currentIds } >= 3
+        )
+    }
+
+    @Test
     fun recentlyEatenRecipeIsStronglyDisfavoured() {
         val recent = recipe("recent")
         val fresh = recipe("fresh")

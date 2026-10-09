@@ -456,7 +456,8 @@ class CloudMealRepository(
             val historyDeferred = async {
                 // History maintenance is independent of the other reads;
                 // do not delay starting recipes, pantry or week requests.
-                if (syncHistory) syncRecentHistory()
+                // Only explicit meal confirmations belong in meal_history.
+                // A planned recipe is not proof that someone actually ate it.
                 loadHistorySnapshot()
             }
 
@@ -823,6 +824,34 @@ class CloudMealRepository(
                     )
                 }
         }
+
+    /**
+     * Meal history is explicit: users record what they ate, including the
+     * ability to correct or remove an entry. Never infer it from the plan.
+     */
+    suspend fun setMealEaten(
+        eatenOn: LocalDate,
+        recipeId: String?
+    ) = withContext(Dispatchers.IO) {
+        if (recipeId == null) {
+            supabase.from("meal_history").delete {
+                filter {
+                    eq("household_id", householdId)
+                    eq("eaten_on", eatenOn.toString())
+                }
+            }
+        } else {
+            supabase.from("meal_history").upsert(
+                MealHistoryRow(
+                    householdId = householdId,
+                    eatenOn = eatenOn.toString(),
+                    recipeId = recipeId
+                )
+            ) {
+                onConflict = "household_id,eaten_on"
+            }
+        }
+    }
 
     suspend fun upsertIngredient(ingredient: Ingredient): Ingredient = withContext(Dispatchers.IO) {
         val finalImage = resolveImage(
@@ -1325,80 +1354,6 @@ class CloudMealRepository(
             )
         ) {
             onConflict = "id"
-        }
-    }
-
-    /** Reconcile older plans after rendering; never block cold-start UI. */
-    internal suspend fun reconcileRecentHistory() = withContext(Dispatchers.IO) {
-        syncRecentHistory()
-    }
-
-    private suspend fun syncRecentHistory() {
-        val cutoff = LocalDate.now().minusDays(60)
-        val today = LocalDate.now()
-
-        val weeks = supabase.from("weekly_plans").select {
-            filter {
-                eq("household_id", householdId)
-                gte("week_start", cutoff.toString())
-            }
-        }.decodeList<WeeklyPlanRow>()
-
-        if (weeks.isEmpty()) return
-
-        // Only retrieve meals from the recent weeks being reconciled.
-        // Fetching the entire household history gets slower as the data grows,
-        // and can eventually hit PostgREST's default row limit.
-        val weekIds = weeks.map { it.id }
-        val meals = supabase.from("planned_meals").select {
-            filter {
-                eq("household_id", householdId)
-                isIn("weekly_plan_id", weekIds)
-            }
-        }.decodeList<PlannedMealRow>()
-
-        val mealsByWeek = meals.groupBy { it.weeklyPlanId }
-        val rows = weeks.flatMap { week ->
-            val start = LocalDate.parse(week.weekStart)
-            mealsByWeek[week.id].orEmpty().mapNotNull { meal ->
-                val date = start.plusDays(meal.dayOfWeek.toLong() - 1)
-                if (date >= today || meal.mode == "AWAY") return@mapNotNull null
-
-                val recipeId = if (
-                    week.sandwichDay == meal.dayOfWeek &&
-                    week.sandwichRecipeId != null
-                ) {
-                    week.sandwichRecipeId
-                } else {
-                    meal.recipeId
-                } ?: return@mapNotNull null
-
-                MealHistoryRow(
-                    householdId = householdId,
-                    eatenOn = date.toString(),
-                    recipeId = recipeId
-                )
-            }
-        }
-
-        if (rows.isNotEmpty()) {
-            val existing = supabase.from("meal_history").select {
-                filter {
-                    eq("household_id", householdId)
-                    gte("eaten_on", cutoff.toString())
-                }
-            }.decodeList<MealHistoryRow>()
-                .associateBy { it.eatenOn }
-
-            val changedRows = rows.filter { candidate ->
-                existing[candidate.eatenOn]?.recipeId != candidate.recipeId
-            }
-
-            if (changedRows.isNotEmpty()) {
-                supabase.from("meal_history").upsert(changedRows) {
-                    onConflict = "household_id,eaten_on"
-                }
-            }
         }
     }
 
