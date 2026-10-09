@@ -147,9 +147,9 @@ internal class RoomSnapshotCache(
         .get(context)
         .householdSnapshotDao()
 
-    suspend fun load(): CloudSnapshot {
-        val entity = dao.find(householdId) ?: return CloudSnapshot.EMPTY
-        return RoomSnapshotCodec.decode(entity.payload) ?: CloudSnapshot.EMPTY
+    suspend fun load(): CloudSnapshot? {
+        val entity = dao.find(householdId) ?: return null
+        return RoomSnapshotCodec.decode(entity.payload)
     }
 
     suspend fun save(snapshot: CloudSnapshot) {
@@ -245,20 +245,40 @@ internal object RoomSnapshotCodec {
     fun encode(snapshot: CloudSnapshot): String =
         json.encodeToString(snapshot.toCached())
 
-    fun decode(payload: String): CloudSnapshot? =
+    fun decode(
+        payload: String,
+        today: LocalDate = LocalDate.now()
+    ): CloudSnapshot? =
         runCatching {
-            val cached =
-                json.decodeFromString<CachedCloudSnapshot>(payload)
-            if (cached.weekStart != currentWeekStart().toString()) {
-                return null
+            val cached = json.decodeFromString<CachedCloudSnapshot>(payload)
+            val snapshot = cached.toCloudSnapshot()
+            val weekStart = currentWeekStart(today).toString()
+            if (cached.weekStart == weekStart) {
+                snapshot
+            } else {
+                // Week-sensitive identifiers cannot be written into the new
+                // week's server plan. Keep pantry, recipes and history offline.
+                val defaults = CloudSnapshot.EMPTY
+                snapshot.copy(
+                    dayModes = defaults.dayModes,
+                    dayMaxPrepMinutes = defaults.dayMaxPrepMinutes,
+                    plan = defaults.plan,
+                    lockedDays = emptySet(),
+                    shoppingChecked = emptyMap(),
+                    shoppingIncluded = emptyMap(),
+                    selectedLunchRecipeIds = emptyList(),
+                    weeklyPlanId = "offline-week-$weekStart",
+                    weeklySandwichRecipeId = null,
+                    sandwichDay = null
+                )
             }
-            cached.toCloudSnapshot()
         }.getOrNull()
 
-    private fun currentWeekStart(): LocalDate =
-        LocalDate.now().with(
-            TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)
-        )
+    private fun currentWeekStart(
+        today: LocalDate = LocalDate.now()
+    ): LocalDate = today.with(
+        TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)
+    )
 
     private fun CloudSnapshot.toCached() = CachedCloudSnapshot(
         weekStart = currentWeekStart().toString(),
