@@ -53,7 +53,32 @@ jobs:
             --report dex-optimization-report.json
           cat dex-optimization-report.json >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Enable hardware acceleration for Android emulator
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Validate optimized APK startup in emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          script: bash scripts/smoke_optimized_apk.sh
+
+      - name: Archive optimized startup log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: r8-emulator-startup-log
+          path: r8-emulator-logcat.txt
+          if-no-files-found: ignore
+          retention-days: 7
+
       - name: Archive shrinker metrics and R8 mapping
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: r8-dex-report-and-mapping
