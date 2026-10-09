@@ -160,6 +160,7 @@ enum class AppTab(val label: String, val icon: ImageVector) {
 private sealed interface AppPage {
     data object Settings : AppPage
     data object PlannerSettings : AppPage
+    data object SyncStatus : AppPage
     data object IngredientCategories : AppPage
     data object RecipeCategories : AppPage
     data class IngredientEditor(val ingredientId: String?) : AppPage
@@ -218,6 +219,7 @@ fun MealPlannerApp(
         page = when (val current = page) {
             AppPage.Settings -> null
             AppPage.PlannerSettings -> AppPage.Settings
+            AppPage.SyncStatus -> AppPage.Settings
             AppPage.IngredientCategories -> AppPage.Settings
             AppPage.RecipeCategories -> AppPage.Settings
             is AppPage.IngredientEditor -> null
@@ -297,10 +299,16 @@ fun MealPlannerApp(
             onIngredientCategories = { page = AppPage.IngredientCategories },
             onRecipeCategories = { page = AppPage.RecipeCategories },
             onPlannerSettings = { page = AppPage.PlannerSettings },
+            onSyncStatus = { page = AppPage.SyncStatus },
             onLogout = onLogout
         )
 
         AppPage.PlannerSettings -> PlannerSettingsScreen(
+            state = state,
+            onBack = { navigateBack() }
+        )
+
+        AppPage.SyncStatus -> SyncStatusScreen(
             state = state,
             onBack = { navigateBack() }
         )
@@ -3617,6 +3625,7 @@ private fun SettingsScreen(
     onIngredientCategories: () -> Unit,
     onRecipeCategories: () -> Unit,
     onPlannerSettings: () -> Unit,
+    onSyncStatus: () -> Unit,
     onLogout: () -> Unit
 ) {
     val context = LocalContext.current
@@ -3809,6 +3818,16 @@ private fun SettingsScreen(
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Text("Tilpas madplanens prioriteringer")
+                }
+            }
+
+            item {
+                OutlinedButton(
+                    onClick = onSyncStatus,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("Status for synkronisering")
                 }
             }
 
