@@ -73,4 +73,61 @@ class PantryRulesTest {
             )
         )
     }
+
+    private val repeatedIngredientRecipe = Recipe(
+        id = "repeated",
+        name = "Repeated ingredients",
+        ingredients = listOf(
+            RecipeIngredient("rice", 200.0),
+            RecipeIngredient("milk", 500.0),
+            RecipeIngredient("rice", 150.0)
+        )
+    )
+
+    @Test
+    fun repeatedIngredientRequiresTotalStock() {
+        assertFalse(
+            PantryRules.canMake(
+                repeatedIngredientRecipe,
+                mapOf("rice" to 300.0, "milk" to 500.0)
+            )
+        )
+        assertTrue(
+            PantryRules.canMake(
+                repeatedIngredientRecipe,
+                mapOf("rice" to 350.0, "milk" to 500.0)
+            )
+        )
+    }
+
+    @Test
+    fun repeatedIngredientCoverageUsesCombinedAmount() {
+        assertEquals(
+            0.75,
+            PantryRules.coverage(
+                repeatedIngredientRecipe,
+                mapOf("rice" to 175.0, "milk" to 500.0)
+            ),
+            0.0001
+        )
+    }
+
+    @Test
+    fun cookingDeductsCombinedAmountsAndNeverGoesBelowZero() {
+        assertEquals(
+            mapOf("rice" to 150.0, "milk" to 100.0),
+            PantryRules.remainingAfterCooking(
+                repeatedIngredientRecipe,
+                mapOf("rice" to 500.0, "milk" to 600.0)
+            )
+        )
+        assertEquals(
+            mapOf("rice" to 0.0, "milk" to 0.0),
+            PantryRules.remainingAfterCooking(
+                repeatedIngredientRecipe,
+                mapOf("rice" to 100.0, "milk" to 100.0)
+            )
+        )
+    }
+
 }
