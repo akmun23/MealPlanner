@@ -2,6 +2,7 @@ package com.example.mealplanner
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -49,6 +50,18 @@ fun PantryScreen(
     var selectedCategoryId by rememberSaveable {
         mutableStateOf<String?>(null)
     }
+    var stockFilterKey by rememberSaveable {
+        mutableStateOf(PantryStockFilter.ALL.name)
+    }
+    var sortOrderKey by rememberSaveable {
+        mutableStateOf(PantrySortOrder.NAME_ASC.name)
+    }
+    val stockFilter = PantryStockFilter.entries
+        .firstOrNull { it.name == stockFilterKey }
+        ?: PantryStockFilter.ALL
+    val sortOrder = PantrySortOrder.entries
+        .firstOrNull { it.name == sortOrderKey }
+        ?: PantrySortOrder.NAME_ASC
     var editing by remember { mutableStateOf<Ingredient?>(null) }
 
     editing?.let { ingredient ->
@@ -61,12 +74,14 @@ fun PantryScreen(
 
     val filtered by remember {
         derivedStateOf {
-            filterPantryIngredients(
+            visiblePantryIngredients(
                 ingredients = state.ingredients.toList(),
-                categories =
-                    state.ingredientCategories.sortedBy { it.name.lowercase() },
+                categories = state.ingredientCategories.toList(),
+                pantry = state.pantry,
                 searchQuery = searchQuery,
-                selectedCategoryId = selectedCategoryId
+                selectedCategoryId = selectedCategoryId,
+                stockFilter = stockFilter,
+                sortOrder = sortOrder
             )
         }
     }
@@ -118,6 +133,32 @@ fun PantryScreen(
                     onSelected = { selectedCategoryId = it?.id }
                 )
             }
+        }
+
+        item(key = "pantry-view-controls") {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Box(modifier = Modifier.weight(1f)) {
+                    SimpleSelector(
+                        label = stockFilter.label,
+                        options = PantryStockFilter.entries.toList(),
+                        optionText = { it.label },
+                        onSelected = { stockFilterKey = it.name }
+                    )
+                }
+                Box(modifier = Modifier.weight(1f)) {
+                    SimpleSelector(
+                        label = sortOrder.label,
+                        options = PantrySortOrder.entries.toList(),
+                        optionText = { it.label },
+                        onSelected = { sortOrderKey = it.name }
+                    )
+                }
+            }
+            Text(
+                "Viser ${filtered.size} af ${state.ingredients.size} ingredienser",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
 
         items(filtered, key = { it.id }) { ingredient ->

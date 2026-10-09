@@ -47,5 +47,7 @@ jobs:
           "$AAPT" dump badging "$APK" > packaged-badging.txt
           cat packaged-badging.txt | grep -E '^package:|^launchable-activity:'
           grep -F "name='com.mealplan.mealplanner'" packaged-badging.txt
-          grep -F "versionCode='4'" packaged-badging.txt
+          VERSION_CODE="$(sed -nE 's/^[[:space:]]*versionCode[[:space:]]*=[[:space:]]*([0-9]+).*$/\1/p' app/build.gradle.kts | head -n 1)"
+          test -n "$VERSION_CODE"
+          grep -F "versionCode='$VERSION_CODE'" packaged-badging.txt
           grep -F "launchable-activity: name='com.example.mealplanner.MainActivity'" packaged-badging.txt
