@@ -93,8 +93,9 @@ internal object MealPlannerDatabaseProvider {
                 MealPlannerDatabase::class.java,
                 "meal_planner_local.db"
             )
+                // Never delete unsent offline edits to recover from a missing
+                // migration. New schema versions must provide a migration.
                 .addMigrations(MIGRATION_1_2)
-                .fallbackToDestructiveMigration(dropAllTables = true)
                 .build().also {
                 instance = it
             }
