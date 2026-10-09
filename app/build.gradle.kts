@@ -69,7 +69,14 @@ android {
         }
         create("benchmark") {
             initWith(getByName("release"))
-            // Reproduce release performance while allowing local test installs.
+            // Evaluate R8's optimized DEX and resource shrinking before
+            // restoring it to production. The existing release build stays
+            // non-minified until a real-device launch + local/cloud flow test.
+            optimization {
+                enable = true
+            }
+            // Non-debuggable for realistic startup/frame tracing; do NOT
+            // install over a release-signed app (different signing keys).
             signingConfig = signingConfigs.getByName("debug")
             isDebuggable = false
             matchingFallbacks += listOf("release")
