@@ -71,7 +71,11 @@ internal fun SyncStatusScreen(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    "Lager og opskrifter gemmes på telefonen først. Ændringerne sendes til husstanden, når forbindelsen virker igen.",
+                    if (state.isLocalMode) {
+                        "Du bruger kun lokal lagring. Dine ændringer gemmes på telefonen uden cloud-synkronisering."
+                    } else {
+                        "Lager og opskrifter gemmes på telefonen først. Ændringerne sendes til husstanden, når forbindelsen virker igen."
+                    },
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
@@ -96,6 +100,16 @@ internal fun SyncStatusScreen(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Prøv at synkronisere nu")
+                }
+            }
+            if (!state.isLocalMode) {
+                item {
+                    OutlinedButton(
+                        onClick = state::refreshNow,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Hent nyeste data")
+                    }
                 }
             }
             if (state.syncConflictCount > 0) {
