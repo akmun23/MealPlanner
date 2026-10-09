@@ -164,6 +164,7 @@ private sealed interface AppPage {
     data object Settings : AppPage
     data object PlannerSettings : AppPage
     data object SyncStatus : AppPage
+    data object DataBackup : AppPage
     data object IngredientCategories : AppPage
     data object RecipeCategories : AppPage
     data class IngredientEditor(val ingredientId: String?) : AppPage
@@ -223,6 +224,7 @@ fun MealPlannerApp(
             AppPage.Settings -> null
             AppPage.PlannerSettings -> AppPage.Settings
             AppPage.SyncStatus -> AppPage.Settings
+            AppPage.DataBackup -> AppPage.Settings
             AppPage.IngredientCategories -> AppPage.Settings
             AppPage.RecipeCategories -> AppPage.Settings
             is AppPage.IngredientEditor -> null
@@ -303,6 +305,7 @@ fun MealPlannerApp(
             onRecipeCategories = { page = AppPage.RecipeCategories },
             onPlannerSettings = { page = AppPage.PlannerSettings },
             onSyncStatus = { page = AppPage.SyncStatus },
+            onDataBackup = { page = AppPage.DataBackup },
             onLogout = onLogout
         )
 
@@ -312,6 +315,11 @@ fun MealPlannerApp(
         )
 
         AppPage.SyncStatus -> SyncStatusScreen(
+            state = state,
+            onBack = { navigateBack() }
+        )
+
+        AppPage.DataBackup -> DataBackupScreen(
             state = state,
             onBack = { navigateBack() }
         )
@@ -910,6 +918,7 @@ private fun SettingsScreen(
     onRecipeCategories: () -> Unit,
     onPlannerSettings: () -> Unit,
     onSyncStatus: () -> Unit,
+    onDataBackup: () -> Unit,
     onLogout: () -> Unit
 ) {
     val context = LocalContext.current
@@ -1112,6 +1121,16 @@ private fun SettingsScreen(
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Text("Status for synkronisering")
+                }
+            }
+
+            item {
+                OutlinedButton(
+                    onClick = onDataBackup,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("Sikkerhedskopi og mine data")
                 }
             }
 
