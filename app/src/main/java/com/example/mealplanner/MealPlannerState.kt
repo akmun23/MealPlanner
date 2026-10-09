@@ -8,6 +8,7 @@ import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshots.Snapshot
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
@@ -656,7 +657,7 @@ class MealPlannerState(
         }
     }
 
-    private fun applySnapshot(snapshot: CloudSnapshot) {
+    private fun applySnapshot(snapshot: CloudSnapshot) = Snapshot.withMutableSnapshot {
         syncListByKey(
             target = ingredients,
             incoming = snapshot.ingredients,
@@ -733,7 +734,7 @@ class MealPlannerState(
 
     private fun applyIngredientsSnapshot(
         snapshot: CloudIngredientsSnapshot
-    ) {
+    ) = Snapshot.withMutableSnapshot {
         syncListByKey(
             target = ingredients,
             incoming = snapshot.ingredients,
@@ -748,7 +749,7 @@ class MealPlannerState(
 
     private fun applyRecipesSnapshot(
         snapshot: CloudRecipesSnapshot
-    ) {
+    ) = Snapshot.withMutableSnapshot {
         syncListByKey(
             target = recipeCategories,
             incoming = snapshot.recipeCategories,
@@ -763,7 +764,7 @@ class MealPlannerState(
 
     private fun applyWeekSnapshot(
         snapshot: CloudWeekSnapshot
-    ) {
+    ) = Snapshot.withMutableSnapshot {
         syncMap(
             target = dayModes,
             incoming = orderedWeekDays.associateWith { day ->
@@ -799,7 +800,7 @@ class MealPlannerState(
 
     private fun applyShoppingSnapshot(
         snapshot: CloudShoppingSnapshot
-    ) {
+    ) = Snapshot.withMutableSnapshot {
         syncMap(
             target = shoppingChecked,
             incoming = snapshot.checked
