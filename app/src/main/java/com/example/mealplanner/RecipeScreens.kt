@@ -71,7 +71,7 @@ fun RecipesScreen(
     val mealOptions = listOf("Alle måltider") +
         MealType.entries.map { it.danishName() }
     val categoryOptions = listOf("Alle kategorier") +
-        state.recipeCategories.map { it.name }
+        state.recipeCategories.sortedBy { it.name.lowercase() }.map { it.name }
 
     val filteredRecipes by remember {
         derivedStateOf {
@@ -993,7 +993,7 @@ internal fun RecipeEditorScreen(
                                     .find { it.id == categoryId }
                                     ?.name
                                     ?: "Andet",
-                                options = state.recipeCategories.toList(),
+                                options = state.recipeCategories.sortedBy { it.name.lowercase() },
                                 optionText = { it.name },
                                 onSelected = { categoryId = it.id }
                             )
@@ -1507,7 +1507,7 @@ internal fun IngredientEditorScreen(
                 } else {
                     SimpleSelector(
                         label = state.ingredientCategoryName(shoppingCategoryId),
-                        options = state.ingredientCategories.toList(),
+                        options = state.ingredientCategories.sortedBy { it.name.lowercase() },
                         optionText = { it.name },
                         onSelected = { shoppingCategoryId = it.id }
                     )
