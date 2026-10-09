@@ -87,6 +87,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -132,15 +134,45 @@ private val AppColors = lightColorScheme(
     outline = Color(0xFFBBC4BC)
 )
 
+private val DarkAppColors = darkColorScheme(
+    primary = Color(0xFFA2D7B3),
+    onPrimary = Color(0xFF0B3C25),
+    primaryContainer = Color(0xFF24553B),
+    onPrimaryContainer = Color(0xFFD7F4DE),
+    secondary = Color(0xFFD5C98B),
+    secondaryContainer = Color(0xFF514921),
+    background = Color(0xFF121B15),
+    onBackground = Color(0xFFE1EBE3),
+    surface = Color(0xFF1B271F),
+    onSurface = Color(0xFFE1EBE3),
+    surfaceVariant = Color(0xFF33453A),
+    onSurfaceVariant = Color(0xFFC0CEC2),
+    outline = Color(0xFF88998B)
+)
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         SupabaseProvider.client.handleDeeplinks(intent)
 
         setContent {
-            MaterialTheme(colorScheme = AppColors) {
+            val themePreferences = remember { ThemePreferences(applicationContext) }
+            var themeMode by remember { mutableStateOf(themePreferences.load()) }
+            val dark = when (themeMode) {
+                ThemeMode.SYSTEM -> isSystemInDarkTheme()
+                ThemeMode.DARK -> true
+                ThemeMode.LIGHT -> false
+            }
+
+            MaterialTheme(colorScheme = if (dark) DarkAppColors else AppColors) {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    CloudGate()
+                    CloudGate(
+                        themeMode = themeMode,
+                        onThemeModeChange = { selected ->
+                            themePreferences.save(selected)
+                            themeMode = selected
+                        }
+                    )
                 }
             }
         }
@@ -178,7 +210,9 @@ private sealed interface AppPage {
 fun MealPlannerApp(
     household: HouseholdDto,
     onRenameHousehold: suspend (String) -> Boolean,
-    onLogout: () -> Unit
+    onLogout: () -> Unit,
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -310,6 +344,8 @@ fun MealPlannerApp(
             onRecipeCategories = { page = AppPage.RecipeCategories },
             onPlannerSettings = { page = AppPage.PlannerSettings },
             onSyncStatus = { page = AppPage.SyncStatus },
+            themeMode = themeMode,
+            onThemeModeChange = onThemeModeChange,
             onLogout = onLogout
         )
 
@@ -912,6 +948,8 @@ private fun SettingsScreen(
     onRecipeCategories: () -> Unit,
     onPlannerSettings: () -> Unit,
     onSyncStatus: () -> Unit,
+    themeMode: ThemeMode,
+    onThemeModeChange: (ThemeMode) -> Unit,
     onLogout: () -> Unit
 ) {
     val context = LocalContext.current
@@ -1114,6 +1152,26 @@ private fun SettingsScreen(
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Text("Status for synkronisering")
+                }
+            }
+
+            item {
+                SectionCard("Udseende") {
+                    Text(
+                        "Vælg appens farvetema. System følger telefonens indstilling.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        ThemeMode.entries.forEach { choice ->
+                            FilterChip(
+                                selected = themeMode == choice,
+                                onClick = { onThemeModeChange(choice) },
+                                label = { Text(choice.danishLabel) }
+                            )
+                        }
+                    }
                 }
             }
 
