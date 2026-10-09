@@ -44,6 +44,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -63,10 +64,10 @@ fun RecipesScreen(
     onAddRecipe: () -> Unit,
     onOpenRecipe: (String) -> Unit
 ) {
-    var searchQuery by remember { mutableStateOf("") }
-    var mealFilter by remember { mutableStateOf("Alle måltider") }
-    var categoryFilter by remember { mutableStateOf("Alle kategorier") }
-    var canMakeOnly by remember { mutableStateOf(false) }
+    var searchQuery by rememberSaveable { mutableStateOf("") }
+    var mealFilter by rememberSaveable { mutableStateOf("Alle måltider") }
+    var categoryFilter by rememberSaveable { mutableStateOf("Alle kategorier") }
+    var canMakeOnly by rememberSaveable { mutableStateOf(false) }
 
     val mealOptions = listOf("Alle måltider") +
         MealType.entries.map { it.danishName() }
