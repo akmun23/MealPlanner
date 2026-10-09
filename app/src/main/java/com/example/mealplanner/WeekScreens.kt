@@ -58,12 +58,15 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import java.time.DayOfWeek
+import java.time.LocalDate
+import java.time.temporal.TemporalAdjusters
 
 @Composable
 fun WeekScreen(
     state: MealPlannerState,
     onOpenRecipe: (String) -> Unit,
-    onNewLunchRecipe: () -> Unit
+    onNewLunchRecipe: () -> Unit,
+    onMealHistory: () -> Unit
 ) {
     val sandwichDay = state.sandwichDay()
     val homeCount = orderedWeekDays.count { state.dayModes[it] != DayMode.AWAY }
@@ -192,7 +195,11 @@ fun WeekScreen(
             fontWeight = FontWeight.Bold
         )
 
-        Spacer(Modifier.height(14.dp))
+        Spacer(Modifier.height(6.dp))
+        TextButton(onClick = onMealHistory) {
+            Text("Spiste måltider / Madhistorik")
+        }
+        Spacer(Modifier.height(8.dp))
 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             SummaryCard("Hjemme", "$homeCount dage", Modifier.weight(1f))
@@ -362,6 +369,10 @@ fun DayCard(
     val isSandwich = recipe?.id != null && recipe.id == state.weeklySandwichRecipeId
     val isLocked = day in state.lockedDays
     val maxPrepMinutes = state.dayMaxPrepMinutes[day]
+    val mealDate = LocalDate.now()
+        .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+        .plusDays((day.value - 1).toLong())
+    val eatenId = state.history.find { it.eatenOn == mealDate }?.recipeId
     val recipeCategory = if (recipe != null) {
         recipeCategoryDisplayName(
             state.recipeCategoryName(recipe),
@@ -514,6 +525,25 @@ fun DayCard(
                                 )
                             }
                         }
+                    }
+                }
+
+                if (mealDate <= LocalDate.now() && recipe != null) {
+                    Spacer(Modifier.height(5.dp))
+                    if (eatenId == null) {
+                        TextButton(onClick = {
+                            state.recordEaten(mealDate, recipe.id)
+                        }) {
+                            Text("Bekræft spist")
+                        }
+                    } else {
+                        val eatenName = state.recipes.find { it.id == eatenId }?.name
+                            ?: "Ukendt opskrift"
+                        Text(
+                            "Spist: $eatenName",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
                     }
                 }
 
