@@ -814,13 +814,13 @@ fun DayCard(
     onOpenRecipe: (String) -> Unit
 ) {
     val away = state.dayModes[day] == DayMode.AWAY
-    val recipe = remember(day, state.plan[day], state.recipes.size) { state.recipeFor(day) }
-    val isSandwich = remember(recipe?.id, state.weeklySandwichRecipeId) { recipe?.id != null && recipe.id == state.weeklySandwichRecipeId }
-    val isLocked = remember(day, state.lockedDays.size) { day in state.lockedDays }
-    val maxPrepMinutes = remember(day, state.dayMaxPrepMinutes[day]) { state.dayMaxPrepMinutes[day] }
-    val recipeCategory = remember(recipe?.id, state.ingredientCategories.size) {
-        if (recipe != null) state.recipeCategoryName(recipe) else ""
-    }
+    // Compose observes these lists and maps directly. Remembering by size/id
+    // leaves stale titles, locks and categories when existing rows change.
+    val recipe = state.recipeFor(day)
+    val isSandwich = recipe?.id != null && recipe.id == state.weeklySandwichRecipeId
+    val isLocked = day in state.lockedDays
+    val maxPrepMinutes = state.dayMaxPrepMinutes[day]
+    val recipeCategory = if (recipe != null) state.recipeCategoryName(recipe) else ""
 
     var showRecipePicker by remember { mutableStateOf(false) }
     var showTimePicker by remember { mutableStateOf(false) }
