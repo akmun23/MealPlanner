@@ -42,6 +42,7 @@ class MealPlannerState(
             SupervisorJob(parentScope.coroutineContext[Job])
     )
     private val isLocalOnly = householdId == "local-household-1"
+    val isLocalMode: Boolean get() = isLocalOnly
     private val repository = CloudMealRepository(
         context = context.applicationContext,
         householdId = householdId
@@ -123,6 +124,12 @@ class MealPlannerState(
         private set
 
     internal var syncConflictCount by mutableIntStateOf(0)
+        private set
+
+    internal var pendingSyncCount by mutableIntStateOf(0)
+        private set
+
+    internal var failedSyncCount by mutableIntStateOf(0)
         private set
 
     init {
@@ -285,6 +292,8 @@ class MealPlannerState(
         ) { count, failedCount, conflictCount ->
             Triple(count, failedCount, conflictCount)
         }.collectLatest { (count, failedCount, conflictCount) ->
+            pendingSyncCount = count
+            failedSyncCount = failedCount
             syncConflictCount = conflictCount
 
             when {
@@ -1036,6 +1045,20 @@ class MealPlannerState(
         return true
     }
 
+    fun moveIngredientCategory(categoryId: String, delta: Int) {
+        val index = ingredientCategories.indexOfFirst { it.id == categoryId }
+        val reordered = reorderCategory(
+            items = ingredientCategories.toList(),
+            index = index,
+            delta = delta,
+            withPosition = { category, position ->
+                category.copy(position = position)
+            }
+        ) ?: return
+        syncListByKey(ingredientCategories, reordered, IngredientCategory::id)
+        enqueueMutations(reordered.map { QueuedMutation.UpsertIngredientCategory(it) })
+    }
+
     fun renameIngredientCategory(
         categoryId: String,
         name: String
@@ -1099,6 +1122,20 @@ class MealPlannerState(
             QueuedMutation.UpsertRecipeCategory(category)
         )
         return true
+    }
+
+    fun moveRecipeCategory(categoryId: String, delta: Int) {
+        val index = recipeCategories.indexOfFirst { it.id == categoryId }
+        val reordered = reorderCategory(
+            items = recipeCategories.toList(),
+            index = index,
+            delta = delta,
+            withPosition = { category, position ->
+                category.copy(position = position)
+            }
+        ) ?: return
+        syncListByKey(recipeCategories, reordered, RecipeCategoryOption::id)
+        enqueueMutations(reordered.map { QueuedMutation.UpsertRecipeCategory(it) })
     }
 
     fun renameRecipeCategory(

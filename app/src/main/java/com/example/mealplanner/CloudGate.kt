@@ -45,6 +45,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 private const val AUTH_REDIRECT_URL = "com.mealplan.mealplanner://login-callback"
+private const val NEW_ACCOUNT_MIN_PASSWORD_LENGTH = 12
 
 internal enum class AuthAction {
     SIGN_IN,
@@ -85,7 +86,11 @@ internal fun authErrorMessage(
 
         "weak password" in raw ||
             "password should be at least" in raw ->
-            "Adgangskoden skal være mindst 6 tegn."
+            if (action == AuthAction.SIGN_UP) {
+                "Vælg en adgangskode på mindst 12 tegn."
+            } else {
+                "Adgangskoden opfylder ikke kontokravene."
+            }
 
         "rate limit" in raw ||
             "too many requests" in raw ->
@@ -150,6 +155,9 @@ class CloudAccountRepository(context: Context) {
         email: String,
         password: String
     ) {
+        require(password.length >= NEW_ACCOUNT_MIN_PASSWORD_LENGTH) {
+            "New account passwords must have at least 12 characters"
+        }
         supabase.auth.signUpWith(
             provider = Email,
             redirectUrl = AUTH_REDIRECT_URL
@@ -766,6 +774,13 @@ private fun LoginScreen(
             modifier = Modifier.height(10.dp)
         )
 
+        Text(
+            "Ny konto: mindst 12 tegn i adgangskoden. Login med eksisterende adgangskoder virker fortsat.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Spacer(modifier = Modifier.height(8.dp))
+
         OutlinedButton(
             onClick = {
                 onCreateAccount(
@@ -776,7 +791,7 @@ private fun LoginScreen(
             enabled =
                 !isBusy &&
                     email.isNotBlank() &&
-                    password.length >= 6,
+                    password.length >= NEW_ACCOUNT_MIN_PASSWORD_LENGTH,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp)
         ) {
