@@ -129,7 +129,7 @@ internal object MealImagePrefetcher {
                         val request = ImageRequest.Builder(context)
                             .data(url)
                             .diskCacheKey(reference)
-                            .memoryCacheKey(reference)
+                            .memoryCacheKey("thumbnail:$reference")
                             .size(192, 192)
                             .crossfade(false)
                             .build()
@@ -178,7 +178,7 @@ internal fun MealImage(
             ImageRequest.Builder(context)
                 .data(url)
                 .diskCacheKey(imageUri)
-                .memoryCacheKey(imageUri)
+                .memoryCacheKey(if (thumbnail) "thumbnail:$imageUri" else "full:$imageUri")
                 .apply {
                     if (thumbnail) size(192, 192)
                 }
