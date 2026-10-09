@@ -320,9 +320,7 @@ class MealPlannerState(
         }
 
         if (applied) {
-            runCatching {
-                roomCache.save(snapshot)
-            }
+            scheduleCachePersist(delayMillis = 0L)
         }
     }
 
@@ -656,13 +654,24 @@ class MealPlannerState(
     private fun scheduleCachePersist(
         delayMillis: Long = 100L
     ) {
-        val snapshot = currentSnapshot() ?: return
+        val generations = CloudSyncDomain.entries
+            .associateWith(syncTracker::generation)
 
         cachePersistJob?.cancel()
         cachePersistJob = scope.launch {
             delay(delayMillis.milliseconds)
-            runCatching {
-                roomCache.save(snapshot)
+            // The outbox transaction must remain the last writer of local
+            // optimistic state. A delayed remote cache write is never allowed
+            // to replace a newer edit or a pending mutation.
+            mutationQueueMutex.withLock {
+                if (
+                    syncTracker.isCurrent(generations) &&
+                    !offlineSyncQueue.hasPendingMutations()
+                ) {
+                    currentSnapshot()?.let { snapshot ->
+                        roomCache.save(snapshot)
+                    }
+                }
             }
         }
     }
