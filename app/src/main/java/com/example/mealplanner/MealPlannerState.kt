@@ -12,6 +12,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -115,6 +116,43 @@ class MealPlannerState(
     fun resetPlannerWeights() {
         plannerSettingsStore.reset(householdId)
         plannerWeights = PlannerWeights()
+    }
+
+    /**
+     * Export the latest visible state, including changes not yet synchronized
+     * to the cloud. No auth/session secrets are included.
+     */
+    suspend fun exportPortableBackup(): String {
+        val snapshot = currentSnapshot()
+            ?: error("The household has not finished loading")
+        return withContext(Dispatchers.Default) {
+            SnapshotBackupCodec.encode(snapshot)
+        }
+    }
+
+    /**
+     * Restore backups only into an explicitly local-only household. Importing
+     * directly into a shared cloud household would bypass conflict tracking
+     * and overwrite other people's edits.
+     */
+    suspend fun restoreLocalBackup(payload: String) {
+        require(isLocalOnly) { "Import requires local-only mode" }
+        val restored = withContext(Dispatchers.Default) {
+            SnapshotBackupCodec.decode(payload)
+        }.copy(
+            weeklyPlanId = "local-week-${currentWeekStart()}"
+        )
+        cachePersistJob?.cancelAndJoin()
+        mutationQueueMutex.withLock {
+            // Persist first: the UI remains unchanged if disk persistence
+            // fails, and the restored data survives process termination.
+            withContext(Dispatchers.IO) {
+                roomCache.save(restored)
+            }
+            applySnapshot(restored)
+            syncTracker.markLocalChange(CloudSyncDomain.entries.toSet())
+            syncIndicator = SyncIndicator.SAVED
+        }
     }
 
     var lastError by mutableStateOf<String?>(null)
