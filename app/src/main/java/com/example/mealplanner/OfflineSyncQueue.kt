@@ -840,6 +840,11 @@ internal class OfflineSyncWorker(
             inputData.getString(HOUSEHOLD_ID)
                 ?: return Result.failure()
 
+        // Legacy local-only sessions may have left WorkManager requests from
+        // older app versions. Never try to upload their fake household IDs,
+        // even if the user later signs in to a real cloud account.
+        if (householdId == "local-household-1") return Result.success()
+
         val status = SupabaseProvider.client.auth.sessionStatus.first {
             it != SessionStatus.Initializing
         }
