@@ -3,7 +3,7 @@ package com.example.mealplanner
 import android.content.Context
 
 /** Controls the appearance independently of Supabase and can work offline. */
-internal enum class ThemeMode(val danishLabel: String) {
+enum class ThemeMode(val danishLabel: String) {
     SYSTEM("System"),
     LIGHT("Lyst"),
     DARK("Mørkt")
