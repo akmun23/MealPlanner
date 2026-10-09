@@ -159,6 +159,7 @@ enum class AppTab(val label: String, val icon: ImageVector) {
 
 private sealed interface AppPage {
     data object Settings : AppPage
+    data object PlannerSettings : AppPage
     data object IngredientCategories : AppPage
     data object RecipeCategories : AppPage
     data class IngredientEditor(val ingredientId: String?) : AppPage
@@ -216,6 +217,7 @@ fun MealPlannerApp(
     fun navigateBack() {
         page = when (val current = page) {
             AppPage.Settings -> null
+            AppPage.PlannerSettings -> AppPage.Settings
             AppPage.IngredientCategories -> AppPage.Settings
             AppPage.RecipeCategories -> AppPage.Settings
             is AppPage.IngredientEditor -> null
@@ -294,7 +296,13 @@ fun MealPlannerApp(
             onRenameHousehold = onRenameHousehold,
             onIngredientCategories = { page = AppPage.IngredientCategories },
             onRecipeCategories = { page = AppPage.RecipeCategories },
+            onPlannerSettings = { page = AppPage.PlannerSettings },
             onLogout = onLogout
+        )
+
+        AppPage.PlannerSettings -> PlannerSettingsScreen(
+            state = state,
+            onBack = { navigateBack() }
         )
 
         AppPage.IngredientCategories -> IngredientCategoriesScreen(
@@ -3608,6 +3616,7 @@ private fun SettingsScreen(
     onRenameHousehold: suspend (String) -> Boolean,
     onIngredientCategories: () -> Unit,
     onRecipeCategories: () -> Unit,
+    onPlannerSettings: () -> Unit,
     onLogout: () -> Unit
 ) {
     val context = LocalContext.current
@@ -3790,6 +3799,16 @@ private fun SettingsScreen(
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Text("Opskriftskategorier")
+                }
+            }
+
+            item {
+                OutlinedButton(
+                    onClick = onPlannerSettings,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("Tilpas madplanens prioriteringer")
                 }
             }
 

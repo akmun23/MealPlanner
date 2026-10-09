@@ -30,7 +30,7 @@ import kotlin.time.Duration.Companion.milliseconds
 
 class MealPlannerState(
     context: Context,
-    householdId: String,
+    private val householdId: String,
     parentScope: CoroutineScope
 ) {
     // Keep household work isolated from other UI and household scopes.
@@ -49,6 +49,9 @@ class MealPlannerState(
     private val offlineSyncQueue = OfflineSyncQueue(
         context = context.applicationContext,
         householdId = householdId
+    )
+    private val plannerSettingsStore = PlannerSettingsStore(
+        context.applicationContext
     )
     private val reloadMutex = Mutex()
     private val mutationQueueMutex = Mutex()
@@ -91,6 +94,21 @@ class MealPlannerState(
 
     var isPlanning by mutableStateOf(false)
         private set
+
+    var plannerWeights by mutableStateOf(
+        plannerSettingsStore.load(householdId)
+    )
+        private set
+
+    fun updatePlannerWeights(weights: PlannerWeights) {
+        plannerSettingsStore.save(householdId, weights)
+        plannerWeights = weights
+    }
+
+    fun resetPlannerWeights() {
+        plannerSettingsStore.reset(householdId)
+        plannerWeights = PlannerWeights()
+    }
 
     var lastError by mutableStateOf<String?>(null)
         private set
@@ -1528,6 +1546,7 @@ class MealPlannerState(
         val planSnapshot = plan.toMap()
         val lockSnapshot = lockedDays.toSet()
         val historySnapshot = history.toList()
+        val weightsSnapshot = plannerWeights
         val proteinIngredientIds = ingredients
             .asSequence()
             .filter { it.isProtein }
@@ -1551,7 +1570,8 @@ class MealPlannerState(
                         lockedDays = lockSnapshot,
                         history = historySnapshot,
                         proteinIngredientIds = proteinIngredientIds,
-                        weekStart = currentWeekStart()
+                        weekStart = currentWeekStart(),
+                        weights = weightsSnapshot
                     )
                 }
 
@@ -1584,6 +1604,7 @@ class MealPlannerState(
         val maxPrepSnapshot = dayMaxPrepMinutes.toMap()
         val planSnapshot = plan.toMap()
         val historySnapshot = history.toList()
+        val weightsSnapshot = plannerWeights
         val proteinIngredientIds = ingredients
             .asSequence()
             .filter { it.isProtein }
@@ -1604,7 +1625,8 @@ class MealPlannerState(
                         currentPlan = planSnapshot,
                         history = historySnapshot,
                         proteinIngredientIds = proteinIngredientIds,
-                        weekStart = currentWeekStart()
+                        weekStart = currentWeekStart(),
+                        weights = weightsSnapshot
                     )
                 }
 
