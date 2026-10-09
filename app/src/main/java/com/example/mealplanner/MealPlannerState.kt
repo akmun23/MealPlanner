@@ -1446,11 +1446,12 @@ class MealPlannerState(
                 }
             }
         } else {
-            recipe.ingredients.forEach { requirement ->
-                val current = pantry[requirement.ingredientId] ?: 0.0
-                val next = (current - requirement.amountBase).coerceAtLeast(0.0)
-                updates[requirement.ingredientId] = next
-            }
+            updates.putAll(
+                PantryRules.remainingAfterCooking(
+                    recipe = recipe,
+                    pantry = pantry
+                )
+            )
         }
 
         if (updates.isEmpty()) return
