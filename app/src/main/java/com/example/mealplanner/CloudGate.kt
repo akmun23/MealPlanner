@@ -1,5 +1,6 @@
 package com.example.mealplanner
 
+import android.content.Context
 import android.util.Log
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -121,7 +122,9 @@ data class HouseholdDto(
     val joinCode: String
 )
 
-class CloudAccountRepository {
+class CloudAccountRepository(context: Context) {
+
+    private val householdStore = CachedHouseholdStore(context)
 
     private val supabase
         get() = SupabaseProvider.client
@@ -157,7 +160,14 @@ class CloudAccountRepository {
     }
 
     suspend fun signOut() {
+        val userId = supabase.auth.currentUserOrNull()?.id
         supabase.auth.signOut()
+        if (userId != null) householdStore.remove(userId)
+    }
+
+    fun cachedHousehold(): HouseholdDto? {
+        val userId = supabase.auth.currentUserOrNull()?.id ?: return null
+        return householdStore.get(userId)
     }
 
     suspend fun currentHousehold(): HouseholdDto? {
@@ -176,9 +186,12 @@ class CloudAccountRepository {
                 .decodeList<HouseholdMemberDto>()
 
         val membership = memberships.firstOrNull()
-            ?: return null
+        if (membership == null) {
+            householdStore.remove(user.id)
+            return null
+        }
 
-        return supabase
+        val household = supabase
             .from("households")
             .select {
                 filter {
@@ -187,6 +200,13 @@ class CloudAccountRepository {
             }
             .decodeList<HouseholdDto>()
             .firstOrNull()
+
+        if (household != null) {
+            householdStore.put(user.id, household)
+        } else {
+            householdStore.remove(user.id)
+        }
+        return household
     }
 
     suspend fun renameHousehold(
@@ -257,9 +277,10 @@ private sealed interface CloudScreen {
 
 @Composable
 fun CloudGate() {
+    val context = androidx.compose.ui.platform.LocalContext.current
 
     val repository = remember {
-        CloudAccountRepository()
+        CloudAccountRepository(context.applicationContext)
     }
 
     val scope = rememberCoroutineScope()
@@ -290,14 +311,29 @@ fun CloudGate() {
             if (!repository.isLoggedIn()) {
                 CloudScreen.Login
             } else {
-                val household =
-                    repository.currentHousehold()
-
-                if (household == null) {
-                    CloudScreen.HouseholdSetup
-                } else {
-                    CloudScreen.Ready(household)
+                val cached = repository.cachedHousehold()
+                if (cached != null) {
+                    // Open Room-backed data without waiting for the network.
+                    screen = CloudScreen.Ready(cached)
+                    try {
+                        val fresh = repository.currentHousehold()
+                        screen = if (fresh == null) {
+                            CloudScreen.HouseholdSetup
+                        } else {
+                            CloudScreen.Ready(fresh)
+                        }
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        // Keep cached data available during a network outage.
+                        Log.w("MealPlannerStartup", "Using cached household", error)
+                    }
+                    return@LaunchedEffect
                 }
+
+                val household = repository.currentHousehold()
+                if (household == null) CloudScreen.HouseholdSetup
+                else CloudScreen.Ready(household)
             }
         } catch (error: Exception) {
             Log.e(
