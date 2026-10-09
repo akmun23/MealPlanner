@@ -114,7 +114,7 @@ class RoomSnapshotCodecTest {
             ),
             pantry = mapOf("rice" to 700.0),
             recipes = listOf(
-                Recipe(id = "risret", name = "Risret")
+                Recipe(id = "risret", name = "Risret", ingredients = emptyList())
             ),
             plan = orderedWeekDays.associateWith {
                 if (it == DayOfWeek.MONDAY) "risret" else null
