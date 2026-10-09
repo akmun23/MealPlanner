@@ -64,14 +64,14 @@ fun WeekScreen(
     val sandwichDay = state.sandwichDay()
     val homeCount = orderedWeekDays.count { state.dayModes[it] != DayMode.AWAY }
     val selectedLunch = state.lunchRecipes()
-    val lunchOptions = state.recipes.filter { it.mealType == MealType.LUNCH }
+    val lunchOptions = state.recipes.filter { it.mealType == MealType.LUNCH }.sortedBy { it.name.lowercase() }
     var showLunchPicker by remember { mutableStateOf(false) }
     var showSandwichPicker by remember { mutableStateOf(false) }
 
     if (showSandwichPicker) {
         val sandwichOptions = state.recipes.filter {
             it.mealType == MealType.DINNER
-        }
+        }.sortedBy { it.name.lowercase() }
 
         AlertDialog(
             onDismissRequest = { showSandwichPicker = false },
@@ -542,6 +542,7 @@ fun DayCard(
                                         it.mealType == MealType.DINNER &&
                                             it.id != state.weeklySandwichRecipeId
                                     }
+                                    .sortedBy { it.name.lowercase() }
                                     .forEach { candidate ->
                                         DropdownMenuItem(
                                             text = {

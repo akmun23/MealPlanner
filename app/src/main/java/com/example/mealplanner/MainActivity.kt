@@ -202,6 +202,13 @@ fun MealPlannerApp(
     }
 
     var tab by remember { mutableStateOf(AppTab.WEEK) }
+    val pagerState = rememberPagerState(
+        initialPage = tab.ordinal,
+        pageCount = { AppTab.entries.size }
+    )
+    LaunchedEffect(pagerState.currentPage) {
+        tab = AppTab.entries[pagerState.currentPage]
+    }
     var page by remember { mutableStateOf<AppPage?>(null) }
     var showSyncConflictDialog by remember {
         mutableStateOf(false)
@@ -351,11 +358,6 @@ fun MealPlannerApp(
         )
 
         null -> {
-            val pagerState = rememberPagerState(pageCount = { AppTab.entries.size })
-            LaunchedEffect(pagerState.currentPage) {
-                tab = AppTab.entries[pagerState.currentPage]
-            }
-
             Scaffold(
                 containerColor = MaterialTheme.colorScheme.background,
                 topBar = {

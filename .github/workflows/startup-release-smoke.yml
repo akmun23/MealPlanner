@@ -47,5 +47,5 @@ jobs:
           "$AAPT" dump badging "$APK" > packaged-badging.txt
           cat packaged-badging.txt | grep -E '^package:|^launchable-activity:'
           grep -F "name='com.mealplan.mealplanner'" packaged-badging.txt
-          grep -F "versionCode='3'" packaged-badging.txt
+          grep -F "versionCode='4'" packaged-badging.txt
           grep -F "launchable-activity: name='com.example.mealplanner.MainActivity'" packaged-badging.txt

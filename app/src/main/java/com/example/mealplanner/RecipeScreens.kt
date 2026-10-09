@@ -141,7 +141,7 @@ fun RecipesScreen(
                 } else {
                     null
                 }
-            }
+            }.sortedBy { it.recipe.name.lowercase() }
         }
     }
 
