@@ -20,11 +20,20 @@ python3 scripts/check_dex_optimization.py \
 ```
 
 Use the actual APK filenames if your AGP version generates different names.
-CI performs this measurement automatically and saves the R8 obfuscation mapping
-and report for 14 days. CI also boots a clean Android emulator, installs
-the optimized benchmark APK, verifies that the Compose login page appears,
-and retains startup logcat traces. DEX byte savings **do not prove** smoother
-scrolling or runtime correctness beyond this initial launch path.
+The required Android CI performs DEX-size comparison automatically and saves
+the R8 obfuscation mapping and report for 14 days. It **does not run an
+emulator**: the hosted emulator previously stalled and caused cancelled
+checks despite passing all Gradle builds and the shrinkage report.
+
+To test startup independently, use the GitHub Actions workflow
+**R8 emulator runtime smoke (manual)** via **Run workflow**. It boots an
+Android API 35 emulator, installs the optimized benchmark APK, verifies that
+the local login page appears, and uploads diagnostics. The workflow has a
+hard 18-minute job limit and is not a prerequisite for DEX compilation CI.
+
+Passing DEX checks or the manual emulator smoke **does not prove** smoother
+scrolling or runtime correctness beyond the tested startup path. Do not enable
+R8 on the production release until physical-device local/cloud flows pass.
 
 **Required before enabling R8 for production:**
 
