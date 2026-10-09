@@ -10,6 +10,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -631,6 +633,8 @@ private fun LoginScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            // Login and household fields must scroll above the soft keyboard.
+            .verticalScroll(rememberScrollState())
             .padding(24.dp),
         verticalArrangement = Arrangement.Center
     ) {
@@ -826,6 +830,8 @@ private fun HouseholdSetupScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            // Login and household fields must scroll above the soft keyboard.
+            .verticalScroll(rememberScrollState())
             .padding(24.dp),
         verticalArrangement = Arrangement.Center
     ) {
