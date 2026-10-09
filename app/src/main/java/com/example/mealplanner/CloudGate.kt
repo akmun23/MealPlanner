@@ -13,6 +13,8 @@ import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -325,6 +327,16 @@ fun CloudGate() {
                 message = message,
                 isBusy = isBusy,
 
+                onContinueOffline = {
+                    screen = CloudScreen.Ready(
+                        HouseholdDto(
+                            id = "local-household-1",
+                            name = "Min Madplan (Lokal)",
+                            joinCode = "LOCAL"
+                        )
+                    )
+                },
+
                 onLogin = { email, password ->
 
                     message = null
@@ -551,9 +563,13 @@ fun CloudGate() {
 private fun LoginScreen(
     message: String?,
     isBusy: Boolean,
+    onContinueOffline: () -> Unit,
     onLogin: (String, String) -> Unit,
     onCreateAccount: (String, String) -> Unit
 ) {
+    val isSupabaseConfigured = BuildConfig.SUPABASE_URL.let {
+        it.isNotBlank() && !it.contains("placeholder")
+    }
 
     var email by remember {
         mutableStateOf("")
@@ -581,11 +597,58 @@ private fun LoginScreen(
         )
 
         Text(
-            text = "Log ind"
+            text = "Log ind eller fortsæt offline"
+        )
+
+        if (!isSupabaseConfigured) {
+            Spacer(modifier = Modifier.height(16.dp))
+            Card(
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                ),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text(
+                        text = "Supabase ikke konfigureret",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "For online cloud-synkronisering skal SUPABASE_URL og SUPABASE_PUBLISHABLE_KEY tilføjes i local.properties. Du kan fortsætte i offline/lokal tilstand nedenfor.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                }
+            }
+        }
+
+        Spacer(
+            modifier = Modifier.height(20.dp)
+        )
+
+        Button(
+            onClick = onContinueOffline,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            Text("Fortsæt i lokal tilstand (Offline)")
+        }
+
+        Spacer(
+            modifier = Modifier.height(24.dp)
+        )
+
+        Text(
+            text = "Cloud Log Ind",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold
         )
 
         Spacer(
-            modifier = Modifier.height(28.dp)
+            modifier = Modifier.height(12.dp)
         )
 
         OutlinedTextField(
@@ -643,10 +706,10 @@ private fun LoginScreen(
         }
 
         Spacer(
-            modifier = Modifier.height(20.dp)
+            modifier = Modifier.height(16.dp)
         )
 
-        Button(
+        OutlinedButton(
             onClick = {
                 onLogin(
                     email,
@@ -660,7 +723,7 @@ private fun LoginScreen(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp)
         ) {
-            Text("Log ind")
+            Text("Log ind på cloud-konto")
         }
 
         Spacer(
@@ -681,17 +744,8 @@ private fun LoginScreen(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp)
         ) {
-            Text("Opret konto")
+            Text("Opret cloud-konto")
         }
-
-        Spacer(
-            modifier = Modifier.height(8.dp)
-        )
-
-        Text(
-            text = "Mindst 6 tegn",
-            style = MaterialTheme.typography.bodySmall
-        )
     }
 }
 

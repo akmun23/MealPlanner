@@ -94,6 +94,7 @@ internal object MealPlannerDatabaseProvider {
                 "meal_planner_local.db"
             )
                 .addMigrations(MIGRATION_1_2)
+                .fallbackToDestructiveMigration(dropAllTables = true)
                 .build().also {
                 instance = it
             }
@@ -146,9 +147,9 @@ internal class RoomSnapshotCache(
         .get(context)
         .householdSnapshotDao()
 
-    suspend fun load(): CloudSnapshot? {
-        val entity = dao.find(householdId) ?: return null
-        return RoomSnapshotCodec.decode(entity.payload)
+    suspend fun load(): CloudSnapshot {
+        val entity = dao.find(householdId) ?: return CloudSnapshot.EMPTY
+        return RoomSnapshotCodec.decode(entity.payload) ?: CloudSnapshot.EMPTY
     }
 
     suspend fun save(snapshot: CloudSnapshot) {

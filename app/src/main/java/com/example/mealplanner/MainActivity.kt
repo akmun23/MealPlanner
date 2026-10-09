@@ -6,7 +6,6 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -131,7 +130,7 @@ private val AppColors = lightColorScheme(
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        handleAuthDeepLinkSafely(intent)
+        SupabaseProvider.client.handleDeeplinks(intent)
 
         setContent {
             MaterialTheme(colorScheme = AppColors) {
@@ -145,19 +144,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        handleAuthDeepLinkSafely(intent)
-    }
-
-    private fun handleAuthDeepLinkSafely(intent: Intent) {
-        runCatching {
-            SupabaseProvider.client.handleDeeplinks(intent)
-        }.onFailure { error ->
-            Log.e(
-                "MealPlannerStartup",
-                "Auth client/deep-link initialization failed",
-                error
-            )
-        }
+        SupabaseProvider.client.handleDeeplinks(intent)
     }
 }
 

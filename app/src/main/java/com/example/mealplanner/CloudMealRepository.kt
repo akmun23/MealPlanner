@@ -221,7 +221,28 @@ data class CloudSnapshot(
     val weeklySandwichRecipeId: String?,
     val sandwichDay: DayOfWeek?,
     val history: List<MealHistoryEntry>
-)
+) {
+    companion object {
+        val EMPTY = CloudSnapshot(
+            ingredients = emptyList(),
+            ingredientCategories = emptyList(),
+            recipeCategories = emptyList(),
+            recipes = emptyList(),
+            pantry = emptyMap(),
+            dayModes = DayOfWeek.entries.associateWith { DayMode.AUTO },
+            dayMaxPrepMinutes = DayOfWeek.entries.associateWith { null },
+            plan = DayOfWeek.entries.associateWith { null },
+            lockedDays = emptySet(),
+            shoppingChecked = emptyMap(),
+            shoppingIncluded = emptyMap(),
+            selectedLunchRecipeIds = emptyList(),
+            weeklyPlanId = "local-week",
+            weeklySandwichRecipeId = null,
+            sandwichDay = null,
+            history = emptyList()
+        )
+    }
+}
 
 internal enum class CloudSyncDomain {
     INGREDIENTS,
