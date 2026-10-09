@@ -163,7 +163,6 @@ class MainActivity : ComponentActivity() {
                 ThemeMode.DARK -> true
                 ThemeMode.LIGHT -> false
             }
-
             MaterialTheme(colorScheme = if (dark) DarkAppColors else AppColors) {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     CloudGate(
@@ -196,6 +195,7 @@ private sealed interface AppPage {
     data object Settings : AppPage
     data object PlannerSettings : AppPage
     data object SyncStatus : AppPage
+    data object DataBackup : AppPage
     data object IngredientCategories : AppPage
     data object RecipeCategories : AppPage
     data class IngredientEditor(val ingredientId: String?) : AppPage
@@ -264,6 +264,7 @@ fun MealPlannerApp(
             AppPage.Settings -> null
             AppPage.PlannerSettings -> AppPage.Settings
             AppPage.SyncStatus -> AppPage.Settings
+            AppPage.DataBackup -> AppPage.Settings
             AppPage.IngredientCategories -> AppPage.Settings
             AppPage.RecipeCategories -> AppPage.Settings
             is AppPage.IngredientEditor -> null
@@ -344,6 +345,7 @@ fun MealPlannerApp(
             onRecipeCategories = { page = AppPage.RecipeCategories },
             onPlannerSettings = { page = AppPage.PlannerSettings },
             onSyncStatus = { page = AppPage.SyncStatus },
+            onDataBackup = { page = AppPage.DataBackup },
             themeMode = themeMode,
             onThemeModeChange = onThemeModeChange,
             onLogout = onLogout
@@ -355,6 +357,11 @@ fun MealPlannerApp(
         )
 
         AppPage.SyncStatus -> SyncStatusScreen(
+            state = state,
+            onBack = { navigateBack() }
+        )
+
+        AppPage.DataBackup -> DataBackupScreen(
             state = state,
             onBack = { navigateBack() }
         )
@@ -948,6 +955,7 @@ private fun SettingsScreen(
     onRecipeCategories: () -> Unit,
     onPlannerSettings: () -> Unit,
     onSyncStatus: () -> Unit,
+    onDataBackup: () -> Unit,
     themeMode: ThemeMode,
     onThemeModeChange: (ThemeMode) -> Unit,
     onLogout: () -> Unit
@@ -1152,6 +1160,16 @@ private fun SettingsScreen(
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Text("Status for synkronisering")
+                }
+            }
+
+            item {
+                OutlinedButton(
+                    onClick = onDataBackup,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("Sikkerhedskopi og mine data")
                 }
             }
 
@@ -1383,11 +1401,9 @@ internal fun ImagePickerBox(
         contentAlignment = Alignment.Center
     ) {
         if (!imageUri.isNullOrBlank()) {
-            AsyncImage(
-                model = imageUri,
-                contentDescription = null,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
+            MealImage(
+                imageUri = imageUri,
+                modifier = Modifier.fillMaxSize()
             )
 
             TextButton(
@@ -1424,14 +1440,12 @@ internal fun LargeImage(
     fallback: String
 ) {
     if (!imageUri.isNullOrBlank()) {
-        AsyncImage(
-            model = imageUri,
-            contentDescription = null,
+        MealImage(
+            imageUri = imageUri,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(210.dp)
-                .clip(RoundedCornerShape(22.dp)),
-            contentScale = ContentScale.Crop
+                .clip(RoundedCornerShape(22.dp))
         )
     } else {
         Surface(
@@ -1459,22 +1473,15 @@ internal fun AppThumbnail(
     fallback: String,
     modifier: Modifier = Modifier
 ) {
-    val context = LocalContext.current
     val boxSize = 60.dp
     val actualModifier = if (modifier == Modifier) Modifier.size(boxSize) else modifier
 
     if (!imageUri.isNullOrBlank()) {
-        val request = remember(imageUri) {
-            ImageRequest.Builder(context)
-                .data(imageUri)
-                .crossfade(true)
-                .build()
-        }
-        AsyncImage(
-            model = request,
-            contentDescription = null,
+        MealImage(
+            imageUri = imageUri,
             modifier = actualModifier.clip(RoundedCornerShape(16.dp)),
-            contentScale = ContentScale.Crop
+            thumbnail = true,
+            fallback = fallback
         )
     } else {
         Surface(

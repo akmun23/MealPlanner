@@ -63,7 +63,7 @@ fun PantryScreen(
             filterPantryIngredients(
                 ingredients = state.ingredients.toList(),
                 categories =
-                    state.ingredientCategories.toList(),
+                    state.ingredientCategories.sortedBy { it.name.lowercase() },
                 searchQuery = searchQuery,
                 selectedCategoryId = selectedCategoryId
             )
@@ -112,7 +112,7 @@ fun PantryScreen(
                 SimpleSelector(
                     label = selectedCategory?.name ?: "Alle kategorier",
                     options = listOf<IngredientCategory?>(null) +
-                        state.ingredientCategories.toList(),
+                        state.ingredientCategories.sortedBy { it.name.lowercase() },
                     optionText = { it?.name ?: "Alle kategorier" },
                     onSelected = { selectedCategoryId = it?.id }
                 )

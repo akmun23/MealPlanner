@@ -12,6 +12,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -117,6 +118,43 @@ class MealPlannerState(
         plannerWeights = PlannerWeights()
     }
 
+    /**
+     * Export the latest visible state, including changes not yet synchronized
+     * to the cloud. No auth/session secrets are included.
+     */
+    suspend fun exportPortableBackup(): String {
+        val snapshot = currentSnapshot()
+            ?: error("The household has not finished loading")
+        return withContext(Dispatchers.Default) {
+            SnapshotBackupCodec.encode(snapshot)
+        }
+    }
+
+    /**
+     * Restore backups only into an explicitly local-only household. Importing
+     * directly into a shared cloud household would bypass conflict tracking
+     * and overwrite other people's edits.
+     */
+    suspend fun restoreLocalBackup(payload: String) {
+        require(isLocalOnly) { "Import requires local-only mode" }
+        val restored = withContext(Dispatchers.Default) {
+            SnapshotBackupCodec.decode(payload)
+        }.copy(
+            weeklyPlanId = "local-week-${currentWeekStart()}"
+        )
+        cachePersistJob?.cancelAndJoin()
+        mutationQueueMutex.withLock {
+            // Persist first: the UI remains unchanged if disk persistence
+            // fails, and the restored data survives process termination.
+            withContext(Dispatchers.IO) {
+                roomCache.save(restored)
+            }
+            applySnapshot(restored)
+            syncTracker.markLocalChange(CloudSyncDomain.entries.toSet())
+            syncIndicator = SyncIndicator.SAVED
+        }
+    }
+
     var lastError by mutableStateOf<String?>(null)
         private set
 
@@ -145,6 +183,21 @@ class MealPlannerState(
 
         val initialLoad = scope.launch {
             initialize()
+        }
+        scope.launch {
+            initialLoad.join()
+            // Cache images for the other tabs without composing those screens
+            // and without blocking the first household frame.
+            delay(2_500L)
+            val recipesById = recipes.associateBy { it.id }
+            val imageReferences = buildList {
+                orderedWeekDays.mapNotNull { plan[it] }.forEach { id ->
+                    recipesById[id]?.imageUri?.let(::add)
+                }
+                recipes.forEach { it.imageUri?.let(::add) }
+                ingredients.forEach { it.imageUri?.let(::add) }
+            }
+            MealImagePrefetcher.warm(context.applicationContext, imageReferences)
         }
         if (!isLocalOnly) scope.launch {
             // During initial load, initialize() already attempts a refresh.
@@ -210,9 +263,11 @@ class MealPlannerState(
     private suspend fun initialize() {
         var hasCachedSnapshot = false
 
-        runCatching { roomCache.load() }
-            .getOrNull()
-            ?.let { cached ->
+        // The Room query itself suspends, but JSON decoding and
+        // projection hydration must also run off the main thread.
+        withContext(Dispatchers.IO) {
+            runCatching { roomCache.load() }.getOrNull()
+        }?.let { cached ->
                 applySnapshot(cached)
                 hasCachedSnapshot = true
                 isLoading = false
@@ -257,7 +312,21 @@ class MealPlannerState(
             if (!stillPending) {
                 // Even if there were edits when the app started, a successful
                 // drain must be followed by reconciliation with the server.
-                reload(syncHistory = true)
+                reload(syncHistory = false)
+                // Historical plan reconciliation can issue many writes. It is
+                // useful, but not needed to display recipes, pantry or week.
+                // Wait until the first frame is visible before doing it.
+                scope.launch {
+                    delay(2_000L)
+                    try {
+                        repository.reconcileRecentHistory()
+                        reload(CloudSyncDomain.HISTORY)
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        // The next sync can retry; never block the UI.
+                    }
+                }
             } else if (!hasCachedSnapshot) {
                 lastError = "Lokale ændringer afventer synkronisering. Prøv igen, når du er online."
             }
