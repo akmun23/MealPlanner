@@ -221,6 +221,7 @@ enum class AppTab(val label: String, val icon: ImageVector) {
 }
 
 private sealed interface AppPage {
+    data object MealHistory : AppPage
     data object Settings : AppPage
     data object PlannerSettings : AppPage
     data object SyncStatus : AppPage
@@ -292,6 +293,7 @@ fun MealPlannerApp(
     fun navigateBack() {
         page = when (val current = page) {
             AppPage.Settings -> null
+            AppPage.MealHistory -> null
             AppPage.PlannerSettings -> AppPage.Settings
             AppPage.SyncStatus -> AppPage.Settings
             AppPage.DataBackup -> AppPage.Settings
@@ -366,6 +368,11 @@ fun MealPlannerApp(
 
     Box(modifier = Modifier.fillMaxSize()) {
         when (val current = page) {
+        AppPage.MealHistory -> MealHistoryScreen(
+            state = state,
+            onBack = { navigateBack() }
+        )
+
         AppPage.Settings -> SettingsScreen(
             household = household,
             state = state,
@@ -490,6 +497,7 @@ fun MealPlannerApp(
                             when (visibleTab) {
                                 AppTab.WEEK -> WeekScreen(
                                     state = state,
+                                    onMealHistory = { page = AppPage.MealHistory },
                                     onOpenRecipe = {
                                         page = AppPage.RecipeDetail(it)
                                     },
