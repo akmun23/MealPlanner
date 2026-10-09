@@ -14,6 +14,11 @@ import zipfile
 
 
 def dex_metrics(apk: Path) -> dict[str, int]:
+    if not apk.is_file():
+        raise FileNotFoundError(
+            f"DEX comparison requires an APK file, but got {apk!s}. "
+            "Build the release baseline with :app:assembleRelease."
+        )
     with zipfile.ZipFile(apk) as archive:
         dex_entries = [
             info for info in archive.infolist()
