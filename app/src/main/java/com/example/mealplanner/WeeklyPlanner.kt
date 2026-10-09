@@ -43,6 +43,7 @@ object WeeklyPlanner {
         }
 
         val recipesById = recipes.associateBy { it.id }
+        val historyByRecipe = indexHistory(history)
         val homeDays = orderedWeekDays.filter { dayModes[it] != DayMode.AWAY }
 
         if (homeDays.isEmpty()) {
@@ -66,14 +67,20 @@ object WeeklyPlanner {
             }
         }
 
+        // Preparation constraints do not change between trials. Avoid
+        // refiltering all recipes on every simulated day (400 trials).
+        val unlockedHomeDays = homeDays.filter { it !in lockedDays }
+        val eligibleByDay = unlockedHomeDays.associateWith { day ->
+            dinnerRecipes.filter { recipe ->
+                fitsPrepLimit(recipe, maxPrepMinutesByDay[day])
+            }
+        }
         val candidates = ArrayList<Pair<Double, Map<DayOfWeek, String?>>>(TRIALS)
 
         repeat(TRIALS) {
             val chosen = currentPlan.toMutableMap()
 
-            homeDays.forEach { day ->
-                if (day !in lockedDays) chosen[day] = null
-            }
+            unlockedHomeDays.forEach { day -> chosen[day] = null }
 
             val usedIds = chosen
                 .filterKeys { it in homeDays && it in lockedDays }
@@ -81,15 +88,8 @@ object WeeklyPlanner {
                 .filterNotNull()
                 .toMutableSet()
 
-            homeDays
-                .filter { it !in lockedDays }
-                .forEach { day ->
-                    val eligible = dinnerRecipes.filter { recipe ->
-                        fitsPrepLimit(
-                            recipe = recipe,
-                            maxPrepMinutes = maxPrepMinutesByDay[day]
-                        )
-                    }
+            unlockedHomeDays.forEach { day ->
+                    val eligible = eligibleByDay.getValue(day)
 
                     val available = eligible.filter {
                         it.id != weeklySandwichRecipeId && it.id !in usedIds
@@ -109,7 +109,7 @@ object WeeklyPlanner {
                                     chosenRecipeIds = chosen.values.filterNotNull(),
                                     recipesById = recipesById,
                                     pantry = pantry,
-                                    history = history,
+                                    historyByRecipe = historyByRecipe,
                                     proteinIngredientIds = proteinIngredientIds,
                                     targetDate = weekStart.plusDays(day.value.toLong() - 1),
                                     weights = weights
@@ -133,7 +133,7 @@ object WeeklyPlanner {
                 recipesById = recipesById,
                 maxPrepMinutesByDay = maxPrepMinutesByDay,
                 pantry = pantry,
-                history = history,
+                historyByRecipe = historyByRecipe,
                 proteinIngredientIds = proteinIngredientIds,
                 weekStart = weekStart,
                 previousPlan = currentPlan,
@@ -148,7 +148,7 @@ object WeeklyPlanner {
                 dayModes = dayModes,
                 recipesById = recipesById,
                 pantry = pantry,
-                history = history,
+                historyByRecipe = historyByRecipe,
                 proteinIngredientIds = proteinIngredientIds,
                 weekStart = weekStart,
                 previousPlan = currentPlan,
@@ -187,6 +187,7 @@ object WeeklyPlanner {
                 hasRequiredPantryStock(it, pantry)
         }
         val recipesById = recipes.associateBy { it.id }
+        val historyByRecipe = indexHistory(history)
         val oldId = currentPlan[day]
         val usedElsewhere = orderedWeekDays
             .filter { it != day && dayModes[it] != DayMode.AWAY }
@@ -224,7 +225,7 @@ object WeeklyPlanner {
                     dayModes = dayModes,
                     recipesById = recipesById,
                     pantry = pantry,
-                    history = history,
+                    historyByRecipe = historyByRecipe,
                     proteinIngredientIds = proteinIngredientIds,
                     weekStart = weekStart,
                     previousPlan = currentPlan,
@@ -248,7 +249,7 @@ object WeeklyPlanner {
         recipesById: Map<String, Recipe>,
         maxPrepMinutesByDay: Map<DayOfWeek, Int?>,
         pantry: Map<String, Double>,
-        history: List<MealHistoryEntry>,
+        historyByRecipe: List<MealHistoryEntry>,
         proteinIngredientIds: Set<String>,
         weekStart: LocalDate,
         previousPlan: Map<DayOfWeek, String?>,
@@ -259,12 +260,15 @@ object WeeklyPlanner {
             it !in lockedDays && it != sandwichDay
         }
         if (swappable.size < 2) return plan
+        val activeDayModes = orderedWeekDays.associateWith {
+            if (it in homeDays) DayMode.AUTO else DayMode.AWAY
+        }
 
         var best = plan.toMutableMap()
         var bestScore = scoreWholeWeek(
             best, sandwichDay, sandwichRecipeId,
-            orderedWeekDays.associateWith { if (it in homeDays) DayMode.AUTO else DayMode.AWAY },
-            recipesById, pantry, history, proteinIngredientIds, weekStart, previousPlan, weights
+            activeDayModes,
+            recipesById, pantry, historyByRecipe, proteinIngredientIds, weekStart, previousPlan, weights
         )
 
         repeat(LOCAL_SEARCH_STEPS) {
@@ -289,8 +293,8 @@ object WeeklyPlanner {
 
             val score = scoreWholeWeek(
                 candidate, sandwichDay, sandwichRecipeId,
-                orderedWeekDays.associateWith { if (it in homeDays) DayMode.AUTO else DayMode.AWAY },
-                recipesById, pantry, history, proteinIngredientIds, weekStart, previousPlan, weights
+                activeDayModes,
+                recipesById, pantry, historyByRecipe, proteinIngredientIds, weekStart, previousPlan, weights
             )
             if (score > bestScore) {
                 best = candidate
@@ -324,7 +328,7 @@ object WeeklyPlanner {
         chosenRecipeIds: List<String>,
         recipesById: Map<String, Recipe>,
         pantry: Map<String, Double>,
-        history: List<MealHistoryEntry>,
+        historyByRecipe: List<MealHistoryEntry>,
         proteinIngredientIds: Set<String>,
         targetDate: LocalDate,
         weights: PlannerWeights
@@ -363,7 +367,7 @@ object WeeklyPlanner {
             score -= sameCategory * weights.repeatedCategory
         }
 
-        score -= recencyPenalty(recipe.id, history, targetDate, weights)
+        score -= recencyPenalty(recipe.id, historyByRecipe, targetDate, weights)
         return score
     }
 
@@ -374,7 +378,7 @@ object WeeklyPlanner {
         dayModes: Map<DayOfWeek, DayMode>,
         recipesById: Map<String, Recipe>,
         pantry: Map<String, Double>,
-        history: List<MealHistoryEntry>,
+        historyByRecipe: List<MealHistoryEntry>,
         proteinIngredientIds: Set<String>,
         weekStart: LocalDate,
         previousPlan: Map<DayOfWeek, String?>,
@@ -412,7 +416,7 @@ object WeeklyPlanner {
             if (recipe == null) return@forEachIndexed
             score -= recencyPenalty(
                 recipe.id,
-                history,
+                historyByRecipe,
                 weekStart.plusDays(day.value.toLong() - 1),
                 weights
             )
@@ -493,19 +497,27 @@ object WeeklyPlanner {
     private fun categoryKey(recipe: Recipe): String =
         recipe.categoryId.orEmpty()
 
+    // Build once per planning operation, rather than scanning all meal history
+    // for every recipe in every search trial and scoring pass.
+    private fun indexHistory(
+        history: List<MealHistoryEntry>
+    ): Map<String, List<LocalDate>> =
+        history.groupBy { it.recipeId }
+            .mapValues { (_, meals) ->
+                meals.map { it.eatenOn }.sortedDescending()
+            }
+
     private fun recencyPenalty(
         recipeId: String,
-        history: List<MealHistoryEntry>,
+        historyByRecipe: List<MealHistoryEntry>,
         targetDate: LocalDate,
         weights: PlannerWeights
     ): Double {
-        val latest = history
-            .asSequence()
-            .filter { it.recipeId == recipeId && !it.eatenOn.isAfter(targetDate) }
-            .maxByOrNull { it.eatenOn }
+        val latest = historyByRecipe[recipeId]
+            ?.firstOrNull { !it.isAfter(targetDate) }
             ?: return 0.0
 
-        return when (ChronoUnit.DAYS.between(latest.eatenOn, targetDate)) {
+        return when (ChronoUnit.DAYS.between(latest, targetDate)) {
             in 0..7 -> weights.recency7Days
             in 8..14 -> weights.recency14Days
             in 15..30 -> weights.recency30Days
