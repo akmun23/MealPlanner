@@ -10,7 +10,7 @@ function equal(a: unknown, b: unknown) {
     throw new Error("Expected " + JSON.stringify(b) + " got " + JSON.stringify(a));
 }
 
-function backend(opts: { selected?: string; match?: string; kind?: string; neverBuy?: boolean } = {}) {
+function backend(opts: { selected?: string; match?: string; kind?: string | null; neverBuy?: boolean } = {}) {
   const methods: string[] = [];
   const purchases: Array<Record<string, unknown>> = [];
   const defaults = [{ ingredient_id: ingredientId, product_id: opts.selected ?? "42",
@@ -34,7 +34,7 @@ function backend(opts: { selected?: string; match?: string; kind?: string; never
       }
       if (path.includes("/bilka_products?")) return [{
         id: "42", package_base_amount: 1000,
-        quantity_kind: opts.kind ?? "MASS", price_ore: 1800,
+        quantity_kind: opts.kind === undefined ? "MASS" : opts.kind, price_ore: 1800,
       }];
       if (path.includes("/shopping_product_overrides?")) return [];
       throw new Error("Unexpected path " + path);
@@ -164,4 +164,14 @@ Deno.test("never-buy ingredients cannot be bought via the Edge Function", async 
   }
   equal(result, "invalid_ingredient");
   equal(purchases.length, 0);
+});
+
+Deno.test("unknown Prej quantity unit permits manually verified purchased amount", async () => {
+  const { shopping, purchases } = backend({ kind: null });
+  await recordPurchase(shopping, {
+    weekId, ingredientId, productId: "42",
+    packageCount: 2, amountBase: 1250,
+  });
+  equal(purchases.length, 1);
+  equal(purchases[0].p_purchased_amount_base, 1250);
 });
