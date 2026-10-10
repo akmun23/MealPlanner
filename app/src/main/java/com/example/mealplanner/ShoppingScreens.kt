@@ -63,6 +63,7 @@ fun ShoppingScreen(state: MealPlannerState) {
     var bilkaCatalog by remember(weekId) { mutableStateOf<BilkaProductCatalog?>(null) }
     var bilkaContext by remember(weekId) { mutableStateOf<BilkaShoppingContext?>(null) }
     var bilkaLoading by remember(weekId) { mutableStateOf(!state.isLocalMode) }
+    var bilkaLoadError by remember(weekId) { mutableStateOf(false) }
 
     suspend fun refreshBilkaChoices() {
         if (state.isLocalMode || weekId == null) {
@@ -70,13 +71,16 @@ fun ShoppingScreen(state: MealPlannerState) {
             return
         }
         bilkaLoading = true
+        bilkaLoadError = false
         val catalog = BilkaPrejClient.catalog(state.householdIdentifier)
         val weekly = BilkaPrejClient.shoppingContext(state.householdIdentifier, weekId)
         if (catalog.isSuccess && weekly.isSuccess) {
             runCatching {
                 bilkaCatalog = parseBilkaCatalog(catalog.getOrThrow())
                 bilkaContext = decodeBilkaShoppingContext(weekly.getOrThrow())
-            }
+            }.onFailure { bilkaLoadError = true }
+        } else {
+            bilkaLoadError = true
         }
         bilkaLoading = false
     }
@@ -182,6 +186,19 @@ fun ShoppingScreen(state: MealPlannerState) {
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold
             )
+        }
+
+        if (!state.isLocalMode && bilkaLoadError) {
+            item {
+                Text(
+                    "Bilka-pakker kunne ikke hentes. Du kan prøve igen uden at ændre din indkøbsliste.",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                TextButton(onClick = { scope.launch { refreshBilkaChoices() } }) {
+                    Text("Hent Bilka-pakker igen")
+                }
+            }
         }
 
         if (shoppingItems.isNotEmpty()) {
@@ -313,7 +330,7 @@ fun ShoppingScreen(state: MealPlannerState) {
                         onEditPantry = {
                             editPantryItem = item
                         },
-                        onAddToPantry = if (bilkaLoading ||
+                        onAddToPantry = if (bilkaLoading || bilkaLoadError ||
                             bilkaContext?.purchase(item.ingredient.id)?.purchasedAmountBase != null
                         ) null else {
                             { addToPantryItem = item }
