@@ -1,4 +1,4 @@
-import { batchIds, dailyRemaining, toBilkaCacheRow, type PrejProduct } from "../bilka-prej/prej.ts";
+import { batchIds, dailyRemaining, toBilkaCacheRow, type PrejProduct } from "./prej.ts";
 
 export type Admin = (path: string, method: "GET" | "POST" | "PATCH", body?: unknown, prefer?: string) => Promise<unknown>;
 export type Rpc = (name: string, args: Record<string, unknown>) => Promise<unknown>;
