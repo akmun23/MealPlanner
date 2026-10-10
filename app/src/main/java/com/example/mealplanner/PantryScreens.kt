@@ -161,6 +161,29 @@ fun PantryScreen(
             )
         }
 
+        if (filtered.isEmpty()) {
+            item {
+                EmptyCard(
+                    if (state.ingredients.isEmpty()) {
+                        "Ingen ingredienser endnu. Tilføj en ingrediens for at komme i gang."
+                    } else {
+                        "Ingen ingredienser matcher dine filtre."
+                    }
+                )
+                if (searchQuery.isNotBlank() || selectedCategoryId != null ||
+                    stockFilter != PantryStockFilter.ALL ||
+                    sortOrder != PantrySortOrder.NAME_ASC
+                ) {
+                    TextButton(onClick = {
+                        searchQuery = ""
+                        selectedCategoryId = null
+                        stockFilterKey = PantryStockFilter.ALL.name
+                        sortOrderKey = PantrySortOrder.NAME_ASC.name
+                    }) { Text("Ryd filtre") }
+                }
+            }
+        }
+
         items(filtered, key = { it.id }) { ingredient ->
             val amount = state.pantry[ingredient.id] ?: 0.0
 
@@ -265,7 +288,11 @@ internal fun PantryAmountDialog(
                     parseDanishDecimal(amountText)?.let { !it.isFinite() || it < 0.0 } != false
                 ) {
                     Text(
-                        "Angiv en gyldig mængde. Brug Tøm lager for at fjerne beholdningen.",
+                        if (currentBase > 0.0) {
+                            "Angiv en gyldig mængde, eller brug Tøm lager."
+                        } else {
+                            "Angiv en gyldig mængde."
+                        },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.error
                     )
