@@ -355,7 +355,7 @@ internal fun BilkaProductPickerScreen(
     suspend fun reload() {
         busy = true
         error = null
-        BilkaPrejClient.catalog(householdId)
+        BilkaPrejClient.catalog(householdId, listOf(ingredientId))
             .onSuccess { raw ->
                 runCatching {
                     data = parseBilkaCatalog(raw)
