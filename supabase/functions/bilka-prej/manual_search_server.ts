@@ -1,4 +1,4 @@
-import { dailyRemaining, toBilkaCacheRow, type PrejProduct } from "./prej.ts";
+import { dailyRemaining, isFoodSearchResult, toBilkaCacheRow, type PrejProduct } from "./prej.ts";
 import { type CatalogServices } from "./catalog_server.ts";
 
 type Backend = CatalogServices & {
@@ -21,7 +21,7 @@ export async function manualProductSearch(
   ) as Array<{id: string; name: string; never_buy: boolean}>;
   if (!ingredients?.length || ingredients[0].never_buy) throw new Error("invalid_search");
 
-  const key = "q:bilka:grocery1:" + query.toLowerCase();
+  const key = "q:bilka:grocery1:food2:" + query.toLowerCase();
   const cached = await ctx.admin(
     "/rest/v1/bilka_search_cache?select=query_key,product_ids,expires_at" +
     "&query_key=eq." + encodeURIComponent(key) + "&limit=1",
@@ -69,7 +69,7 @@ export async function manualProductSearch(
 
     const payload = await response.json().catch(() => null);
     if (!payload || !Array.isArray(payload.products)) throw new Error("prej_unavailable");
-    const valid = (payload.products as PrejProduct[]).map(toBilkaCacheRow)
+    const valid = (payload.products as PrejProduct[]).filter(isFoodSearchResult).map(toBilkaCacheRow)
       .filter((p): p is NonNullable<typeof p> => p !== null);
     const unique = [...new Map(valid.map((p) => [p.id, p])).values()];
     if (unique.length) {
