@@ -40,6 +40,14 @@ internal object BilkaPrejClient {
     suspend fun refresh(householdId: String): Result<JsonObject> =
         call("refresh", householdId = householdId)
 
+    suspend fun manualSearch(
+        householdId: String,
+        ingredientId: String,
+        query: String
+    ): Result<JsonObject> =
+        call("manual-search", householdId = householdId,
+            ingredientId = ingredientId, query = query)
+
     suspend fun catalog(householdId: String): Result<JsonObject> =
         call("catalog", householdId = householdId)
 
@@ -62,7 +70,8 @@ internal object BilkaPrejClient {
         apiKey: String? = null,
         householdId: String? = null,
         ingredientId: String? = null,
-        productId: String? = null
+        productId: String? = null,
+        query: String? = null
     ): Result<JsonObject> = withContext(Dispatchers.IO) {
         runCatching {
             val accessToken = SupabaseProvider.client.auth.currentSessionOrNull()?.accessToken
@@ -73,6 +82,7 @@ internal object BilkaPrejClient {
                 householdId?.let { put("householdId", it) }
                 ingredientId?.let { put("ingredientId", it) }
                 productId?.let { put("productId", it) }
+                query?.let { put("query", it) }
             }
             val response = http.post(
                 BuildConfig.SUPABASE_URL.trimEnd('/') + "/functions/v1/bilka-prej"
@@ -93,6 +103,7 @@ internal object BilkaPrejClient {
                     "prej_key_not_configured" -> "Tilføj først din Prej API-nøgle"
                     "prej_key_invalid" -> "Nøglen er blevet ugyldig. Tilføj den igen"
                     "not_authenticated" -> "Log ind igen"
+                    "invalid_search" -> "Skriv et konkret varenavn på mindst to tegn."
                     "invalid_product_choice", "not_a_suggested_product" ->
                         "Denne vare er ikke længere tilgængelig. Opdatér produktlisten."
                     "prej_burst_limit" -> "For mange kald. Prøv igen senere"
