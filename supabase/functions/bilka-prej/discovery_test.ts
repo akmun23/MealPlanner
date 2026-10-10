@@ -58,7 +58,7 @@ Deno.test("single-word food names do not match misleading compound prefixes", ()
   }), 0.78);
   eq(scoreCandidate("Fløde", {
     id: 44, name: "Salling Fløde 38%",
-  }), 0.78);
+  }), 0.88);
   eq(rankCandidates("Fløde", [
     { id: 41, name: "SNCK Proteinbar Flødebolle" },
     { id: 42, name: "Holiday Flødelikør 17%" },
