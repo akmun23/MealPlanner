@@ -998,6 +998,16 @@ internal fun RecipeEditorScreen(
                         drafts.isNotEmpty() &&
                         drafts.all { it.amount > 0.0 } &&
                         prerequisiteDrafts.all { it.amount > 0.0 }
+    val saveHint = when {
+        name.isBlank() -> "Angiv opskriftens navn."
+        !recipeNameAvailable -> "Der findes allerede en opskrift med dette navn."
+        !prepTimeValid -> "Tid skal være mellem 1 og 1440 minutter."
+        drafts.isEmpty() -> "Tilføj mindst én ingrediens."
+        drafts.any { it.amount <= 0.0 } ||
+            prerequisiteDrafts.any { it.amount <= 0.0 } ->
+            "Ret de ugyldige ingrediensmængder."
+        else -> null
+    }
     val saveRecipe: () -> Unit = {
                         if (existing == null) {
                             val savedId = state.addRecipe(
@@ -1053,14 +1063,24 @@ internal fun RecipeEditorScreen(
         onBack = { requestBack() },
         bottomBar = {
             Surface(tonalElevation = 3.dp) {
-                Button(
-                    onClick = saveRecipe,
-                    enabled = canSave,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    shape = RoundedCornerShape(14.dp)
-                ) { Text("Gem opskrift") }
+                Column {
+                    saveHint?.let { hint ->
+                        Text(
+                            hint,
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp)
+                        )
+                    }
+                    Button(
+                        onClick = saveRecipe,
+                        enabled = canSave,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp),
+                        shape = RoundedCornerShape(14.dp)
+                    ) { Text("Gem opskrift") }
+                }
             }
         }
     ) { padding ->
