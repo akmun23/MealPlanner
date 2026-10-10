@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -43,6 +44,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -453,110 +456,97 @@ private fun ShoppingItemCard(
     onEditPantry: (() -> Unit)? = null,
     onAddToPantry: (() -> Unit)? = null
 ) {
+    val ingredient = item.ingredient
+    val missingBase = (item.requiredBase - item.pantryBase).coerceAtLeast(0.0)
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (checked) {
-                MaterialTheme.colorScheme.surfaceVariant
-            } else {
-                MaterialTheme.colorScheme.surface
-            }
+            containerColor = if (checked) MaterialTheme.colorScheme.surfaceVariant
+            else MaterialTheme.colorScheme.surface
         )
     ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically,
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 6.dp)
-        ) {
-            Checkbox(
-                checked = checked,
-                enabled = included,
-                onCheckedChange = {
-                    state.setShoppingChecked(
-                        item.ingredient.id,
-                        it
-                    )
-                }
-            )
-
-            Spacer(Modifier.width(4.dp))
-
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    item.ingredient.name,
-                    fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    textDecoration = if (checked) {
-                        TextDecoration.LineThrough
-                    } else {
-                        TextDecoration.None
-                    }
-                )
-
-                Text(
-                    "Behov " + state.formatBaseAmount(item.ingredient, item.requiredBase) +
-                        "  ·  Lager " + state.formatBaseAmount(item.ingredient, item.pantryBase),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                bilkaInfo?.let { info ->
-                    Text(
-                        info,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-            }
-
-            Spacer(Modifier.width(6.dp))
-
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                FilterChip(
-                    selected = included,
-                    onClick = {
-                        state.setShoppingIncluded(
-                            ingredientId = item.ingredient.id,
-                            included = !included
-                        )
+                Checkbox(
+                    checked = checked,
+                    enabled = included,
+                    modifier = Modifier.semantics {
+                        contentDescription = "Marker ${ingredient.name} som købt"
                     },
-                    label = { Text("Køb", style = MaterialTheme.typography.labelSmall) },
-                    modifier = Modifier.height(32.dp)
+                    onCheckedChange = { state.setShoppingChecked(ingredient.id, it) }
                 )
-
+                Spacer(Modifier.width(4.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        ingredient.name,
+                        fontWeight = FontWeight.Bold,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                        textDecoration = if (checked) TextDecoration.LineThrough
+                            else TextDecoration.None
+                    )
+                    Text(
+                        "Mangler ${state.formatBaseAmount(ingredient, missingBase)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        "Behov ${state.formatBaseAmount(ingredient, item.requiredBase)} · " +
+                            "Lager ${state.formatBaseAmount(ingredient, item.pantryBase)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 2
+                    )
+                    bilkaInfo?.let { info ->
+                        Text(
+                            info,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 2
+                        )
+                    }
+                }
                 if (onEditPantry != null) {
                     IconButton(
                         onClick = onEditPantry,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(48.dp)
                     ) {
                         Icon(
                             Icons.Filled.Edit,
-                            contentDescription = "Ret lager",
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant
+                            contentDescription = "Ret lager for ${ingredient.name}",
+                            modifier = Modifier.size(20.dp)
                         )
                     }
                 }
-
                 if (checked && onAddToPantry != null) {
                     IconButton(
                         onClick = onAddToPantry,
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(48.dp)
                     ) {
                         Icon(
                             Icons.Filled.Add,
-                            contentDescription = "Til lager",
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.primary
+                            contentDescription = "Tilføj ${ingredient.name} til lager",
+                            modifier = Modifier.size(20.dp)
                         )
                     }
+                }
+            }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.End
+            ) {
+                TextButton(
+                    onClick = {
+                        state.setShoppingIncluded(
+                            ingredientId = ingredient.id,
+                            included = !included
+                        )
+                    },
+                    modifier = Modifier.heightIn(min = 48.dp)
+                ) {
+                    Text(if (included) "Køb ikke" else "Tilføj til indkøb")
                 }
             }
         }
@@ -631,18 +621,19 @@ private fun AddPurchasedToPantryDialog(
             }
         },
         confirmButton = {
+            val validAmount = parseDanishDecimal(amountText)
+                ?.takeIf { it.isFinite() && it > 0.0 }
             Button(
                 onClick = {
-                    val amount = parseDanishDecimal(amountText)
-                    if (amount != null && amount > 0.0) {
-                        state.addPantryAmount(
-                            ingredientId = ingredient.id,
-                            amount = amount,
-                            unit = unit
-                        )
-                        onDismiss()
-                    }
-                }
+                    val amount = validAmount ?: return@Button
+                    state.addPantryAmount(
+                        ingredientId = ingredient.id,
+                        amount = amount,
+                        unit = unit
+                    )
+                    onDismiss()
+                },
+                enabled = validAmount != null
             ) {
                 Text("Tilføj")
             }

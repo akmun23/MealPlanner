@@ -36,6 +36,12 @@ enum class MeasurementUnit(
     fun toBase(amount: Double): Double = amount * toBaseFactor
     fun fromBase(amountBase: Double): Double = amountBase / toBaseFactor
 
+    /** Convert the displayed amount while preserving its underlying quantity. */
+    fun convertAmountTo(amount: Double, target: MeasurementUnit): Double? {
+        if (!amount.isFinite() || quantityType != target.quantityType) return null
+        return target.fromBase(toBase(amount))
+    }
+
     fun labelFor(amount: Double): String = when (this) {
         PACK -> if (abs(amount - 1.0) < 0.00001) "pakke" else "pakker"
         CAN -> if (abs(amount - 1.0) < 0.00001) "dåse" else "dåser"
@@ -222,8 +228,8 @@ fun prepLimitLabel(minutes: Int?): String = when (minutes) {
 
 fun prepLimitOptionLabel(minutes: Int?): String = when (minutes) {
     null -> "Alle retter"
-    30 -> "⚡ Hurtig ret (< 30 min)"
-    60 -> "⏳ God tid (> 30 min)"
+    30 -> "⚡ Højst 30 min"
+    60 -> "⏳ Højst 60 min"
     else -> if (minutes <= 30) "⚡ Hurtig ret" else "⏳ God tid"
 }
 
