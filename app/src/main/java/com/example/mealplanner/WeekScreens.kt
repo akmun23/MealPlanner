@@ -70,6 +70,36 @@ fun WeekScreen(
     val lunchOptions = state.recipes.filter { it.mealType == MealType.LUNCH }.sortedBy { it.name.lowercase() }
     var showLunchPicker by remember { mutableStateOf(false) }
     var showSandwichPicker by remember { mutableStateOf(false) }
+    var showGenerateConfirmation by remember { mutableStateOf(false) }
+
+    if (showGenerateConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showGenerateConfirmation = false },
+            title = { Text("Erstat den nuværende madplan?") },
+            text = {
+                Text(
+                    "En ny madplan erstatter retterne på dage, der ikke er låst. " +
+                        "Dine markeringer på indkøbslisten bliver nulstillet. " +
+                        "Låste retter bevares."
+                )
+            },
+            dismissButton = {
+                TextButton(onClick = { showGenerateConfirmation = false }) {
+                    Text("Annuller")
+                }
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showGenerateConfirmation = false
+                        state.generateWeek()
+                    }
+                ) {
+                    Text("Lav ny madplan")
+                }
+            }
+        )
+    }
 
     if (showSandwichPicker) {
         val sandwichOptions = state.recipes.filter {
@@ -292,7 +322,17 @@ fun WeekScreen(
 
         item(key = "week-generate") {
         Button(
-            onClick = { state.generateWeek() },
+            onClick = {
+                if (WeekRules.needsRegenerationConfirmation(
+                        currentPlan = state.plan,
+                        sandwichRecipeId = state.weeklySandwichRecipeId
+                    )
+                ) {
+                    showGenerateConfirmation = true
+                } else {
+                    state.generateWeek()
+                }
+            },
             enabled = state.recipes.any { it.mealType == MealType.DINNER } &&
                 homeCount > 0 &&
                 !state.isPlanning,
