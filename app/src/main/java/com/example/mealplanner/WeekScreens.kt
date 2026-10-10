@@ -21,6 +21,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
@@ -55,7 +57,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import java.time.DayOfWeek
 import java.time.LocalDate
+import java.time.format.DateTimeFormatter
 import java.time.temporal.TemporalAdjusters
+import java.time.temporal.WeekFields
+import java.util.Locale
 
 @Composable
 fun WeekScreen(
@@ -221,6 +226,56 @@ fun WeekScreen(
             fontWeight = FontWeight.Bold
         )
 
+        val start = state.displayedWeekStart
+        val end = start.plusDays(6)
+        val dateFormat = DateTimeFormatter.ofPattern("d. MMM", Locale.forLanguageTag("da-DK"))
+        val weekNumber = start.get(WeekFields.ISO.weekOfWeekBasedYear())
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            IconButton(
+                onClick = { state.changeDisplayedWeek(-1) },
+                enabled = !state.isLocalMode && !state.isWeekChanging
+            ) {
+                Icon(Icons.Filled.ChevronLeft, contentDescription = "Forrige uge")
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    "Uge $weekNumber · ${start.get(WeekFields.ISO.weekBasedYear())}",
+                    fontWeight = FontWeight.SemiBold
+                )
+                Text(
+                    "${start.format(dateFormat)} – ${end.format(dateFormat)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            IconButton(
+                onClick = { state.changeDisplayedWeek(1) },
+                enabled = !state.isLocalMode && !state.isWeekChanging
+            ) {
+                Icon(Icons.Filled.ChevronRight, contentDescription = "Næste uge")
+            }
+        }
+        if (start != LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)) &&
+            !state.isLocalMode
+        ) {
+            TextButton(
+                onClick = { state.showCurrentWeek() },
+                enabled = !state.isWeekChanging,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Tilbage til denne uge")
+            }
+        }
+        if (state.isWeekChanging) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(24.dp)
+            )
+        }
+
         Spacer(Modifier.height(6.dp))
         TextButton(onClick = onMealHistory) {
             Text("Spiste måltider / Madhistorik")
@@ -335,7 +390,8 @@ fun WeekScreen(
             },
             enabled = state.recipes.any { it.mealType == MealType.DINNER } &&
                 homeCount > 0 &&
-                !state.isPlanning,
+                !state.isPlanning &&
+                !state.isWeekChanging,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp),
@@ -405,8 +461,7 @@ fun DayCard(
     val isSandwich = recipe?.id != null && recipe.id == state.weeklySandwichRecipeId
     val isLocked = day in state.lockedDays
     val maxPrepMinutes = state.dayMaxPrepMinutes[day]
-    val mealDate = LocalDate.now()
-        .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+    val mealDate = state.displayedWeekStart
         .plusDays((day.value - 1).toLong())
     val eatenId = state.history.find { it.eatenOn == mealDate }?.recipeId
     val recipeCategory = if (recipe != null) {
