@@ -10,7 +10,7 @@ function equal(a: unknown, b: unknown) {
     throw new Error("Expected " + JSON.stringify(b) + " got " + JSON.stringify(a));
 }
 
-function backend(opts: { selected?: string; match?: string; kind?: string } = {}) {
+function backend(opts: { selected?: string; match?: string; kind?: string; neverBuy?: boolean } = {}) {
   const methods: string[] = [];
   const purchases: Array<Record<string, unknown>> = [];
   const defaults = [{ ingredient_id: ingredientId, product_id: opts.selected ?? "42",
@@ -27,7 +27,7 @@ function backend(opts: { selected?: string; match?: string; kind?: string } = {}
       methods.push(method + " " + path);
       if (method !== "GET") throw new Error("Checkout must write only through atomic RPC");
       if (path.includes("/weekly_plans?")) return [{ id: weekId }];
-      if (path.includes("/ingredients?")) return [{ id: ingredientId, quantity_type: "MASS" }];
+      if (path.includes("/ingredients?")) return [{ id: ingredientId, quantity_type: "MASS", never_buy: opts.neverBuy ?? false }];
       if (path.includes("/ingredient_bilka_defaults?")) return defaults;
       if (path.includes("/ingredient_bilka_candidates?")) {
         return opts.match ? [{ product_id: opts.match }] : [];
@@ -149,4 +149,19 @@ Deno.test("atomic purchase RPC is allowed, arbitrary service RPCs stay denied", 
   equal(ALLOWED_BILKA_RPCS.has("bilka_record_purchase"), true);
   equal(ALLOWED_BILKA_RPCS.has("bilka_update_prices_only"), false);
   equal(ALLOWED_BILKA_RPCS.has("pg_read_file"), false);
+});
+
+Deno.test("never-buy ingredients cannot be bought via the Edge Function", async () => {
+  const { shopping, purchases } = backend({ neverBuy: true });
+  let result = "";
+  try {
+    await recordPurchase(shopping, {
+      weekId, ingredientId, manualProductName: "Vand",
+      amountBase: 500,
+    });
+  } catch (e) {
+    result = (e as CheckoutError).code;
+  }
+  equal(result, "invalid_ingredient");
+  equal(purchases.length, 0);
 });
