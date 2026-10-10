@@ -22,4 +22,4 @@ jobs:
       - name: Type-check Edge Function
         run: deno check supabase/functions/bilka-prej/index.ts
       - name: Test Bilka-only mappings and batching
-        run: deno test supabase/functions/bilka-prej/prej_test.ts
+        run: deno test supabase/functions/bilka-prej/prej_test.ts supabase/functions/bilka-prej/discovery_test.ts
