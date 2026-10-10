@@ -1201,7 +1201,7 @@ private fun SettingsScreen(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(14.dp)
                 ) {
-                    Text("Bilka – min Prej API-nøgle")
+                    Text("Bilka-produkter og priser")
                 }
             }
 

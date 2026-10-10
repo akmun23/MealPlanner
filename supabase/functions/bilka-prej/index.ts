@@ -1,3 +1,4 @@
+import { discoverProducts, discoveryStatus, DiscoveryError } from "./discovery_server.ts";
 import {
   batchIds,
   dailyRemaining,
@@ -12,7 +13,7 @@ const PREJ_BASE = "https://api.prej.app";
 const DAILY_BUDGET = 20; // 25 free calls; keep 5 in reserve (including key checks).
 
 type Payload = {
-  action?: "status" | "set-key" | "remove-key" | "refresh";
+  action?: "status" | "set-key" | "verify-key" | "remove-key" | "refresh" | "discover" | "discovery-status";
   apiKey?: unknown;
   householdId?: unknown;
 };
@@ -36,14 +37,14 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-async function adminRequest(path: string, method: "GET" | "POST", body?: unknown): Promise<unknown> {
+async function adminRequest(path: string, method: "GET" | "POST", body?: unknown, prefer?: string): Promise<unknown> {
   const response = await fetch(SUPABASE_URL + path, {
     method,
     headers: {
       apikey: SERVICE_KEY,
       Authorization: "Bearer " + SERVICE_KEY,
       "Content-Type": "application/json",
-      Prefer: "return=representation,resolution=merge-duplicates",
+      Prefer: prefer ?? "return=representation,resolution=merge-duplicates",
     },
     body: body == null ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(15_000),
@@ -114,10 +115,8 @@ async function status(userId: string): Promise<Response> {
   });
 }
 
-async function storeKey(userId: string, rawKey: unknown): Promise<Response> {
-  if (!validPrejKey(rawKey)) throw new ClientError("invalid_key_format", 400);
-  // Even the initial credential check spends one Prej request.
-  // Reserve BEFORE contacting Prej so repeated key submissions cannot evade the cap.
+async function checkProviderKey(userId: string, apiKey: string): Promise<number | null> {
+  // Every validation, including a previously stored key, spends one Prej call.
   const reserved = await rpc("prej_reserve_call", {
     p_user_id: userId,
     p_daily_budget: DAILY_BUDGET,
@@ -128,7 +127,7 @@ async function storeKey(userId: string, rawKey: unknown): Promise<Response> {
   let remaining: number | null = null;
   try {
     check = await fetch(PREJ_BASE + "/v1/stats", {
-      headers: { Authorization: "Bearer " + rawKey },
+      headers: { Authorization: "Bearer " + apiKey },
       signal: AbortSignal.timeout(12_000),
     });
     remaining = dailyRemaining(check.headers);
@@ -143,13 +142,56 @@ async function storeKey(userId: string, rawKey: unknown): Promise<Response> {
     if (check.status === 429) throw new ClientError("prej_rate_limited", 429);
     throw new ClientError("prej_unavailable", 503);
   }
+  return remaining;
+}
+
+async function storeKey(userId: string, rawKey: unknown): Promise<Response> {
+  if (!validPrejKey(rawKey)) throw new ClientError("invalid_key_format", 400);
+  const remaining = await checkProviderKey(userId, rawKey);
   await rpc("prej_store_key", { p_user_id: userId, p_api_key: rawKey });
   return json({ connected: true, keyLastFour: rawKey.slice(-4), providerRemaining: remaining });
+}
+
+async function verifyStoredKey(userId: string): Promise<Response> {
+  const stored = await rpc("prej_read_key", { p_user_id: userId });
+  if (typeof stored !== "string" || !stored) throw new ClientError("prej_key_not_configured", 409);
+  const remaining = await checkProviderKey(userId, stored);
+  // Re-save only after successful provider validation so verified_at remains truthful.
+  await rpc("prej_store_key", { p_user_id: userId, p_api_key: stored });
+  return json({ connected: true, keyLastFour: stored.slice(-4), providerRemaining: remaining });
 }
 
 async function removeKey(userId: string): Promise<Response> {
   await rpc("prej_forget_key", { p_user_id: userId });
   return json({ connected: false });
+}
+
+async function verifiedHousehold(userId: string, householdId: unknown): Promise<string> {
+  if (!uuid(householdId)) throw new ClientError("invalid_household_id", 400);
+  const memberships = await adminRequest(
+    "/rest/v1/household_members?select=household_id&user_id=eq." +
+      encodeURIComponent(userId) + "&household_id=eq." + encodeURIComponent(householdId),
+    "GET",
+  ) as unknown[];
+  if (!memberships.length) throw new ClientError("not_household_member", 403);
+  return householdId;
+}
+
+async function discoveryAction(userId: string, householdId: unknown, run: boolean): Promise<Response> {
+  const id = await verifiedHousehold(userId, householdId);
+  const services = {
+    admin: adminRequest,
+    rpc,
+    fetchPrej: fetch,
+    userId,
+    householdId: id,
+  };
+  return json(run ? await discoverProducts(services) : await discoveryStatus(services).then(
+    (s) => ({
+      total: s.total, chosen: s.chosen, ready: s.ready,
+      noMatch: s.noMatch, incomplete: s.incomplete, pending: s.pending, remainingQueries: s.remainingQueries, items: s.items,
+    })
+  ));
 }
 
 async function refresh(userId: string, householdId: unknown): Promise<Response> {
@@ -246,12 +288,15 @@ Deno.serve(async (req) => {
     switch (input.action) {
       case "status": return await status(userId);
       case "set-key": return await storeKey(userId, input.apiKey);
+      case "verify-key": return await verifyStoredKey(userId);
       case "remove-key": return await removeKey(userId);
       case "refresh": return await refresh(userId, input.householdId);
+      case "discover": return await discoveryAction(userId, input.householdId, true);
+      case "discovery-status": return await discoveryAction(userId, input.householdId, false);
       default: return json({ error: "unknown_action" }, 400);
     }
   } catch (err) {
-    if (err instanceof ClientError) return json({ error: err.code }, err.status);
+    if (err instanceof ClientError || err instanceof DiscoveryError) return json({ error: err.code }, err.status);
     // No logging: even thrown provider/database errors could contain credentials.
     return json({ error: "internal_error" }, 500);
   }

@@ -33,10 +33,18 @@ internal object BilkaPrejClient {
     suspend fun saveKey(apiKey: String): Result<JsonObject> =
         call("set-key", apiKey = apiKey)
 
+    suspend fun verifySavedKey(): Result<JsonObject> = call("verify-key")
+
     suspend fun removeKey(): Result<JsonObject> = call("remove-key")
 
     suspend fun refresh(householdId: String): Result<JsonObject> =
         call("refresh", householdId = householdId)
+
+    suspend fun discoveryStatus(householdId: String): Result<JsonObject> =
+        call("discovery-status", householdId = householdId)
+
+    suspend fun discoverProducts(householdId: String): Result<JsonObject> =
+        call("discover", householdId = householdId)
 
     private suspend fun call(
         action: String,
