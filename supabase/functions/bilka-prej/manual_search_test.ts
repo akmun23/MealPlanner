@@ -45,17 +45,23 @@ Deno.test("manual product search reserves one user call and never changes defaul
       assert(String(url).includes("grocery=1"), "Search must exclude non-grocery categories");
       return Response.json({
         products: [
-          { id: 333, name: "Hvedemel 2 kg", brand: "Eksempelmærke",
+          { id: 333, name: "Hvedemel 2 kg", brand: "Eksempelmærke", category_name: "Kolonial",
             prices: [{ chain_slug: "bilka", price: 2000, unit_price: 1000 }] },
-          { id: 335, name: "Hvedemel 1 kg",
-            prices: [{ chain_slug: "bilkatogo", price: 800 }] }
+          { id: 335, name: "Hvedemel 1 kg", category_name: "Kolonial",
+            prices: [{ chain_slug: "bilkatogo", price: 800 }] },
+          { id: 336, name: "Hvedemel kropsskrub",
+            category_name: "Personlig pleje",
+            prices: [{ chain_slug: "bilka", price: 1400 }] },
+          { id: 337, name: "Hvedemel hundefoder",
+            category_name: "Dyremad",
+            prices: [{ chain_slug: "bilka", price: 1200 }] }
         ],
-        total: 2
+        total: 4
       });
     }
   };
   const first = await manualProductSearch(ctx, ingredient, "hvedemel");
-  assert(first.count === 1, "Exclude BilkaToGo products");
+  assert(first.count === 1, "Exclude BilkaToGo and non-food products");
   assert(!first.fromCache, "First call is fresh");
   assert(realRequests === 1, "Exactly one Prej call");
   assert(candidateRows.length === 1, "Only valid product suggested");
@@ -66,5 +72,5 @@ Deno.test("manual product search reserves one user call and never changes defaul
   const second = await manualProductSearch(ctx, ingredient, "hvedemel");
   assert(second.fromCache, "Second call from cache");
   assert(realRequests === 1, "Second search must use zero Prej calls");
-  assert((cache[0] as {query_key:string}).query_key.startsWith("q:bilka:grocery1:"), "No reuse of unfiltered search cache");
+  assert((cache[0] as {query_key:string}).query_key.startsWith("q:bilka:grocery1:food2:"), "No reuse of unfiltered search cache");
 });
