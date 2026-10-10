@@ -1319,6 +1319,10 @@ internal fun IngredientEditorScreen(
         mutableStateOf(existing?.isProtein ?: false)
     }
 
+    var neverBuy by remember(ingredientId) {
+        mutableStateOf(existing?.neverBuy ?: false)
+    }
+
     var shoppingCategoryId by remember(ingredientId) {
         mutableStateOf(
             existing?.shoppingCategoryId
@@ -1459,6 +1463,29 @@ internal fun IngredientEditorScreen(
             }
 
             item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Købes aldrig",
+                            fontWeight = FontWeight.Bold
+                        )
+                        Text(
+                            "Vises i opskrifter, men ikke på indkøbslisten",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                    Switch(
+                        checked = neverBuy,
+                        onCheckedChange = { neverBuy = it }
+                    )
+                }
+            }
+
+            item {
                 Text(
                     "Foretrukken enhed",
                     fontWeight = FontWeight.Bold
@@ -1503,6 +1530,7 @@ internal fun IngredientEditorScreen(
                                 type = type,
                                 shoppingCategoryId = shoppingCategoryId,
                                 isProtein = isProtein,
+                                neverBuy = neverBuy,
                                 imageUri = imageUri,
                                 preferredUnit = preferredUnit
                             )
@@ -1513,6 +1541,7 @@ internal fun IngredientEditorScreen(
                                 type = type,
                                 shoppingCategoryId = shoppingCategoryId,
                                 isProtein = isProtein,
+                                neverBuy = neverBuy,
                                 preferredUnit = preferredUnit,
                                 imageUri = imageUri
                             )
