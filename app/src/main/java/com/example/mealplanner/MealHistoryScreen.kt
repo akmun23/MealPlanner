@@ -127,6 +127,13 @@ internal fun MealHistoryScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 6.dp, bottom = 8.dp)
                 )
+                Text(
+                    "Hvis du retter eller fjerner et spist måltid her, ændres " +
+                        "lagerbeholdningen ikke automatisk.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
             }
             items(dates, key = { it.toString() }) { date ->
                 val logged = state.history.find { it.eatenOn == date }
