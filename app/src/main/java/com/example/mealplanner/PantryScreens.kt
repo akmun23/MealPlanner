@@ -290,7 +290,7 @@ internal fun PantryAmountDialog(
                         val entered = parseDanishDecimal(amountText)
                         if (entered != null && entered.isFinite()) {
                             amountText = formatDisplayNumber(
-                                selected.fromBase(unit.toBase(entered))
+                                unit.convertAmountTo(entered, selected) ?: entered
                             )
                         }
                         unit = selected
