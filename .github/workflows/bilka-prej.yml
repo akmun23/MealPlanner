@@ -26,7 +26,7 @@ jobs:
       - name: Test nightly quotas, DST and fixed product metadata
         run: deno test supabase/functions/bilka-nightly-refresh/nightly_test.ts
       - name: Test Bilka-only mappings and batching
-        run: deno test supabase/functions/bilka-prej/prej_test.ts supabase/functions/bilka-prej/discovery_test.ts supabase/functions/bilka-prej/catalog_test.ts supabase/functions/bilka-prej/manual_search_test.ts supabase/functions/bilka-prej/shopping_test.ts supabase/functions/bilka-prej/price_updates_test.ts
+        run: deno test supabase/functions/bilka-prej/key_management_test.ts supabase/functions/bilka-prej/prej_test.ts supabase/functions/bilka-prej/discovery_test.ts supabase/functions/bilka-prej/catalog_test.ts supabase/functions/bilka-prej/manual_search_test.ts supabase/functions/bilka-prej/shopping_test.ts supabase/functions/bilka-prej/price_updates_test.ts
       - name: Guard against malformed phase-5 and phase-6 SQL migrations
         run: |
           python3 - <<'PY'

@@ -214,6 +214,14 @@ internal fun BilkaApiSettingsScreen(
                             )
                         }
                         if (!verified) {
+                            Text(
+                                "Nøglen er gemt, men endnu ikke verificeret. " +
+                                    "Det bruger ét Prej-kald at verificere den. " +
+                                    "Når din dagskvote er brugt, kan du kontrollere den " +
+                                    "efter næste nulstilling kl. 00.00 UTC.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
                             Button(
                                 onClick = {
                                     busy = true
@@ -256,14 +264,21 @@ internal fun BilkaApiSettingsScreen(
                         Button(
                             onClick = {
                                 val submitted = apiKey
-                                apiKey = ""
                                 busy = true
                                 message = null
                                 scope.launch {
                                     BilkaPrejClient.saveKey(submitted)
-                                        .onSuccess {
+                                        .onSuccess { response ->
+                                            apiKey = ""
                                             BilkaPrejClient.status().onSuccess(::applyStatus)
-                                            message = "Din Prej-konto er nu forbundet."
+                                            message = if (response.bilkaText("verificationPending") == "true") {
+                                                "Den nye nøgle er gemt krypteret, men ikke " +
+                                                    "verificeret. Dagens kvote er brugt, så " +
+                                                    "søgninger kan først genoptages efter " +
+                                                    "næste kvotenulstilling og nøglekontrol."
+                                            } else {
+                                                "Din Prej-konto er nu forbundet."
+                                            }
                                         }
                                         .onFailure { message = it.message }
                                     busy = false
@@ -340,7 +355,7 @@ internal fun BilkaApiSettingsScreen(
                                 busy = false
                             }
                         },
-                        enabled = connected && !busy && !discoveryQuotaExhausted &&
+                        enabled = connected && verified && !busy && !discoveryQuotaExhausted &&
                             (importStatus == null || actionable),
                         modifier = Modifier.fillMaxWidth()
                     ) {
@@ -355,6 +370,7 @@ internal fun BilkaApiSettingsScreen(
                     Text(
                         when {
                             !connected -> "Tilføj din Prej-nøgle ovenfor for at starte søgningen."
+                            !verified -> "Kontrollér den gemte nøgle før produktsøgning."
                             importStatus != null && pending == 0 && ready > 0 ->
                                 "Du kan nu vælge mærke og størrelse i produktoversigten."
                             importStatus != null && pending == 0 ->
