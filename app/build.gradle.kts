@@ -45,6 +45,7 @@ android {
         targetSdk = 37
         versionCode = 7
         versionName = "1.2.3"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField(
             "String",
@@ -157,6 +158,12 @@ dependencies {
     testImplementation(libs.androidx.work.testing)
     testImplementation(libs.robolectric)
 
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.runner)
+
+    debugImplementation("androidx.compose.ui:ui-test-manifest")
     debugImplementation(
         libs.androidx.compose.ui.tooling
     )
