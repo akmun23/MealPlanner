@@ -251,6 +251,16 @@ fun ShoppingScreen(state: MealPlannerState) {
             )
         }
 
+        if (!state.isLocalMode && bilkaLoading) {
+            item {
+                Text(
+                    "Henter Bilka-pakker…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
         if (!state.isLocalMode && bilkaLoadError) {
             item {
                 Text(
