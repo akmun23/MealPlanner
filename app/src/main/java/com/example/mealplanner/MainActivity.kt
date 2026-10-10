@@ -392,7 +392,10 @@ fun MealPlannerApp(
             ingredientId = current.ingredientId,
             ingredientName = current.ingredientName,
             onBack = { navigateBack() },
-            onSaved = { page = AppPage.BilkaProducts },
+            onSaved = {
+                state.refreshNow()
+                page = AppPage.BilkaProducts
+            },
             onImport = { page = AppPage.BilkaApiSettings }
         )
 
