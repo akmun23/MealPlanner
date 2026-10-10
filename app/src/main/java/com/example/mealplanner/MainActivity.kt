@@ -397,7 +397,8 @@ fun MealPlannerApp(
 
         AppPage.BilkaApiSettings -> BilkaApiSettingsScreen(
             householdId = household.id,
-            onBack = { navigateBack() }
+            onBack = { navigateBack() },
+            onViewProducts = { page = AppPage.BilkaProducts }
         )
 
         AppPage.PlannerSettings -> PlannerSettingsScreen(
