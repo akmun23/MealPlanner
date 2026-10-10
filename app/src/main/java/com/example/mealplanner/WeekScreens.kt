@@ -294,6 +294,19 @@ fun WeekScreen(
             Spacer(Modifier.width(8.dp))
             Text("Ny madplan", fontWeight = FontWeight.Bold)
         }
+        if (state.recipes.none { it.mealType == MealType.DINNER }) {
+            Text(
+                "Tilføj mindst én aftensmadsopskrift for at generere en madplan.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else if (homeCount == 0) {
+            Text(
+                "Vælg mindst én dag, hvor du spiser hjemme.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
         Spacer(Modifier.height(8.dp))
         if (start != LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)) &&
             !state.isLocalMode
@@ -606,7 +619,7 @@ fun DayCard(
                 if (!away && recipe != null) {
                     IconButton(
                         onClick = { state.toggleLockDay(day) },
-                        modifier = Modifier.size(36.dp)
+                        modifier = Modifier.size(48.dp)
                     ) {
                         Icon(
                             imageVector = if (isLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
