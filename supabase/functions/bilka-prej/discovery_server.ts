@@ -137,6 +137,7 @@ export async function discoverProducts(ctx: DiscoveryServices) {
       "POST", jobRows);
   }
 
+  const deadline = Date.now() + 25_000; // Keep one button press responsive.
   let calls = 0;
   let fromCache = 0;
   let addedCandidates = 0;
@@ -192,7 +193,7 @@ export async function discoverProducts(ctx: DiscoveryServices) {
       cached.forEach((c) => known.add(c.id));
       return cacheProducts(cached);
     }
-    if (calls >= REQUESTS_PER_RUN) {
+    if (calls >= REQUESTS_PER_RUN || Date.now() >= deadline) {
       stopped = true;
       stopReason = "run_call_limit";
       return null;
