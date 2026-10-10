@@ -108,6 +108,23 @@ data class Ingredient(
     val imagePath: String? = null
 )
 
+/**
+ * Existing quantities are stored in base units without a quantity-kind tag.
+ * Reinterpreting those values as mass/volume/count would silently corrupt data.
+ */
+internal fun canChangeIngredientQuantityType(
+    ingredient: Ingredient,
+    newType: QuantityType,
+    pantryBase: Double,
+    recipes: List<Recipe>
+): Boolean = ingredient.quantityType == newType || (
+    pantryBase == 0.0 &&
+        recipes.none { recipe ->
+            recipe.ingredients.any { it.ingredientId == ingredient.id } ||
+                recipe.pantryPrerequisites.any { it.ingredientId == ingredient.id }
+        }
+)
+
 @Serializable
 data class RecipeIngredient(
     val ingredientId: String,
