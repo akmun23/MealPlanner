@@ -1,4 +1,5 @@
 import { recordPurchase, shoppingContext, CheckoutError } from "./shopping_server.ts";
+import { ALLOWED_BILKA_RPCS } from "./rpc_allowlist.ts";
 
 const householdId = "43d180fe-eef9-48c0-bd28-b6f0f9c88391";
 const weekId = "2a8bf4c0-55f4-49d5-bba0-4ef76836f56b";
@@ -142,4 +143,10 @@ Deno.test("UUID validation accepts the canonical five groups and rejects malform
     ingredientError = (e as CheckoutError).code;
   }
   equal(ingredientError, "invalid_ingredient");
+});
+
+Deno.test("atomic purchase RPC is allowed, arbitrary service RPCs stay denied", () => {
+  equal(ALLOWED_BILKA_RPCS.has("bilka_record_purchase"), true);
+  equal(ALLOWED_BILKA_RPCS.has("bilka_update_prices_only"), false);
+  equal(ALLOWED_BILKA_RPCS.has("pg_read_file"), false);
 });
