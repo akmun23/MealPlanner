@@ -110,7 +110,7 @@ begin
         calls_completed, last_remaining_reported
     ) values (
         p_user_id, (now() at time zone 'utc')::date,
-        1, 1, greatest(0, p_remaining)
+        1, 1, case when p_remaining is null then null else greatest(0, p_remaining) end
     ) on conflict (user_id, quota_date_utc) do update set
         calls_reserved = public.prej_api_usage.calls_reserved + 1,
         calls_completed = public.prej_api_usage.calls_completed + 1,
