@@ -116,20 +116,34 @@ async function status(userId: string): Promise<Response> {
 
 async function storeKey(userId: string, rawKey: unknown): Promise<Response> {
   if (!validPrejKey(rawKey)) throw new ClientError("invalid_key_format", 400);
-  // Validate once without sending the secret to any local log/database output.
-  // Validation itself spends a Prej request. No key is stored on 401.
-  const check = await fetch(PREJ_BASE + "/v1/stats", {
-    headers: { Authorization: "Bearer " + rawKey },
-    signal: AbortSignal.timeout(12_000),
+  // Even the initial credential check spends one Prej request.
+  // Reserve BEFORE contacting Prej so repeated key submissions cannot evade the cap.
+  const reserved = await rpc("prej_reserve_call", {
+    p_user_id: userId,
+    p_daily_budget: DAILY_BUDGET,
   });
+  if (reserved !== true) throw new ClientError("daily_budget_exhausted", 429);
+
+  let check: Response;
+  let remaining: number | null = null;
+  try {
+    check = await fetch(PREJ_BASE + "/v1/stats", {
+      headers: { Authorization: "Bearer " + rawKey },
+      signal: AbortSignal.timeout(12_000),
+    });
+    remaining = dailyRemaining(check.headers);
+  } catch {
+    throw new ClientError("prej_unavailable", 503);
+  } finally {
+    await rpc("prej_complete_call", { p_user_id: userId, p_remaining: remaining });
+  }
+
   if (check.status === 401) throw new ClientError("invalid_key", 400);
   if (!check.ok) {
     if (check.status === 429) throw new ClientError("prej_rate_limited", 429);
     throw new ClientError("prej_unavailable", 503);
   }
-  const remaining = dailyRemaining(check.headers);
   await rpc("prej_store_key", { p_user_id: userId, p_api_key: rawKey });
-  await rpc("prej_record_key_check", { p_user_id: userId, p_remaining: remaining });
   return json({ connected: true, keyLastFour: rawKey.slice(-4), providerRemaining: remaining });
 }
 
