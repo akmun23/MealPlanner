@@ -16,6 +16,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -96,6 +97,9 @@ internal fun BilkaApiSettingsScreen(
     var localUsed by remember { mutableStateOf(0) }
     var localBudget by remember { mutableStateOf(20) }
     var providerRemaining by remember { mutableStateOf<String?>(null) }
+    var nightlyEnabled by remember(householdId) { mutableStateOf(false) }
+    var nightlyLastRun by remember(householdId) { mutableStateOf<String?>(null) }
+    var nightlyLoaded by remember(householdId) { mutableStateOf(false) }
     var importStatus by remember { mutableStateOf<JsonObject?>(null) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
@@ -119,6 +123,13 @@ internal fun BilkaApiSettingsScreen(
         BilkaPrejClient.discoveryStatus(householdId)
             .onSuccess { importStatus = it }
             .onFailure { message = it.message }
+        BilkaPrejClient.nightlyStatus(householdId)
+            .onSuccess {
+                nightlyEnabled = it.bilkaText("enabled") == "true"
+                nightlyLastRun = it.bilkaText("lastUpdatedAt")
+                nightlyLoaded = true
+            }
+            .onFailure { nightlyLoaded = false }
         busy = false
     }
 
@@ -140,6 +151,7 @@ internal fun BilkaApiSettingsScreen(
                         BilkaPrejClient.removeKey()
                             .onSuccess {
                                 connected = false
+                                nightlyEnabled = false
                                 verified = false
                                 suffix = null
                                 apiKey = ""
@@ -359,6 +371,64 @@ internal fun BilkaApiSettingsScreen(
             }
 
             if (connected) {
+                item {
+                    SectionCard("4. Automatisk opdatering af priser") {
+                        Text(
+                            "Opdatér dine valgte Bilka-priser hver morgen omkring kl. 05. " +
+                                "Vi skifter aldrig mærke eller pakkestørrelse.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text("Automatisk prisopdatering", fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    if (!verified) "Kontrollér først din nøgle"
+                                    else if (!nightlyLoaded) "Kunne ikke hente indstillingen"
+                                    else if (nightlyEnabled) "Slået til for din konto"
+                                    else "Slået fra",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Switch(
+                                checked = nightlyEnabled,
+                                onCheckedChange = { desired ->
+                                    busy = true
+                                    message = null
+                                    scope.launch {
+                                        BilkaPrejClient.setNightlyEnabled(householdId, desired)
+                                            .onSuccess {
+                                                nightlyEnabled = desired
+                                                message = if (desired)
+                                                    "Automatisk prisopdatering er slået til."
+                                                else "Automatisk prisopdatering er slået fra."
+                                            }
+                                            .onFailure { message = it.message }
+                                        busy = false
+                                    }
+                                },
+                                enabled = !busy && verified && nightlyLoaded
+                            )
+                        }
+                        nightlyLastRun?.let { last ->
+                            Text(
+                                "Seneste kørsel: " + last.take(16).replace("T", " ") + " UTC",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Text(
+                            "Der bruges kun din egen Prej-kvote. " +
+                                "Hvis du fjerner din nøgle, slås automatisk opdatering fra.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
                 item {
                     OutlinedButton(
                         onClick = {

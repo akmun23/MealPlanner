@@ -21,5 +21,9 @@ jobs:
           deno-version: v2.x
       - name: Type-check Edge Function
         run: deno check supabase/functions/bilka-prej/index.ts
+      - name: Type-check opt-in nightly price worker
+        run: deno check supabase/functions/bilka-nightly-refresh/index.ts
+      - name: Test nightly quotas, DST and fixed product metadata
+        run: deno test supabase/functions/bilka-nightly-refresh/nightly_test.ts
       - name: Test Bilka-only mappings and batching
         run: deno test supabase/functions/bilka-prej/prej_test.ts supabase/functions/bilka-prej/discovery_test.ts supabase/functions/bilka-prej/catalog_test.ts supabase/functions/bilka-prej/manual_search_test.ts

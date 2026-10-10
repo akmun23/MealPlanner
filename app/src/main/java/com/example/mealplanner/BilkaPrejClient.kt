@@ -37,6 +37,15 @@ internal object BilkaPrejClient {
 
     suspend fun removeKey(): Result<JsonObject> = call("remove-key")
 
+    suspend fun nightlyStatus(householdId: String): Result<JsonObject> =
+        call("nightly-status", householdId = householdId)
+
+    suspend fun setNightlyEnabled(
+        householdId: String,
+        enabled: Boolean
+    ): Result<JsonObject> =
+        call("set-nightly", householdId = householdId, enabled = enabled)
+
     suspend fun refresh(householdId: String): Result<JsonObject> =
         call("refresh", householdId = householdId)
 
@@ -71,7 +80,8 @@ internal object BilkaPrejClient {
         householdId: String? = null,
         ingredientId: String? = null,
         productId: String? = null,
-        query: String? = null
+        query: String? = null,
+        enabled: Boolean? = null
     ): Result<JsonObject> = withContext(Dispatchers.IO) {
         runCatching {
             val accessToken = SupabaseProvider.client.auth.currentSessionOrNull()?.accessToken
@@ -83,6 +93,7 @@ internal object BilkaPrejClient {
                 ingredientId?.let { put("ingredientId", it) }
                 productId?.let { put("productId", it) }
                 query?.let { put("query", it) }
+                enabled?.let { put("enabled", it) }
             }
             val response = http.post(
                 BuildConfig.SUPABASE_URL.trimEnd('/') + "/functions/v1/bilka-prej"
@@ -101,6 +112,8 @@ internal object BilkaPrejClient {
                     "prej_rate_limited", "daily_budget_exhausted", "prej_daily_limit" ->
                         "Dagens Prej-kvote er brugt"
                     "prej_key_not_configured" -> "Tilføj først din Prej API-nøgle"
+                    "prej_key_not_verified" ->
+                        "Kontrollér først din Prej-nøgle, før automatisk opdatering aktiveres"
                     "prej_key_invalid" -> "Nøglen er blevet ugyldig. Tilføj den igen"
                     "not_authenticated" -> "Log ind igen"
                     "invalid_search" -> "Skriv et konkret varenavn på mindst to tegn."
