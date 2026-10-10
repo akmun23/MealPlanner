@@ -205,6 +205,7 @@ private sealed interface AppPage {
     data object MealHistory : AppPage
     data object Settings : AppPage
     data object PlannerSettings : AppPage
+    data object BilkaApiSettings : AppPage
     data object SyncStatus : AppPage
     data object DataBackup : AppPage
     data object IngredientCategories : AppPage
@@ -277,6 +278,7 @@ fun MealPlannerApp(
             AppPage.Settings -> null
             AppPage.MealHistory -> null
             AppPage.PlannerSettings -> AppPage.Settings
+            AppPage.BilkaApiSettings -> AppPage.Settings
             AppPage.SyncStatus -> AppPage.Settings
             AppPage.DataBackup -> AppPage.Settings
             AppPage.IngredientCategories -> AppPage.Settings
@@ -363,11 +365,17 @@ fun MealPlannerApp(
             onIngredientCategories = { page = AppPage.IngredientCategories },
             onRecipeCategories = { page = AppPage.RecipeCategories },
             onPlannerSettings = { page = AppPage.PlannerSettings },
+            onBilkaApiSettings = { page = AppPage.BilkaApiSettings },
             onSyncStatus = { page = AppPage.SyncStatus },
             onDataBackup = { page = AppPage.DataBackup },
             themeMode = themeMode,
             onThemeModeChange = onThemeModeChange,
             onLogout = onLogout
+        )
+
+        AppPage.BilkaApiSettings -> BilkaApiSettingsScreen(
+            householdId = household.id,
+            onBack = { navigateBack() }
         )
 
         AppPage.PlannerSettings -> PlannerSettingsScreen(
@@ -967,6 +975,7 @@ private fun SettingsScreen(
     onIngredientCategories: () -> Unit,
     onRecipeCategories: () -> Unit,
     onPlannerSettings: () -> Unit,
+    onBilkaApiSettings: () -> Unit,
     onSyncStatus: () -> Unit,
     onDataBackup: () -> Unit,
     themeMode: ThemeMode,
@@ -1183,6 +1192,16 @@ private fun SettingsScreen(
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Text("Sikkerhedskopi og mine data")
+                }
+            }
+
+            item {
+                OutlinedButton(
+                    onClick = onBilkaApiSettings,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("Bilka – min Prej API-nøgle")
                 }
             }
 

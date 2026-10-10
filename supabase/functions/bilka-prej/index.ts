@@ -1,0 +1,258 @@
+import {
+  batchIds,
+  dailyRemaining,
+  toBilkaCacheRow,
+  validPrejKey,
+  type PrejProduct,
+} from "./prej.ts";
+
+const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
+const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const PREJ_BASE = "https://api.prej.app";
+const DAILY_BUDGET = 20; // 25 free calls; keep 5 in reserve (including key checks).
+
+type Payload = {
+  action?: "status" | "set-key" | "remove-key" | "refresh";
+  apiKey?: unknown;
+  householdId?: unknown;
+};
+
+class ClientError extends Error {
+  constructor(public code: string, public status: number) {
+    super(code);
+  }
+}
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info",
+      "Access-Control-Allow-Methods": "POST, OPTIONS",
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
+async function adminRequest(path: string, method: "GET" | "POST", body?: unknown): Promise<unknown> {
+  const response = await fetch(SUPABASE_URL + path, {
+    method,
+    headers: {
+      apikey: SERVICE_KEY,
+      Authorization: "Bearer " + SERVICE_KEY,
+      "Content-Type": "application/json",
+      Prefer: "return=representation,resolution=merge-duplicates",
+    },
+    body: body == null ? undefined : JSON.stringify(body),
+    signal: AbortSignal.timeout(15_000),
+  });
+  if (!response.ok) {
+    // Never propagate SQL errors: they may include function arguments (API secrets).
+    throw new ClientError("database_unavailable", 503);
+  }
+  const txt = await response.text();
+  return txt.length ? JSON.parse(txt) : null;
+}
+
+async function rpc(name: string, args: Record<string, unknown>): Promise<unknown> {
+  const safe = new Set([
+    "prej_store_key",
+    "prej_read_key",
+    "prej_forget_key",
+    "prej_record_key_check",
+    "prej_reserve_call",
+    "prej_complete_call",
+  ]);
+  if (!safe.has(name)) throw new Error("Unknown RPC");
+  return await adminRequest("/rest/v1/rpc/" + name, "POST", args);
+}
+
+async function currentUser(req: Request): Promise<string> {
+  const auth = req.headers.get("Authorization") ?? "";
+  if (!/^Bearer \S+$/.test(auth)) throw new ClientError("not_authenticated", 401);
+  const response = await fetch(SUPABASE_URL + "/auth/v1/user", {
+    headers: { apikey: SERVICE_KEY, Authorization: auth },
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!response.ok) throw new ClientError("not_authenticated", 401);
+  const user = await response.json();
+  if (!user?.id || typeof user.id !== "string") throw new ClientError("not_authenticated", 401);
+  return user.id;
+}
+
+function uuid(value: unknown): value is string {
+  return typeof value === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+}
+
+function utcDate(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
+async function status(userId: string): Promise<Response> {
+  const rows = await adminRequest(
+    "/rest/v1/prej_user_credentials?select=key_last_four,enabled,verified_at&user_id=eq." + encodeURIComponent(userId),
+    "GET",
+  ) as Array<{ key_last_four: string; enabled: boolean; verified_at: string | null }>;
+  const usage = await adminRequest(
+    "/rest/v1/prej_api_usage?select=calls_reserved,calls_completed,last_remaining_reported&user_id=eq." +
+      encodeURIComponent(userId) + "&quota_date_utc=eq." + utcDate(),
+    "GET",
+  ) as Array<{ calls_reserved: number; calls_completed: number; last_remaining_reported: number | null }>;
+  const used = usage[0]?.calls_reserved ?? 0;
+  return json({
+    connected: rows.length > 0 && rows[0].enabled,
+    keyLastFour: rows[0]?.key_last_four ?? null,
+    verifiedAt: rows[0]?.verified_at ?? null,
+    localBudget: DAILY_BUDGET,
+    locallyReserved: used,
+    locallyAvailable: Math.max(0, DAILY_BUDGET - used),
+    providerRemaining: usage[0]?.last_remaining_reported ?? null,
+    quotaDateUtc: utcDate(),
+  });
+}
+
+async function storeKey(userId: string, rawKey: unknown): Promise<Response> {
+  if (!validPrejKey(rawKey)) throw new ClientError("invalid_key_format", 400);
+  // Even the initial credential check spends one Prej request.
+  // Reserve BEFORE contacting Prej so repeated key submissions cannot evade the cap.
+  const reserved = await rpc("prej_reserve_call", {
+    p_user_id: userId,
+    p_daily_budget: DAILY_BUDGET,
+  });
+  if (reserved !== true) throw new ClientError("daily_budget_exhausted", 429);
+
+  let check: Response;
+  let remaining: number | null = null;
+  try {
+    check = await fetch(PREJ_BASE + "/v1/stats", {
+      headers: { Authorization: "Bearer " + rawKey },
+      signal: AbortSignal.timeout(12_000),
+    });
+    remaining = dailyRemaining(check.headers);
+  } catch {
+    throw new ClientError("prej_unavailable", 503);
+  } finally {
+    await rpc("prej_complete_call", { p_user_id: userId, p_remaining: remaining });
+  }
+
+  if (check.status === 401) throw new ClientError("invalid_key", 400);
+  if (!check.ok) {
+    if (check.status === 429) throw new ClientError("prej_rate_limited", 429);
+    throw new ClientError("prej_unavailable", 503);
+  }
+  await rpc("prej_store_key", { p_user_id: userId, p_api_key: rawKey });
+  return json({ connected: true, keyLastFour: rawKey.slice(-4), providerRemaining: remaining });
+}
+
+async function removeKey(userId: string): Promise<Response> {
+  await rpc("prej_forget_key", { p_user_id: userId });
+  return json({ connected: false });
+}
+
+async function refresh(userId: string, householdId: unknown): Promise<Response> {
+  if (!uuid(householdId)) throw new ClientError("invalid_household_id", 400);
+  const memberships = await adminRequest(
+    "/rest/v1/household_members?select=household_id&user_id=eq." +
+      encodeURIComponent(userId) + "&household_id=eq." + encodeURIComponent(householdId),
+    "GET",
+  ) as unknown[];
+  if (!memberships.length) throw new ClientError("not_household_member", 403);
+
+  const defaults = await adminRequest(
+    "/rest/v1/ingredient_bilka_defaults?select=product_id&household_id=eq." +
+      encodeURIComponent(householdId),
+    "GET",
+  ) as Array<{ product_id: string }>;
+  const distinct = [...new Set(defaults.map((d) => d.product_id))];
+  if (!distinct.length) return json({ updated: 0, requested: 0, message: "no_selected_products" });
+
+  // Phase 2 refreshes up to one batch. Discovery/queue is phase 3.
+  const batches = batchIds(distinct, 500);
+  const ids = batches[0] ?? [];
+  const existing = await adminRequest(
+    "/rest/v1/bilka_products?select=id,price_updated_at&id=in.(" + ids.join(",") + ")",
+    "GET",
+  ) as Array<{ id: string; price_updated_at: string | null }>;
+  const ageCutoff = Date.now() - 20 * 60 * 60 * 1000;
+  const recentlyUpdated = new Set(existing.filter((p) =>
+    p.price_updated_at && Date.parse(p.price_updated_at) >= ageCutoff
+  ).map((p) => p.id));
+  const stale = ids.filter((id) => !recentlyUpdated.has(id));
+  if (!stale.length) {
+    return json({ updated: 0, requested: 0, skippedFresh: ids.length, remainingProducts: distinct.length - ids.length });
+  }
+
+  const key = await rpc("prej_read_key", { p_user_id: userId });
+  if (typeof key !== "string" || !key) throw new ClientError("prej_key_not_configured", 409);
+
+  const reserved = await rpc("prej_reserve_call", {
+    p_user_id: userId,
+    p_daily_budget: DAILY_BUDGET,
+  });
+  if (reserved !== true) throw new ClientError("daily_budget_exhausted", 429);
+
+  let remaining: number | null = null;
+  let response: Response;
+  try {
+    response = await fetch(
+      PREJ_BASE + "/v1/products/batch?ids=" + encodeURIComponent(stale.join(",")),
+      {
+        headers: { Authorization: "Bearer " + key },
+        signal: AbortSignal.timeout(20_000),
+      },
+    );
+    remaining = dailyRemaining(response.headers);
+  } catch {
+    throw new ClientError("prej_unavailable", 503);
+  } finally {
+    // Reservation counts even when Prej fails, to avoid overspending the free plan.
+    await rpc("prej_complete_call", { p_user_id: userId, p_remaining: remaining });
+  }
+
+  if (response.status === 429) {
+    const error = await response.json().catch(() => ({}));
+    throw new ClientError(error?.scope === "burst" ? "prej_burst_limit" : "prej_daily_limit", 429);
+  }
+  if (response.status === 401) throw new ClientError("prej_key_invalid", 409);
+  if (!response.ok) throw new ClientError("prej_unavailable", 503);
+  const payload = await response.json();
+  if (!Array.isArray(payload?.products)) throw new ClientError("invalid_provider_response", 502);
+
+  const requested = new Set(stale);
+  const rows = (payload.products as PrejProduct[]).map(toBilkaCacheRow)
+    .filter((r) => r !== null && requested.has(r.id));
+  if (rows.length) {
+    await adminRequest("/rest/v1/bilka_products?on_conflict=id", "POST", rows);
+  }
+  return json({
+    updated: rows.length,
+    requested: stale.length,
+    skippedFresh: ids.length - stale.length,
+    remainingProducts: distinct.length - ids.length,
+    providerRemaining: remaining,
+  });
+}
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return json(null);
+  if (req.method !== "POST") return json({ error: "method_not_allowed" }, 405);
+  if (!SUPABASE_URL || !SERVICE_KEY) return json({ error: "server_not_configured" }, 503);
+  try {
+    const userId = await currentUser(req);
+    const input = await req.json().catch(() => ({})) as Payload;
+    switch (input.action) {
+      case "status": return await status(userId);
+      case "set-key": return await storeKey(userId, input.apiKey);
+      case "remove-key": return await removeKey(userId);
+      case "refresh": return await refresh(userId, input.householdId);
+      default: return json({ error: "unknown_action" }, 400);
+    }
+  } catch (err) {
+    if (err instanceof ClientError) return json({ error: err.code }, err.status);
+    // No logging: even thrown provider/database errors could contain credentials.
+    return json({ error: "internal_error" }, 500);
+  }
+});
