@@ -55,7 +55,7 @@ internal fun bilkaShoppingLine(
             (recorded.paidTotalOre?.let { " · Betalt: " + kroner(it) } ?: "")
     }
     val standard = context.default(item.ingredient.id) ?: return null
-    val product = catalog.products.firstOrNull { it.id == standard.productId } ?: return null
+    val product = catalog.product(standard.productId) ?: return null
     val amount = BilkaPackageMath.applicablePackBase(
         item.ingredient, product, standard.packageBaseAmountOverride
     )
