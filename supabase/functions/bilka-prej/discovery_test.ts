@@ -46,6 +46,26 @@ Deno.test("Danish ingredient text is kept rather than broadened to another food"
   eq(searchTerm("Pizzamel"), "pizzamel");
 });
 
+Deno.test("single-word food names do not match misleading compound prefixes", () => {
+  eq(scoreCandidate("Fløde", {
+    id: 41, name: "SNCK Proteinbar Flødebolle",
+  }), 0);
+  eq(scoreCandidate("Fløde", {
+    id: 42, name: "Holiday Flødelikør 17%",
+  }), 0);
+  eq(scoreCandidate("Fløde", {
+    id: 43, name: "Arla Piskefløde",
+  }), 0.78);
+  eq(scoreCandidate("Fløde", {
+    id: 44, name: "Salling Fløde 38%",
+  }), 0.78);
+  eq(rankCandidates("Fløde", [
+    { id: 41, name: "SNCK Proteinbar Flødebolle" },
+    { id: 42, name: "Holiday Flødelikør 17%" },
+    { id: 44, name: "Salling Fløde 38%" },
+  ]).map((x) => x.product.id), [44]);
+});
+
 Deno.test("independent exact searches produce suggestions without selecting defaults", async () => {
   const products: unknown[] = [];
   const candidates: unknown[] = [];
