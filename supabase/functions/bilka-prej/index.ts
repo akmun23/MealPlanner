@@ -1,6 +1,7 @@
 import { discoverProducts, discoveryStatus, DiscoveryError } from "./discovery_server.ts";
 import { catalog, saveHouseholdDefault } from "./catalog_server.ts";
 import { manualProductSearch } from "./manual_search_server.ts";
+import { shoppingContext, recordPurchase, CheckoutError } from "./shopping_server.ts";
 import {
   batchIds,
   dailyRemaining,
@@ -15,13 +16,20 @@ const PREJ_BASE = "https://api.prej.app";
 const DAILY_BUDGET = 20; // 25 free calls; keep 5 in reserve (including key checks).
 
 type Payload = {
-  action?: "status" | "set-key" | "verify-key" | "remove-key" | "refresh" | "discover" | "discovery-status" | "catalog" | "choose-product" | "manual-search" | "nightly-status" | "set-nightly";
+  action?: "status" | "set-key" | "verify-key" | "remove-key" | "refresh" | "discover" | "discovery-status" | "catalog" | "choose-product" | "manual-search" | "nightly-status" | "set-nightly" | "shopping-context" | "record-purchase";
   apiKey?: unknown;
   householdId?: unknown;
   ingredientId?: unknown;
   productId?: unknown;
   query?: unknown;
   enabled?: unknown;
+  weekId?: unknown;
+  ingredientId?: unknown;
+  productId?: unknown;
+  manualProductName?: unknown;
+  packageCount?: unknown;
+  amountBase?: unknown;
+  paidTotalOre?: unknown;
 };
 
 class ClientError extends Error {
@@ -346,6 +354,34 @@ Deno.serve(async (req) => {
       case "set-nightly": return await setNightly(userId, input.householdId, input.enabled);
       case "discover": return await discoveryAction(userId, input.householdId, true);
       case "discovery-status": return await discoveryAction(userId, input.householdId, false);
+      case "shopping-context": {
+        const householdId = await verifiedHousehold(userId, input.householdId);
+        return json(await shoppingContext(
+          { admin: adminRequest, rpc, householdId },
+          typeof input.weekId === "string" ? input.weekId : ""
+        ));
+      }
+      case "record-purchase": {
+        const householdId = await verifiedHousehold(userId, input.householdId);
+        if (typeof input.weekId !== "string" ||
+            typeof input.ingredientId !== "string" ||
+            typeof input.amountBase !== "number") {
+          return json({ error: "invalid_purchase" }, 400);
+        }
+        return json(await recordPurchase(
+          { admin: adminRequest, rpc, householdId },
+          {
+            weekId: input.weekId,
+            ingredientId: input.ingredientId,
+            productId: typeof input.productId === "string" ? input.productId : null,
+            manualProductName: typeof input.manualProductName === "string"
+              ? input.manualProductName : null,
+            packageCount: typeof input.packageCount === "number" ? input.packageCount : null,
+            amountBase: input.amountBase,
+            paidTotalOre: typeof input.paidTotalOre === "number" ? input.paidTotalOre : null
+          }
+        ));
+      }
       case "catalog": {
         const householdId = await verifiedHousehold(userId, input.householdId);
         return json(await catalog({ admin: adminRequest, householdId }));
@@ -383,7 +419,7 @@ Deno.serve(async (req) => {
       default: return json({ error: "unknown_action" }, 400);
     }
   } catch (err) {
-    if (err instanceof ClientError || err instanceof DiscoveryError) return json({ error: err.code }, err.status);
+    if (err instanceof ClientError || err instanceof DiscoveryError || err instanceof CheckoutError) return json({ error: err.code }, err.status);
     // No logging: even thrown provider/database errors could contain credentials.
     return json({ error: "internal_error" }, 500);
   }
