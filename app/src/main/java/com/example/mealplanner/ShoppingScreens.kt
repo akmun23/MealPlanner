@@ -112,9 +112,10 @@ fun ShoppingScreen(state: MealPlannerState) {
         refreshBilkaChoices()
     }
 
-    var addToPantryItem by remember {
+    var addToPantryItem by remember(weekId) {
         mutableStateOf<ShoppingItem?>(null)
     }
+    var allowManualAfterError by remember(weekId) { mutableStateOf(false) }
     var editPantryItem by remember {
         mutableStateOf<ShoppingItem?>(null)
     }
@@ -130,7 +131,32 @@ fun ShoppingScreen(state: MealPlannerState) {
     addToPantryItem?.let { item ->
         val catalog = bilkaCatalog
         val selection = bilkaContext
-        if (!state.isLocalMode && catalog != null && selection != null &&
+        if (!state.isLocalMode && bilkaLoadError && !allowManualAfterError) {
+            AlertDialog(
+                onDismissRequest = { addToPantryItem = null },
+                title = { Text("Bilka kan ikke kontrollere købet") },
+                text = {
+                    Text(
+                        "Købet kan allerede være lagt på Lager fra en anden enhed. " +
+                            "Prøv igen, eller brug manuel registrering, hvis du er sikker på, " +
+                            "at varen endnu ikke er registreret."
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { allowManualAfterError = true }) {
+                        Text("Brug manuelt")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        addToPantryItem = null
+                        scope.launch { refreshBilkaChoices() }
+                    }) {
+                        Text("Prøv igen")
+                    }
+                }
+            )
+        } else if (!state.isLocalMode && catalog != null && selection != null &&
             (catalog.productsFor(item.ingredient.id).isNotEmpty() ||
                 selection.default(item.ingredient.id) != null)
         ) {
@@ -142,6 +168,7 @@ fun ShoppingScreen(state: MealPlannerState) {
                 onDismiss = { addToPantryItem = null },
                 onSaved = {
                     addToPantryItem = null
+                    allowManualAfterError = false
                     scope.launch { refreshBilkaChoices() }
                 }
             )
