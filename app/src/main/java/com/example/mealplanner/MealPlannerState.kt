@@ -988,14 +988,40 @@ class MealPlannerState(
     fun setRecipeForDay(day: DayOfWeek, recipeId: String?) {
         if (!canEditWeek()) return
         if (day == sandwichDay) return
+        if (plan[day] == recipeId &&
+            (recipeId == null || dayModes[day] != DayMode.AWAY)
+        ) return // Re-selecting the same meal must not reset shopping progress.
+
+        val previousItems = shoppingItems()
+        val previousChecked = shoppingChecked.toMap()
+        val previousIncluded = shoppingIncluded.toMap()
 
         plan[day] = recipeId
-        if (recipeId != null) {
-            dayModes[day] = DayMode.AUTO
-        }
+        if (recipeId != null) dayModes[day] = DayMode.AUTO
+
+        val retainedIds = ShoppingRetentionRules.unchangedIngredientIds(
+            previousItems, shoppingItems()
+        )
         shoppingChecked.clear()
         shoppingIncluded.clear()
-        persistWeek(clearChecks = true)
+        retainedIds.forEach { ingredientId ->
+            previousIncluded[ingredientId]?.let { shoppingIncluded[ingredientId] = it }
+            previousChecked[ingredientId]?.let { shoppingChecked[ingredientId] = it }
+        }
+
+        // Clear and restore retained choices in the same durable outbox
+        // transaction so offline/cloud clients see the same shopping state.
+        val id = weeklyPlanId ?: return
+        enqueueMutations(buildList {
+            add(weekStateMutation(id))
+            add(QueuedMutation.ClearShopping(id))
+            shoppingIncluded.forEach { (ingredientId, included) ->
+                add(QueuedMutation.SetShoppingIncluded(id, ingredientId, included))
+            }
+            shoppingChecked.forEach { (ingredientId, checked) ->
+                add(QueuedMutation.SetShoppingChecked(id, ingredientId, checked))
+            }
+        })
     }
 
     fun isIngredientNameAvailable(
