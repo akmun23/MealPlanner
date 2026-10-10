@@ -32,7 +32,9 @@ const clusters: Array<{ search: string; terms: RegExp }> = [
 export function searchTerm(ingredientName: string): string {
   const clean = normalizeIngredient(ingredientName);
   const group = clusters.find(({ terms }) => terms.test(clean));
-  return group?.search ?? clean.replace(/\s+/g, " ").slice(0, 200);
+  const danishSearch = { loeg: "løg", boenner: "bønner" } as Record<string, string>;
+  return group ? (danishSearch[group.search] ?? group.search) :
+    cleanedExactQuery(ingredientName).toLowerCase();
 }
 
 /** Reuse one Prej search for multiple household ingredients whenever safe. */
