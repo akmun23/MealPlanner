@@ -68,3 +68,39 @@ Deno.test("explicit save only updates one ingredient default, never its candidat
   eq(rejected.error, "invalid_product_choice");
   eq(writes.length, 1);
 });
+
+Deno.test("ingredient-scoped catalog avoids loading unrelated products", async () => {
+  const paths: string[] = [];
+  const house = "ce85a721-78a3-40c5-a18d-13b1011ba54b";
+  const service = {
+    householdId: house,
+    admin: async (path: string): Promise<unknown> => {
+      paths.push(path);
+      if (path.includes("/ingredient_bilka_candidates?")) return [{
+        ingredient_id: id, product_id: "42", display_rank: 0,
+      }];
+      if (path.includes("/ingredient_bilka_defaults?")) return [];
+      if (path.includes("/bilka_products?")) return [{
+        id: "42", name: "Hvedemel", brand: "Mærke",
+      }];
+      throw new Error("Unexpected path " + path);
+    },
+  };
+  const result = await catalog(service, [id]);
+  eq(result.products.length, 1);
+  eq(paths.filter((p) => p.includes("ingredient_id=in.(" + id + ")")).length, 2);
+
+  paths.length = 0;
+  const empty = await catalog(service, []);
+  eq(empty.products.length, 0);
+  eq(paths.length, 0);
+
+  let rejected = false;
+  try {
+    await catalog(service, ["not-an-ingredient-id"]);
+  } catch {
+    rejected = true;
+  }
+  eq(rejected, true);
+  eq(paths.length, 0);
+});
