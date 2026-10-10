@@ -33,3 +33,20 @@ CI kontrollerer fremover, at migrationsfilernes dollar-citater og cron-definitio
 5. Kontrollér alternative engangsvarer, ukendt pakkestørrelse, faktisk betalt pris, enhedsfejl og to familiemedlemmer.
 
 Ingen fase-6-migration eller deployment udføres, før du har verificeret den nye PR.
+## Stabilitet og UI/UX-gennemgang (før frigivelse)
+
+- Produktregistrering er nu på RPC-tilladelseslisten, og en Deno-regressionstest kontrollerer både, at transaktionen kan kaldes, og at andre privilegerede RPC'er forbliver blokerede.
+- Fase-6-migrationens SQL er kontrolleret mod Supabase i en eksplicit transaktion med rollback. Funktionen kunne oprettes, og adgangsrettigheder for authenticated/service_role var korrekte; efter rollback blev det verificeret, at den ikke er installeret i produktion.
+- Indkøbsliste: behov og Lager vises på én linje; Bilka-info højst én linje. Normal lagerregistrering fungerer fortsat uden Bilka-netforbindelse; en kompakt fejltekst giver mulighed for genindlæsning.
+- Købsdialog: kun det aktuelle produkt vises først. Alternative produkter ligger i en højdebegrænset dropdown, og dialogens indhold er rullebart på små skærme. Knaptekster er forkortet.
+- Produktvælger: billedkort med tre tekstlinjer, sammenlignelig pris og fast billedpladsholder. Manuel mærkesøgning er foldet sammen som standard; sorteringsvalg kan scrolle vandret uden at presse layoutet ud.
+- Gem standardprodukt: knappen fremkommer inde i det valgte produktkort, så brugeren ikke skal rulle til slutningen af hele listen.
+- Performance: indkøbsliste henter katalog og uge parallelt. Kataloget indekseres én gang, og både indkøbslisten og produktvælgeren kan hente **kun de relevante ingrediens-ID'er**. Åbning af appen bruger ingen Prej-kvote.
+- Netværk: HTTP-kald har nu forbindelses-, socket- og samlet timeout, så en langsom API ikke kan få skærmen til at vente ubegrænset.
+- Serverkontrol: ingredienser markeret 'Købes aldrig' kan ikke registreres som Bilka-køb, selv via direkte API-kald.
+
+### Manuel UI-accept før bred frigivelse
+
+Test på mindst én smal Android-skærm (ca. 320–360 dp) og med forstørret systemtekst. Kontrollér at ingen produktkort eller knapper ligger oven på andre, og at indkøbsrækkerne forbliver korte. Test rulle- og tastaturadfærd i købsdialogen samt dropdown med ti alternativer. Brug en stor ingrediensliste (100+ ingredienser), mange produktforslag, et produkt uden billede, forkerte enheder, ukendt pakkestørrelse og manglende netværk. Kontrollér korrekt dansk beløbsformat, og at ingen bruger ser rå SQL/API-fejl eller personlige API-nøgler.
+
+Test et konkret køb i to enheder: 1,2 kg mangler, produkt 1 kg, 2 hele pakker registreres til 2 kg. Dobbelttryk/gentaget anmodning må ikke lægge 4 kg på Lager. Bekræft at et engangsalternativ ikke ændrer standardproduktet. Dette kræver Android-enhed/emulator og den fase-6-deployerede RPC efter grøn CI; det er endnu ikke udført.
