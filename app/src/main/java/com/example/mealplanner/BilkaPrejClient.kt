@@ -40,6 +40,17 @@ internal object BilkaPrejClient {
     suspend fun refresh(householdId: String): Result<JsonObject> =
         call("refresh", householdId = householdId)
 
+    suspend fun catalog(householdId: String): Result<JsonObject> =
+        call("catalog", householdId = householdId)
+
+    suspend fun chooseProduct(
+        householdId: String,
+        ingredientId: String,
+        productId: String
+    ): Result<JsonObject> =
+        call("choose-product", householdId = householdId,
+            ingredientId = ingredientId, productId = productId)
+
     suspend fun discoveryStatus(householdId: String): Result<JsonObject> =
         call("discovery-status", householdId = householdId)
 
@@ -49,7 +60,9 @@ internal object BilkaPrejClient {
     private suspend fun call(
         action: String,
         apiKey: String? = null,
-        householdId: String? = null
+        householdId: String? = null,
+        ingredientId: String? = null,
+        productId: String? = null
     ): Result<JsonObject> = withContext(Dispatchers.IO) {
         runCatching {
             val accessToken = SupabaseProvider.client.auth.currentSessionOrNull()?.accessToken
@@ -58,6 +71,8 @@ internal object BilkaPrejClient {
                 put("action", action)
                 apiKey?.let { put("apiKey", it) }
                 householdId?.let { put("householdId", it) }
+                ingredientId?.let { put("ingredientId", it) }
+                productId?.let { put("productId", it) }
             }
             val response = http.post(
                 BuildConfig.SUPABASE_URL.trimEnd('/') + "/functions/v1/bilka-prej"
@@ -78,6 +93,8 @@ internal object BilkaPrejClient {
                     "prej_key_not_configured" -> "Tilføj først din Prej API-nøgle"
                     "prej_key_invalid" -> "Nøglen er blevet ugyldig. Tilføj den igen"
                     "not_authenticated" -> "Log ind igen"
+                    "invalid_product_choice", "not_a_suggested_product" ->
+                        "Denne vare er ikke længere tilgængelig. Opdatér produktlisten."
                     "prej_burst_limit" -> "For mange kald. Prøv igen senere"
                     else -> "Bilka API er ikke tilgængeligt lige nu"
                 })
