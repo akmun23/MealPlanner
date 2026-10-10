@@ -81,14 +81,30 @@ export async function discoveryStatus(ctx: DiscoveryServices) {
   const pending = ingredients.filter((i) =>
     !chosen.has(i.id) && !ready.has(i.id) && !noMatch.has(i.id) && !incomplete.has(i.id));
   const jobsById = new Map(jobs.map((j) => [j.ingredient_id, j]));
+  const candidateCounts = new Map<string, number>();
+  for (const candidate of candidates) {
+    if (candidate.match_status === "SUGGESTED") {
+      candidateCounts.set(candidate.ingredient_id, (candidateCounts.get(candidate.ingredient_id) ?? 0) + 1);
+    }
+  }
+  const items = ingredients.map((ingredient) => ({
+    ingredientId: ingredient.id,
+    name: ingredient.name,
+    state: chosen.has(ingredient.id) ? "CHOSEN" :
+      ready.has(ingredient.id) ? "READY" :
+      incomplete.has(ingredient.id) ? "REFINE" :
+      noMatch.has(ingredient.id) ? "NO_MATCH" : "PENDING",
+    candidateCount: candidateCounts.get(ingredient.id) ?? 0,
+  })).sort((a, b) => a.name.localeCompare(b.name, "da"));
   return {
     total: ingredients.length,
-    chosen: chosen.size,
+    chosen: ingredients.filter((i) => chosen.has(i.id)).length,
     ready: ingredients.filter((i) => !chosen.has(i.id) && ready.has(i.id)).length,
     noMatch: ingredients.filter((i) => !chosen.has(i.id) && noMatch.has(i.id)).length,
     incomplete: ingredients.filter((i) => !chosen.has(i.id) && incomplete.has(i.id)).length,
     pending: pending.length,
     remainingQueries: groupSearches(pending).length,
+    items,
     pendingIngredients: pending,
     jobsById,
   };
@@ -326,6 +342,6 @@ export async function discoverProducts(ctx: DiscoveryServices) {
 }
 
 function stripInternal(value: Awaited<ReturnType<typeof discoveryStatus>>) {
-  const { total, chosen, ready, noMatch, incomplete, pending, remainingQueries } = value;
-  return { total, chosen, ready, noMatch, incomplete, pending, remainingQueries };
+  const { total, chosen, ready, noMatch, incomplete, pending, remainingQueries, items } = value;
+  return { total, chosen, ready, noMatch, incomplete, pending, remainingQueries, items };
 }
