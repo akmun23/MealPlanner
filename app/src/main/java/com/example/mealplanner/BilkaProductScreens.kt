@@ -1,0 +1,467 @@
+package com.example.mealplanner
+
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ImageNotSupported
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.SubcomposeAsyncImage
+import java.text.NumberFormat
+import java.util.Locale
+import kotlinx.coroutines.launch
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.jsonArray
+
+@Serializable
+internal data class BilkaListIngredient(
+    val ingredientId: String,
+    val name: String,
+    val state: String,
+    val candidateCount: Int = 0
+)
+@Serializable
+internal data class BilkaListCandidate(
+    @SerialName("ingredient_id") val ingredientId: String,
+    @SerialName("product_id") val productId: String,
+    @SerialName("display_rank") val displayRank: Int = 0
+)
+@Serializable
+internal data class BilkaListDefault(
+    @SerialName("ingredient_id") val ingredientId: String,
+    @SerialName("product_id") val productId: String
+)
+
+internal data class BilkaProductCatalog(
+    val candidates: List<BilkaListCandidate>,
+    val defaults: List<BilkaListDefault>,
+    val products: List<BilkaProduct>
+) {
+    fun defaultId(ingredientId: String) =
+        defaults.firstOrNull { it.ingredientId == ingredientId }?.productId
+    fun suggestions(ingredientId: String): Set<String> =
+        candidates.filter { it.ingredientId == ingredientId }.map { it.productId }.toSet()
+    fun productsFor(ingredientId: String): List<BilkaProduct> {
+        val allowed = suggestions(ingredientId) + listOfNotNull(defaultId(ingredientId))
+        return products.filter { it.id in allowed }
+    }
+    fun ranks(ingredientId: String): Map<String, Int> =
+        candidates.filter { it.ingredientId == ingredientId }
+            .associate { it.productId to it.displayRank }
+}
+
+private val bilkaParser = Json { ignoreUnknownKeys = true }
+internal fun parseBilkaCatalog(value: JsonObject) = BilkaProductCatalog(
+    candidates = bilkaParser.decodeFromJsonElement(
+        value.getValue("candidates").jsonArray
+    ),
+    defaults = bilkaParser.decodeFromJsonElement(
+        value.getValue("defaults").jsonArray
+    ),
+    products = bilkaParser.decodeFromJsonElement(
+        value.getValue("products").jsonArray
+    )
+)
+internal fun parseBilkaIngredients(value: JsonObject): List<BilkaListIngredient> =
+    bilkaParser.decodeFromJsonElement(value.getValue("items").jsonArray)
+
+private val danish = Locale.forLanguageTag("da-DK")
+private fun money(ore: Number?): String =
+    ore?.let { NumberFormat.getCurrencyInstance(danish).format(it.toDouble() / 100) }
+        ?: "Pris mangler"
+private fun packageLabel(p: BilkaProduct): String =
+    if (p.packageQuantity != null && !p.packageUnit.isNullOrBlank())
+        NumberFormat.getNumberInstance(danish).format(p.packageQuantity) + " " + p.packageUnit
+    else "Størrelse ukendt"
+private fun unitLabel(p: BilkaProduct): String? {
+    val unit = when (p.unitPriceBasis) {
+        BilkaUnitPriceBasis.KG -> "kg"
+        BilkaUnitPriceBasis.L -> "l"
+        BilkaUnitPriceBasis.PIECE -> "stk."
+        BilkaUnitPriceBasis.PACK -> "pakke"
+        null -> null
+    }
+    return if (unit != null && p.unitPriceOre != null) money(p.unitPriceOre) + "/" + unit else null
+}
+private fun statusLabel(row: BilkaListIngredient): String = when (row.state) {
+    "CHOSEN" -> "Fast vare valgt"
+    "READY" -> row.candidateCount.toString() + " forslag klar"
+    "NO_MATCH" -> "Ingen forslag fundet"
+    "REFINE" -> "Prøv mere præcis søgning"
+    else -> "Mangler søgning"
+}
+
+@Composable
+private fun BilkaProductPhoto(p: BilkaProduct) {
+    val modifier = Modifier.size(76.dp)
+    val fallback: @Composable () -> Unit = {
+        Icon(Icons.Filled.ImageNotSupported, contentDescription = "Intet billede")
+    }
+    if (p.imageUrl.isNullOrBlank()) {
+        fallback()
+    } else {
+        SubcomposeAsyncImage(
+            model = p.imageUrl,
+            contentDescription = "Produktbillede af " + p.name,
+            modifier = modifier,
+            contentScale = ContentScale.Fit,
+            loading = { fallback() },
+            error = { fallback() }
+        )
+    }
+}
+
+/** Dedicated ingredient overview, not embedded in shopping, recipes or pantry. */
+@Composable
+internal fun BilkaProductsScreen(
+    householdId: String,
+    onBack: () -> Unit,
+    onImport: () -> Unit,
+    onPick: (String, String) -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    var rows by remember(householdId) { mutableStateOf<List<BilkaListIngredient>>(emptyList()) }
+    var catalog by remember(householdId) { mutableStateOf<BilkaProductCatalog?>(null) }
+    var busy by remember(householdId) { mutableStateOf(true) }
+    var error by remember(householdId) { mutableStateOf<String?>(null) }
+    var search by remember { mutableStateOf("") }
+    var filter by remember { mutableStateOf("Alle") }
+
+    suspend fun reload() {
+        busy = true
+        error = null
+        val status = BilkaPrejClient.discoveryStatus(householdId)
+        val products = BilkaPrejClient.catalog(householdId)
+        if (status.isSuccess && products.isSuccess) {
+            runCatching {
+                rows = parseBilkaIngredients(status.getOrThrow())
+                catalog = parseBilkaCatalog(products.getOrThrow())
+            }.onFailure { error = "Produktoversigten kunne ikke læses." }
+        } else error = "Kunne ikke hente Bilka-produkter. Kontrollér forbindelsen."
+        busy = false
+    }
+    LaunchedEffect(householdId) { reload() }
+    val visible = rows.filter {
+        (search.isBlank() || it.name.contains(search.trim(), ignoreCase = true)) &&
+            when (filter) {
+                "Klar" -> it.state == "READY"
+                "Valgte" -> it.state == "CHOSEN"
+                "Mangler" -> it.state !in setOf("READY", "CHOSEN")
+                else -> true
+            }
+    }.sortedWith(compareBy(
+        { if (it.state == "READY") 0 else if (it.state == "CHOSEN") 1 else 2 },
+        { it.name }
+    ))
+    SubpageScaffold(title = "Mine Bilka-produkter", onBack = onBack) { padding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item {
+                Text(
+                    "Vælg selv mærke og pakkestørrelse. Dine faste varer deles i husstanden og ændres ikke automatisk."
+                )
+            }
+            item {
+                Text(
+                    rows.count { it.state == "CHOSEN" }.toString() + " valgt · " +
+                        rows.count { it.state == "READY" }.toString() + " klar til valg · " +
+                        rows.count { it.state !in setOf("CHOSEN", "READY") }.toString() + " mangler",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+            }
+            item {
+                Button(onClick = onImport, modifier = Modifier.fillMaxWidth()) {
+                    Text("Hent flere varer")
+                }
+            }
+            item {
+                SearchField(search, { search = it }, "Søg efter ingrediens")
+            }
+            item {
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf("Alle", "Klar", "Valgte", "Mangler").forEach { f ->
+                        FilterChip(
+                            selected = filter == f,
+                            onClick = { filter = f },
+                            label = { Text(f) }
+                        )
+                    }
+                }
+            }
+            if (busy) item { CircularProgressIndicator() }
+            else if (error != null) {
+                item {
+                    EmptyCard(error ?: "Fejl")
+                    OutlinedButton(onClick = { scope.launch { reload() } }) {
+                        Text("Prøv igen")
+                    }
+                }
+            } else if (visible.isEmpty()) {
+                item {
+                    EmptyCard(
+                        if (rows.isEmpty()) "Ingen varer endnu. Tryk på Hent flere varer."
+                        else "Ingen ingredienser matcher søgningen."
+                    )
+                }
+            } else {
+                items(visible, key = { it.ingredientId }) { item ->
+                    Card(
+                        onClick = { onPick(item.ingredientId, item.name) },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(item.name, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    statusLabel(item),
+                                    style = MaterialTheme.typography.bodySmall
+                                )
+                                val selected = catalog?.defaultId(item.ingredientId)?.let { id ->
+                                    catalog?.products?.firstOrNull { p -> p.id == id }
+                                }
+                                if (selected != null) {
+                                    Text(
+                                        selected.brandLabel + " · " + packageLabel(selected),
+                                        style = MaterialTheme.typography.bodySmall,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            }
+                            Text(
+                                if (item.state == "CHOSEN") "Ændr" else "Vælg",
+                                color = MaterialTheme.colorScheme.primary,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+                }
+            }
+            item {
+                OutlinedButton(
+                    onClick = { scope.launch { reload() } },
+                    enabled = !busy,
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text("Opdatér oversigt") }
+            }
+        }
+    }
+}
+
+/** The visual SKU choice gets its own full page, one ingredient at a time. */
+@Composable
+internal fun BilkaProductPickerScreen(
+    householdId: String,
+    ingredientId: String,
+    ingredientName: String,
+    onBack: () -> Unit,
+    onSaved: () -> Unit,
+    onImport: () -> Unit
+) {
+    val scope = rememberCoroutineScope()
+    var data by remember(ingredientId) { mutableStateOf<BilkaProductCatalog?>(null) }
+    var selected by remember(ingredientId) { mutableStateOf<String?>(null) }
+    var busy by remember(ingredientId) { mutableStateOf(true) }
+    var saving by remember(ingredientId) { mutableStateOf(false) }
+    var error by remember(ingredientId) { mutableStateOf<String?>(null) }
+    var search by remember(ingredientId) { mutableStateOf("") }
+    var cheapest by remember(ingredientId) { mutableStateOf(true) }
+
+    suspend fun reload() {
+        busy = true
+        error = null
+        BilkaPrejClient.catalog(householdId)
+            .onSuccess { raw ->
+                runCatching {
+                    data = parseBilkaCatalog(raw)
+                    selected = data?.defaultId(ingredientId)
+                }.onFailure { error = "Kunne ikke læse varerne." }
+            }
+            .onFailure { error = "Kunne ikke hente varerne." }
+        busy = false
+    }
+    LaunchedEffect(householdId, ingredientId) { reload() }
+
+    val currentId = data?.defaultId(ingredientId)
+    val suggestions = data?.suggestions(ingredientId).orEmpty()
+    val options = BilkaSelectionRules.sortForIngredient(
+        data?.productsFor(ingredientId).orEmpty(),
+        data?.ranks(ingredientId).orEmpty(),
+        cheapest
+    ).filter {
+        search.isBlank() || it.name.contains(search.trim(), true) ||
+            it.brandLabel.contains(search.trim(), true)
+    }
+
+    SubpageScaffold(title = ingredientName, onBack = onBack) { padding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(padding),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item {
+                Text("Vælg dit faste Bilka-produkt", style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "Sammenlign mærke, størrelse og pris. Vi gemmer kun det produkt, du vælger.",
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            if (busy) item { CircularProgressIndicator() }
+            else if (error != null) {
+                item {
+                    EmptyCard(error ?: "Fejl")
+                    OutlinedButton(onClick = { scope.launch { reload() } }) { Text("Prøv igen") }
+                }
+            } else if (options.isEmpty() && data?.productsFor(ingredientId).isNullOrEmpty()) {
+                item {
+                    EmptyCard("Ingen produktforslag til " + ingredientName + " endnu.")
+                    Button(onClick = onImport, modifier = Modifier.fillMaxWidth()) {
+                        Text("Hent flere produktforslag")
+                    }
+                }
+            } else {
+                item { SearchField(search, { search = it }, "Søg efter mærke eller produkt") }
+                item {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FilterChip(
+                            selected = cheapest,
+                            onClick = { cheapest = true },
+                            label = { Text("Laveste kr/kg eller liter") }
+                        )
+                        FilterChip(
+                            selected = !cheapest,
+                            onClick = { cheapest = false },
+                            label = { Text("Mest relevant") }
+                        )
+                    }
+                }
+                if (options.isEmpty()) item {
+                    EmptyCard("Ingen varer passer til søgningen.")
+                }
+                items(options, key = { it.id }) { product ->
+                    val chosen = selected == product.id
+                    Card(
+                        onClick = {
+                            if (product.id in suggestions) selected = product.id
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(
+                            containerColor = if (chosen)
+                                MaterialTheme.colorScheme.primaryContainer
+                            else MaterialTheme.colorScheme.surfaceVariant
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth().padding(12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        ) {
+                            BilkaProductPhoto(product)
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(product.brandLabel, fontWeight = FontWeight.SemiBold)
+                                Text(product.name, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Text(packageLabel(product), style = MaterialTheme.typography.bodySmall)
+                                Text(money(product.priceOre), fontWeight = FontWeight.Bold)
+                                unitLabel(product)?.let {
+                                    Text(it, style = MaterialTheme.typography.bodySmall)
+                                }
+                                if (product.isOffer == true) {
+                                    Text("Tilbud", color = MaterialTheme.colorScheme.primary)
+                                }
+                                if (product.id == currentId) {
+                                    Text("Nuværende standard", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                            if (chosen) {
+                                Icon(Icons.Filled.CheckCircle, contentDescription = "Valgt")
+                            }
+                        }
+                    }
+                }
+                item {
+                    Text(
+                        selected?.let { id ->
+                            data?.products?.firstOrNull { it.id == id }?.let {
+                                "Valgt: " + it.brandLabel + " · " + it.name + " · " + packageLabel(it)
+                            }
+                        } ?: "Tryk på produktet, du vil bruge som standard."
+                    )
+                    Button(
+                        onClick = {
+                            val id = selected ?: return@Button
+                            saving = true
+                            error = null
+                            scope.launch {
+                                BilkaPrejClient.chooseProduct(householdId, ingredientId, id)
+                                    .onSuccess { onSaved() }
+                                    .onFailure { error = it.message }
+                                saving = false
+                            }
+                        },
+                        enabled = !saving && BilkaSelectionRules.canConfirm(
+                            selected, suggestions, currentId
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(if (currentId == null) "Gem som fast produkt" else "Skift standardprodukt")
+                    }
+                    Text(
+                        "Dit valg deles i husstanden. Prisen opdateres senere, men mærke og størrelse skifter aldrig automatisk.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    TextButton(onClick = onImport) { Text("Mangler den rigtige vare?") }
+                }
+            }
+        }
+    }
+}
