@@ -76,10 +76,10 @@ function priceBasis(label: string | null): BilkaCacheRow["unit_price_basis"] {
 
 /** A product-level minimum price is NEVER safe: only the bilka price row is used. */
 export function toBilkaCacheRow(product: PrejProduct): BilkaCacheRow | null {
-  if (!Number.isSafeInteger(product.id) || Number(product.id) <= 0) return null;
+  if (typeof product.id !== "number" || !Number.isSafeInteger(product.id) || product.id <= 0) return null;
   const name = product.name?.trim();
   const price = product.prices?.find((p) => p.chain_slug === "bilka");
-  if (!name || !price || !Number.isSafeInteger(price.price) || Number(price.price) < 0) return null;
+  if (!name || !price || typeof price.price !== "number" || !Number.isSafeInteger(price.price) || price.price < 0) return null;
 
   // Chain-specific package size wins: aggregate product quantities can differ by chain.
   const quantity = price.quantity ?? product.quantity ?? null;
@@ -99,7 +99,7 @@ export function toBilkaCacheRow(product: PrejProduct): BilkaCacheRow | null {
     quantity_kind: measure.kind,
     image_url: img && /^https?:\/\//i.test(img) ? img : null,
     price_ore: Number(price.price),
-    unit_price_ore: Number.isSafeInteger(price.unit_price) && Number(price.unit_price) >= 0
+    unit_price_ore: typeof price.unit_price === "number" && Number.isSafeInteger(price.unit_price) && price.unit_price >= 0
       ? Number(price.unit_price) : null,
     unit_price_basis: priceBasis(price.unit_price_label ?? null),
     is_offer: price.is_offer ?? null,
