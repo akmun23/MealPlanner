@@ -28,3 +28,11 @@ create index if not exists idx_bilka_discovery_jobs_household_status
 
 comment on column public.ingredient_bilka_candidates.match_score is
     'Conservative, unverified product-name matching score. Users must explicitly choose a default SKU.';
+
+-- A capped 100-result page is not proof that an ingredient has no matching
+-- products. Keep an explicit state for cases requiring a narrower manual search.
+alter table public.bilka_discovery_jobs
+    drop constraint if exists bilka_discovery_jobs_status_check;
+alter table public.bilka_discovery_jobs
+    add constraint bilka_discovery_jobs_status_check
+    check (status in ('PENDING', 'RUNNING', 'COMPLETE', 'NO_MATCH', 'FAILED', 'INCOMPLETE'));
