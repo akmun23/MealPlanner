@@ -100,6 +100,7 @@ internal fun BilkaApiSettingsScreen(
     var nightlyEnabled by remember(householdId) { mutableStateOf(false) }
     var nightlyLastRun by remember(householdId) { mutableStateOf<String?>(null) }
     var nightlyLoaded by remember(householdId) { mutableStateOf(false) }
+    var schedulerReady by remember(householdId) { mutableStateOf(false) }
     var importStatus by remember { mutableStateOf<JsonObject?>(null) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
@@ -126,6 +127,7 @@ internal fun BilkaApiSettingsScreen(
         BilkaPrejClient.nightlyStatus(householdId)
             .onSuccess {
                 nightlyEnabled = it.bilkaText("enabled") == "true"
+                schedulerReady = it.bilkaText("schedulerReady") == "true"
                 nightlyLastRun = it.bilkaText("lastUpdatedAt")
                 nightlyLoaded = true
             }
@@ -315,13 +317,10 @@ internal fun BilkaApiSettingsScreen(
                                 BilkaPrejClient.discoverProducts(householdId)
                                     .onSuccess { result ->
                                         importStatus = result
-                                        val used = result.bilkaNumber("requestsUsed")
-                                        val cached = result.bilkaNumber("fromCache")
                                         val reason = result.bilkaText("stopReason")
-                                        message =
-                                            "Fandt og gemte produktforslag. " +
-                                            "$used nye søgninger, $cached genbrugte resultater. " +
-                                            importStopMessage(reason)
+                                        message = "Produktforslagene er gemt. " +
+                                            (if (reason == null) "Se dem i produktoversigten."
+                                             else importStopMessage(reason))
                                         BilkaPrejClient.status().onSuccess(::applyStatus)
                                     }
                                     .onFailure { message = it.message }
@@ -343,7 +342,7 @@ internal fun BilkaApiSettingsScreen(
                         when {
                             !connected -> "Tilføj din Prej-nøgle ovenfor for at starte søgningen."
                             importStatus != null && pending == 0 && ready > 0 ->
-                                "Varerne er klar til, at du kan vælge mærke og størrelse i næste fase."
+                                "Du kan nu vælge mærke og størrelse i produktoversigten."
                             importStatus != null && pending == 0 ->
                                 "Der mangler ingen automatiske søgninger lige nu."
                             else ->
@@ -374,8 +373,7 @@ internal fun BilkaApiSettingsScreen(
                 item {
                     SectionCard("4. Automatisk opdatering af priser") {
                         Text(
-                            "Opdatér dine valgte Bilka-priser hver morgen omkring kl. 05. " +
-                                "Vi skifter aldrig mærke eller pakkestørrelse.",
+                            "Opdatér priser på valgte varer, uden at skifte mærke eller størrelse.",
                             style = MaterialTheme.typography.bodySmall
                         )
                         Row(
@@ -388,6 +386,7 @@ internal fun BilkaApiSettingsScreen(
                                 Text(
                                     if (!verified) "Kontrollér først din nøgle"
                                     else if (!nightlyLoaded) "Kunne ikke hente indstillingen"
+                                    else if (!schedulerReady) "Afventer aktivering på serveren"
                                     else if (nightlyEnabled) "Slået til for din konto"
                                     else "Slået fra",
                                     style = MaterialTheme.typography.bodySmall,
@@ -411,7 +410,8 @@ internal fun BilkaApiSettingsScreen(
                                         busy = false
                                     }
                                 },
-                                enabled = !busy && verified && nightlyLoaded
+                                enabled = !busy && nightlyLoaded &&
+                                    ((verified && schedulerReady) || nightlyEnabled)
                             )
                         }
                         nightlyLastRun?.let { last ->
@@ -422,8 +422,8 @@ internal fun BilkaApiSettingsScreen(
                             )
                         }
                         Text(
-                            "Der bruges kun din egen Prej-kvote. " +
-                                "Hvis du fjerner din nøgle, slås automatisk opdatering fra.",
+                            "Bruger kun din egen Prej-kvote. " +
+                                "Aktivering kræver, at serverens tidsplan er klar.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )

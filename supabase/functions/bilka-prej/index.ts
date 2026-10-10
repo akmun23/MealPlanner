@@ -3,6 +3,7 @@ import { catalog, saveHouseholdDefault } from "./catalog_server.ts";
 import { manualProductSearch } from "./manual_search_server.ts";
 import { shoppingContext, recordPurchase, CheckoutError } from "./shopping_server.ts";
 import { ALLOWED_BILKA_RPCS } from "./rpc_allowlist.ts";
+import { priceOnlyUpdates } from "./price_updates.ts";
 import {
   batchIds,
   dailyRemaining,
@@ -217,8 +218,10 @@ async function nightlyStatus(userId: string, householdId: unknown): Promise<Resp
       "&household_id=eq." + encodeURIComponent(id) +
       "&order=local_date.desc&limit=1", "GET",
   ) as Array<{ status: string; finished_at: string | null; products_updated: number }>;
+  const schedulerReady = await rpc("bilka_nightly_scheduler_ready", {});
   return json({
     enabled: rows[0]?.enabled === true,
+    schedulerReady: schedulerReady === true,
     lastRunStatus: runs[0]?.status ?? null,
     lastUpdatedAt: runs[0]?.finished_at ?? null,
     productsUpdated: runs[0]?.products_updated ?? 0,
@@ -229,6 +232,9 @@ async function setNightly(userId: string, householdId: unknown, enabled: unknown
   const id = await verifiedHousehold(userId, householdId);
   if (typeof enabled !== "boolean") throw new ClientError("invalid_setting", 400);
   if (enabled) {
+    if (await rpc("bilka_nightly_scheduler_ready", {}) !== true) {
+      throw new ClientError("nightly_scheduler_not_ready", 409);
+    }
     const rows = await adminRequest(
       "/rest/v1/prej_user_credentials?select=verified_at,enabled&user_id=eq." +
         encodeURIComponent(userId) + "&limit=1", "GET",
@@ -314,14 +320,14 @@ async function refresh(userId: string, householdId: unknown): Promise<Response> 
   const payload = await response.json();
   if (!Array.isArray(payload?.products)) throw new ClientError("invalid_provider_response", 502);
 
-  const requested = new Set(stale);
-  const rows = (payload.products as PrejProduct[]).map(toBilkaCacheRow)
-    .filter((r) => r !== null && requested.has(r.id));
-  if (rows.length) {
-    await adminRequest("/rest/v1/bilka_products?on_conflict=id", "POST", rows);
-  }
+  const prices = priceOnlyUpdates(payload.products as PrejProduct[], stale);
+  // Price-only RPC is atomic and cannot overwrite the chosen product's
+  // name, brand, photograph, quantity or household preference.
+  const updated = prices.length
+    ? await rpc("bilka_update_prices_only", { p_updates: prices })
+    : 0;
   return json({
-    updated: rows.length,
+    updated: Number(updated),
     requested: stale.length,
     skippedFresh: ids.length - stale.length,
     remainingProducts: distinct.length - ids.length,
