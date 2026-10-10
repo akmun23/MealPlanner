@@ -46,3 +46,24 @@ Prej har **ikke** et dokumenteret endpoint til 50 selvstændige søgninger i ét
 6. Verificér delvist importerede lister, knappen "tryk igen", kvoteudløb og cachegenbrug mellem de to husstandsmedlemmer.
 
 **Ikke omfattet:** Et egentligt billedbaseret produktvalg, manuel præcisering for \`INCOMPLETE\` og individuel afvisning/valg af SKU. Dette er fase 4.
+
+## Brugerflade og tilgængelighed
+
+Skærmen åbnes fra **Indstillinger → Bilka-produkter og priser**, ikke fra en teknisk "API"-menu. Den guider brugeren igennem:
+
+1. **Forbind din Prej-konto:** Status er *Ikke tilføjet*, *Gemt, men ikke kontrolleret* eller *Forbundet*. En gemt nøgle kan kontrolleres uden genindtastning via `verify-key`, som først reserverer og bruger ét kvoteret Prej-kald. Nøglen vises aldrig i klartekst.
+2. **Find Bilka-varerne:** Ét stort, tydeligt tryk med antallet af allerede valgte varer, forslag klar til gennemgang og ingredienser, der mangler søgning. Backend stopper efter højst 8 søgekald eller ca. 25 sekunder, gemmer fundene og lader brugeren fortsætte. UI forklarer forskellen mellem *Ingen forslag* og *Kræver præcisering*.
+3. **Se dine ingredienser:** Navngivne statusrækker, fx "Mel — 3 forslag klar" og "Kartofler — Mangler søgning". Første 12 vises, resten kan foldes ud. Brugeren ser, at forslag **ikke** er automatiske produktvalg.
+
+Når ingen API-nøgle er forbundet, er søgeknappen deaktiveret med en forklaring. Forskellen på brugerens personlige Prej-konto og husstandens fælles produktvalg fremgår tydeligt. Faste produktvalg og lager ændres ikke i fase 3.
+
+### Manuel test for intuitivitet
+
+- Første login uden Prej-nøgle → brugeren forstår, hvor nøglen indsættes, og hvorfor søgning endnu ikke kan startes.
+- Forhåndsgemte nøgler (fx indsat gennem Vault) → vis *Nøglen skal kontrolleres* samt knap til validering, uden ny indtastning.
+- Efter første import → vis konkrete ingrediensnavne og antal forslag, ikke kun tekniske tællere.
+- Ved stop pga. kvote/tidsgrænse → vis, at fundene er gemt, og hvordan man senere fortsætter.
+- Ved manglende eller mere end 100 søgeresultater → vis præcisering/ingen match tydeligt og lov ikke et usynligt automatisk valg.
+- Ved skift mellem partnere → begge ser fælles fundne produkter; kun ejeren af nøglen kan kontrollere/udskifte sin nøgle.
+
+**Bemærk:** Ingen automatiske Prej-kald sker, bare fordi skærmen vises. Status læses fra Supabase, og en API-kvote bruges kun ved brugerinitieret validering/import eller prisopdatering.
