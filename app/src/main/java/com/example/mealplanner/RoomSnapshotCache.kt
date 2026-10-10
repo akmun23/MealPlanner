@@ -408,7 +408,8 @@ internal object RoomSnapshotCodec {
                     selectedLunchRecipeIds = emptyList(),
                     weeklyPlanId = "offline-week-$weekStart",
                     weeklySandwichRecipeId = null,
-                    sandwichDay = null
+                    sandwichDay = null,
+                    viewWeekStart = currentWeekStart(today)
                 )
             }
         }.getOrNull()
@@ -420,7 +421,7 @@ internal object RoomSnapshotCodec {
     )
 
     private fun CloudSnapshot.toCached() = CachedCloudSnapshot(
-        weekStart = currentWeekStart().toString(),
+        weekStart = viewWeekStart.toString(),
         ingredients = ingredients.map {
             CachedIngredient(
                 id = it.id,
@@ -580,6 +581,7 @@ internal object RoomSnapshotCodec {
                     recipeId = it.recipeId,
                     eatenOn = LocalDate.parse(it.eatenOn)
                 )
-            }
+            },
+            viewWeekStart = LocalDate.parse(weekStart)
         )
 }
