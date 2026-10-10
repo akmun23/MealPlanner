@@ -86,8 +86,8 @@ Deno.test("one Prej request can produce suggestions for multiple ingredients and
       if (name === "prej_reserve_call") return true;
       return null;
     },
-    fetchPrej: async (url: string): Promise<Response> => {
-      apiCalls.push(url);
+    fetchPrej: async (url: string | URL | Request): Promise<Response> => {
+      apiCalls.push(String(url));
       return Response.json(
         { products: [flour, pizza], total: 2, page: 1, limit: 100 },
         { headers: { "X-RateLimit-Remaining-Day": "23" } },
