@@ -104,8 +104,10 @@ Deno.test("one Prej request can produce suggestions for multiple ingredients and
   ]);
   eq(apiCalls.length, 1);
   eq(apiCalls[0].includes("chain=bilka"), true);
+  eq(apiCalls[0].includes("grocery=1"), true);
   eq(candidates.length, 2); // One validated SKU candidate per ingredient.
   eq(caches.length, 1);
+  eq((caches[0] as {query_key:string}).query_key.startsWith("q:bilka:grocery1:"), true);
   if (!rpcCalls.includes("prej_reserve_call")) throw new Error("Quota reservation missing");
 
   const second = await discoverProducts(ctx);

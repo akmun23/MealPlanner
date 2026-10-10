@@ -42,6 +42,7 @@ Deno.test("manual product search reserves one user call and never changes defaul
     request: async (url: string | URL | Request): Promise<Response> => {
       realRequests++;
       assert(String(url).includes("chain=bilka"), "Only Bilka search");
+      assert(String(url).includes("grocery=1"), "Search must exclude non-grocery categories");
       return Response.json({
         products: [
           { id: 333, name: "Hvedemel 2 kg", brand: "Eksempelmærke",
@@ -65,4 +66,5 @@ Deno.test("manual product search reserves one user call and never changes defaul
   const second = await manualProductSearch(ctx, ingredient, "hvedemel");
   assert(second.fromCache, "Second call from cache");
   assert(realRequests === 1, "Second search must use zero Prej calls");
+  assert((cache[0] as {query_key:string}).query_key.startsWith("q:bilka:grocery1:"), "No reuse of unfiltered search cache");
 });

@@ -181,7 +181,7 @@ export async function discoverProducts(ctx: DiscoveryServices) {
   }
 
   async function lookup(query: string): Promise<PrejProduct[] | null> {
-    const key = "q:" + query.toLowerCase().trim();
+    const key = "q:bilka:grocery1:" + query.toLowerCase().trim();
     const existing = queryCache.get(key);
     if (existing && Date.parse(existing.expires_at) > Date.now()) {
       fromCache++;
@@ -222,6 +222,7 @@ export async function discoverProducts(ctx: DiscoveryServices) {
     try {
       const params = new URLSearchParams({
         chain: "bilka",
+        grocery: "1",
         q: query,
         page: "1",
         limit: "100",

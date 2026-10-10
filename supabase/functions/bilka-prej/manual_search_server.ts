@@ -21,7 +21,7 @@ export async function manualProductSearch(
   ) as Array<{id: string; name: string; never_buy: boolean}>;
   if (!ingredients?.length || ingredients[0].never_buy) throw new Error("invalid_search");
 
-  const key = "q:" + query.toLowerCase();
+  const key = "q:bilka:grocery1:" + query.toLowerCase();
   const cached = await ctx.admin(
     "/rest/v1/bilka_search_cache?select=query_key,product_ids,expires_at" +
     "&query_key=eq." + encodeURIComponent(key) + "&limit=1",
@@ -46,7 +46,7 @@ export async function manualProductSearch(
     let remaining: number | null = null;
     try {
       const args = new URLSearchParams({
-        chain: "bilka", q: query, page: "1", limit: "100"
+        chain: "bilka", grocery: "1", q: query, page: "1", limit: "100"
       });
       response = await ctx.request(
         "https://api.prej.app/v1/products?" + args.toString(),
