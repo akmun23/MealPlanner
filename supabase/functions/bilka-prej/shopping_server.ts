@@ -61,11 +61,13 @@ export async function recordPurchase(ctx: ShoppingService, input: CheckoutPayloa
   await checkedWeek(ctx, input.weekId);
   if (!uuid(input.ingredientId)) throw new CheckoutError("invalid_ingredient", 400);
   const house = encode(ctx.householdId);
-  const ingredientRows = list<{id: string; quantity_type: string}>(await ctx.admin(
-    "/rest/v1/ingredients?select=id,quantity_type&household_id=eq." + house +
+  const ingredientRows = list<{id: string; quantity_type: string; never_buy: boolean}>(await ctx.admin(
+    "/rest/v1/ingredients?select=id,quantity_type,never_buy&household_id=eq." + house +
       "&id=eq." + encode(input.ingredientId) + "&limit=1", "GET"
   ));
-  if (!ingredientRows.length) throw new CheckoutError("invalid_ingredient", 400);
+  if (!ingredientRows.length || ingredientRows[0].never_buy) {
+    throw new CheckoutError("invalid_ingredient", 400);
+  }
 
   const productId = input.productId ?? null;
   const manualName = input.manualProductName?.trim() || null;
