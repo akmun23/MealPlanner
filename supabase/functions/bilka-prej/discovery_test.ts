@@ -20,33 +20,30 @@ const pizza = {
     unit_price_label: "25,00 kr/kg", last_seen_date: "2026-10-10" }],
 };
 
-Deno.test("specific ingredient searches precede shared broad fallback terms", () => {
-  const groups = groupSearches([
-    { id: "one", name: "Mel" },
+Deno.test("only real ingredient names are searched without inferred broader words", () => {
+  const inputs = [
+    { id: "one", name: "Hvedemel" },
     { id: "two", name: "Pizzamel" },
     { id: "three", name: "Kartofler" },
-  ]);
-  eq(groups.length, 2);
-  eq(groups[0].query, "mel");
-  eq(groups[0].ingredients.map((i) => i.id), ["one", "two"]);
-  const exact = groupSearchesAtStage([
-    { id: "one", name: "Mel" },
-    { id: "two", name: "Pizzamel" },
-    { id: "three", name: "Kartofler" },
-  ], 0);
-  eq(exact.length, 3);
-  eq(searchQueries("Pizzamel"), ["pizzamel", "tipo 00", "mel"]);
-  eq(searchQueries("Rødløg"), ["rødløg", "løg"]);
-  if (!rankCandidates("Mel", [flour, pizza]).length) throw new Error("Missing flour");
+  ];
+  const groups = groupSearches(inputs);
+  eq(groups.map((g) => g.query), ["hvedemel", "kartofler", "pizzamel"]);
+  eq(groupSearchesAtStage(inputs, 0).length, 3);
+  eq(groupSearchesAtStage(inputs, 1), []);
+  eq(searchQueries("Pizzamel"), ["pizzamel"]);
+  eq(searchQueries("Rødløg"), ["rødløg"]);
+  eq(searchQueries("Økologisk fuldkornscouscous"), ["økologisk fuldkornscouscous"]);
+  eq(rankCandidates("Hvedemel", [flour, pizza])[0].product.id, 14);
   eq(rankCandidates("Pizzamel", [flour, pizza])[0].product.id, 25);
   eq(scoreCandidate("Tomat", flour), 0);
+  eq(scoreCandidate("Basmati ris", { id: 7, name: "Salling Basmatiris 1 kg" }), 0.88);
 });
 
-Deno.test("Danish terms remain valid Danish text for Prej searches", () => {
-  eq(searchTerm("Rødløg"), "løg");
-  eq(searchTerm("Kidneybønner"), "bønner");
+Deno.test("Danish ingredient text is kept rather than broadened to another food", () => {
+  eq(searchTerm("Rødløg"), "rødløg");
+  eq(searchTerm("Kidneybønner"), "kidneybønner");
   eq(searchTerm("Bacontern (pakke)"), "bacontern");
-  eq(searchTerm("Pizzamel"), "mel");
+  eq(searchTerm("Pizzamel"), "pizzamel");
 });
 
 Deno.test("one Prej request can produce suggestions for multiple ingredients and never selects defaults", async () => {
@@ -57,7 +54,7 @@ Deno.test("one Prej request can produce suggestions for multiple ingredients and
   const apiCalls: string[] = [];
   const rpcCalls: string[] = [];
   const members = [
-    { id: "flour-a", name: "Mel", never_buy: false },
+    { id: "flour-a", name: "Hvedemel", never_buy: false },
     { id: "pizza-b", name: "Pizzamel", never_buy: false },
     { id: "water-c", name: "Vand", never_buy: true },
   ];
@@ -108,7 +105,7 @@ Deno.test("one Prej request can produce suggestions for multiple ingredients and
   eq(first.pending, 0);
   eq(first.total, 2); // "Købes aldrig" is excluded.
   eq(first.items.map((i) => [i.name, i.state]), [
-    ["Mel", "READY"], ["Pizzamel", "READY"]
+    ["Hvedemel", "READY"], ["Pizzamel", "READY"]
   ]);
   eq(apiCalls.length, 2);
   eq(apiCalls[0].includes("chain=bilka"), true);
@@ -116,7 +113,7 @@ Deno.test("one Prej request can produce suggestions for multiple ingredients and
   eq(candidates.length, 2); // One validated SKU candidate per ingredient.
   eq(caches.length, 2);
   eq((caches[0] as {query_key:string}).query_key.startsWith("q:bilka:grocery1:food2:"), true);
-  eq(apiCalls.map((url) => new URL(url).searchParams.get("q")), ["mel", "pizzamel"]);
+  eq(apiCalls.map((url) => new URL(url).searchParams.get("q")), ["hvedemel", "pizzamel"]);
   if (!rpcCalls.includes("prej_reserve_call")) throw new Error("Quota reservation missing");
 
   const second = await discoverProducts(ctx);
@@ -126,7 +123,7 @@ Deno.test("one Prej request can produce suggestions for multiple ingredients and
 });
 
 Deno.test("unit-price order never automatically changes household defaults", () => {
-  const options = rankCandidates("Mel", [
+  const options = rankCandidates("Hvedemel", [
     { ...flour, prices: [{ chain_slug: "bilka", price: 2700, unit_price: 1350 }] },
     { ...flour, id: 222, name: "Hvedemel 5 kg",
       prices: [{ chain_slug: "bilka", price: 3500, unit_price: 700 }] },
@@ -164,7 +161,7 @@ Deno.test("a chosen SKU avoids further discovery and is never replaced", async (
   eq(writes, []);
 });
 
-Deno.test("exact search failure falls back to a synonym before a broad query", async () => {
+Deno.test("missing results do not cause invented broader searches", async () => {
   const calls: string[] = [];
   const suggestions: Array<Record<string, unknown>> = [];
   const jobs: Array<Record<string, unknown>> = [];
@@ -193,13 +190,14 @@ Deno.test("exact search failure falls back to a synonym before a broad query", a
     fetchPrej: async (url: string | URL | Request): Promise<Response> => {
       const query = new URL(String(url)).searchParams.get("q")!;
       calls.push(query);
-      return Response.json({ products: query === "tipo 00" ? [pizza] : [], total: 0 });
+      return Response.json({ products: [], total: 0 });
     },
   };
   const result = await discoverProducts(ctx);
-  eq(calls, ["pizzamel", "tipo 00"]);
-  eq(result.ready, 1);
-  eq(result.requestsUsed, 2);
-  eq(suggestions.length, 1);
+  eq(calls, ["pizzamel"]);
+  eq(result.ready, 0);
+  eq(result.noMatch, 1);
+  eq(result.requestsUsed, 1);
+  eq(suggestions.length, 0);
   eq(result.pending, 0);
 });
