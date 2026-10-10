@@ -117,7 +117,8 @@ async function status(userId: string): Promise<Response> {
     localBudget: DAILY_BUDGET,
     locallyReserved: used,
     locallyAvailable: Math.max(0, DAILY_BUDGET - used),
-    providerRemaining: usage[0]?.last_remaining_reported ?? null,
+    // Do not show a previous key's remaining quota for an unverified replacement.
+    providerRemaining: rows[0]?.verified_at ? (usage[0]?.last_remaining_reported ?? null) : null,
     quotaDateUtc: utcDate(),
   });
 }
@@ -154,13 +155,39 @@ async function checkProviderKey(userId: string, apiKey: string): Promise<number 
 
 async function storeKey(userId: string, rawKey: unknown): Promise<Response> {
   if (!validPrejKey(rawKey)) throw new ClientError("invalid_key_format", 400);
-  const remaining = await checkProviderKey(userId, rawKey);
+
+  let remaining: number | null;
+  try {
+    remaining = await checkProviderKey(userId, rawKey);
+  } catch (error) {
+    // Staging updates the encrypted Vault secret but does NOT mark a key as
+    // verified, reset call usage, or permit provider requests with the new key.
+    // Verification must be retried after the UTC daily budget resets.
+    if (!(error instanceof ClientError) || error.code !== "daily_budget_exhausted") {
+      throw error;
+    }
+    await rpc("prej_stage_key", { p_user_id: userId, p_api_key: rawKey });
+    return json({
+      connected: true,
+      keyLastFour: rawKey.slice(-4),
+      providerRemaining: null,
+      verificationPending: true,
+    });
+  }
+
   await rpc("prej_store_key", { p_user_id: userId, p_api_key: rawKey });
-  return json({ connected: true, keyLastFour: rawKey.slice(-4), providerRemaining: remaining });
+  return json({
+    connected: true,
+    keyLastFour: rawKey.slice(-4),
+    providerRemaining: remaining,
+    verificationPending: false,
+  });
 }
 
 async function verifyStoredKey(userId: string): Promise<Response> {
-  const stored = await rpc("prej_read_key", { p_user_id: userId });
+  // This action alone can read an unverified staged credential.
+  // Prej discovery, manual searches and price refresh remain verified-only.
+  const stored = await rpc("prej_read_pending_key", { p_user_id: userId });
   if (typeof stored !== "string" || !stored) throw new ClientError("prej_key_not_configured", 409);
   const remaining = await checkProviderKey(userId, stored);
   // Re-save only after successful provider validation so verified_at remains truthful.
