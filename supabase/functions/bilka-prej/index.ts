@@ -24,8 +24,6 @@ type Payload = {
   query?: unknown;
   enabled?: unknown;
   weekId?: unknown;
-  ingredientId?: unknown;
-  productId?: unknown;
   manualProductName?: unknown;
   packageCount?: unknown;
   amountBase?: unknown;
