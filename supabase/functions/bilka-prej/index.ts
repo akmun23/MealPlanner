@@ -21,6 +21,7 @@ type Payload = {
   apiKey?: unknown;
   householdId?: unknown;
   ingredientId?: unknown;
+  ingredientIds?: unknown;
   productId?: unknown;
   query?: unknown;
   enabled?: unknown;
@@ -375,7 +376,16 @@ Deno.serve(async (req) => {
       }
       case "catalog": {
         const householdId = await verifiedHousehold(userId, input.householdId);
-        return json(await catalog({ admin: adminRequest, householdId }));
+        if (input.ingredientIds !== undefined &&
+            (!Array.isArray(input.ingredientIds) ||
+            input.ingredientIds.length > 200 ||
+            !input.ingredientIds.every((id: unknown) => uuid(id)))) {
+          return json({ error: "invalid_catalog_filter" }, 400);
+        }
+        return json(await catalog(
+          { admin: adminRequest, householdId },
+          input.ingredientIds as string[] | undefined,
+        ));
       }
       case "manual-search": {
         const householdId = await verifiedHousehold(userId, input.householdId);
