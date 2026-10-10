@@ -80,16 +80,23 @@ internal data class BilkaProductCatalog(
     val defaults: List<BilkaListDefault>,
     val products: List<BilkaProduct>
 ) {
-    fun defaultId(ingredientId: String) =
-        defaults.firstOrNull { it.ingredientId == ingredientId }?.productId
+    // Preindex once when the catalog arrives; rows should not repeatedly scan
+    // every suggestion and product during fast scrolling or recomposition.
+    private val productsById = products.associateBy { it.id }
+    private val defaultsByIngredient = defaults.associateBy { it.ingredientId }
+    private val candidatesByIngredient = candidates.groupBy { it.ingredientId }
+
+    fun product(id: String): BilkaProduct? = productsById[id]
+    fun defaultId(ingredientId: String): String? =
+        defaultsByIngredient[ingredientId]?.productId
     fun suggestions(ingredientId: String): Set<String> =
-        candidates.filter { it.ingredientId == ingredientId }.map { it.productId }.toSet()
+        candidatesByIngredient[ingredientId].orEmpty().mapTo(mutableSetOf()) { it.productId }
     fun productsFor(ingredientId: String): List<BilkaProduct> {
         val allowed = suggestions(ingredientId) + listOfNotNull(defaultId(ingredientId))
-        return products.filter { it.id in allowed }
+        return allowed.mapNotNull(productsById::get)
     }
     fun ranks(ingredientId: String): Map<String, Int> =
-        candidates.filter { it.ingredientId == ingredientId }
+        candidatesByIngredient[ingredientId].orEmpty()
             .associate { it.productId to it.displayRank }
 }
 
@@ -290,7 +297,7 @@ internal fun BilkaProductsScreen(
                                     style = MaterialTheme.typography.bodySmall
                                 )
                                 val selected = catalog?.defaultId(item.ingredientId)?.let { id ->
-                                    catalog?.products?.firstOrNull { p -> p.id == id }
+                                    catalog?.product(id)
                                 }
                                 if (selected != null) {
                                     Text(
