@@ -243,7 +243,7 @@ fun WeekScreen(
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    "Uge $weekNumber · ${start.year}",
+                    "Uge $weekNumber · ${start.get(WeekFields.ISO.weekBasedYear())}",
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
