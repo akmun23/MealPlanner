@@ -1463,7 +1463,7 @@ private fun RequirementEditor(
                         val entered = parseDanishDecimal(amountText)
                             ?.takeIf { it.isFinite() && it > 0.0 }
                         val converted = entered?.let {
-                            selected.fromBase(draft.unit.toBase(it))
+                            draft.unit.convertAmountTo(it, selected)
                         }
                         if (converted != null) {
                             amountText = formatDisplayNumber(converted)
