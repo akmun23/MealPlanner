@@ -230,7 +230,7 @@ internal fun BilkaPurchaseDialog(
                 FilterChip(
                     selected = manual,
                     onClick = { manual = true; if (!priceEdited) paidText = "" },
-                    label = { Text("Anden vare (kun dette køb)") }
+                    label = { Text("Anden vare denne gang") }
                 )
 
                 if (manual) {
@@ -320,7 +320,7 @@ internal fun BilkaPurchaseDialog(
                         saving = false
                     }
                 }
-            ) { Text(if (saving) "Gemmer…" else "Gem køb og tilføj til Lager") }
+            ) { Text(if (saving) "Gemmer…" else "Læg på Lager") }
         },
         dismissButton = {
             TextButton(
