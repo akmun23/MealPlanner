@@ -218,8 +218,10 @@ async function nightlyStatus(userId: string, householdId: unknown): Promise<Resp
       "&household_id=eq." + encodeURIComponent(id) +
       "&order=local_date.desc&limit=1", "GET",
   ) as Array<{ status: string; finished_at: string | null; products_updated: number }>;
+  const schedulerReady = await rpc("bilka_nightly_scheduler_ready", {});
   return json({
     enabled: rows[0]?.enabled === true,
+    schedulerReady: schedulerReady === true,
     lastRunStatus: runs[0]?.status ?? null,
     lastUpdatedAt: runs[0]?.finished_at ?? null,
     productsUpdated: runs[0]?.products_updated ?? 0,
@@ -230,6 +232,9 @@ async function setNightly(userId: string, householdId: unknown, enabled: unknown
   const id = await verifiedHousehold(userId, householdId);
   if (typeof enabled !== "boolean") throw new ClientError("invalid_setting", 400);
   if (enabled) {
+    if (await rpc("bilka_nightly_scheduler_ready", {}) !== true) {
+      throw new ClientError("nightly_scheduler_not_ready", 409);
+    }
     const rows = await adminRequest(
       "/rest/v1/prej_user_credentials?select=verified_at,enabled&user_id=eq." +
         encodeURIComponent(userId) + "&limit=1", "GET",
