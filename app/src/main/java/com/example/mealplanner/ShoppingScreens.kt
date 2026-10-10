@@ -31,6 +31,9 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.derivedStateOf
@@ -55,6 +58,31 @@ private data class ShoppingSections(
 
 @Composable
 fun ShoppingScreen(state: MealPlannerState) {
+    val scope = rememberCoroutineScope()
+    val weekId = state.weeklyPlanId
+    var bilkaCatalog by remember(weekId) { mutableStateOf<BilkaProductCatalog?>(null) }
+    var bilkaContext by remember(weekId) { mutableStateOf<BilkaShoppingContext?>(null) }
+    var bilkaLoading by remember(weekId) { mutableStateOf(!state.isLocalMode) }
+
+    suspend fun refreshBilkaChoices() {
+        if (state.isLocalMode || weekId == null) {
+            bilkaLoading = false
+            return
+        }
+        bilkaLoading = true
+        val catalog = BilkaPrejClient.catalog(state.householdIdentifier)
+        val weekly = BilkaPrejClient.shoppingContext(state.householdIdentifier, weekId)
+        if (catalog.isSuccess && weekly.isSuccess) {
+            runCatching {
+                bilkaCatalog = parseBilkaCatalog(catalog.getOrThrow())
+                bilkaContext = decodeBilkaShoppingContext(weekly.getOrThrow())
+            }
+        }
+        bilkaLoading = false
+    }
+
+    LaunchedEffect(weekId, state.householdIdentifier) { refreshBilkaChoices() }
+
     var addToPantryItem by remember {
         mutableStateOf<ShoppingItem?>(null)
     }
@@ -71,11 +99,30 @@ fun ShoppingScreen(state: MealPlannerState) {
     }
 
     addToPantryItem?.let { item ->
-        AddPurchasedToPantryDialog(
-            item = item,
-            state = state,
-            onDismiss = { addToPantryItem = null }
-        )
+        val catalog = bilkaCatalog
+        val selection = bilkaContext
+        if (!state.isLocalMode && catalog != null && selection != null &&
+            (catalog.productsFor(item.ingredient.id).isNotEmpty() ||
+                selection.default(item.ingredient.id) != null)
+        ) {
+            BilkaPurchaseDialog(
+                item = item,
+                state = state,
+                catalog = catalog,
+                shopping = selection,
+                onDismiss = { addToPantryItem = null },
+                onSaved = {
+                    addToPantryItem = null
+                    scope.launch { refreshBilkaChoices() }
+                }
+            )
+        } else {
+            AddPurchasedToPantryDialog(
+                item = item,
+                state = state,
+                onDismiss = { addToPantryItem = null }
+            )
+        }
     }
 
     val sections by remember {
@@ -202,6 +249,7 @@ fun ShoppingScreen(state: MealPlannerState) {
                                 state = state,
                                 included = true,
                                 checked = false,
+                                bilkaInfo = bilkaShoppingLine(item, bilkaContext, bilkaCatalog),
                                 onEditPantry = {
                                     editPantryItem = item
                                 }
@@ -236,6 +284,7 @@ fun ShoppingScreen(state: MealPlannerState) {
                             state = state,
                             included = true,
                             checked = false,
+                            bilkaInfo = bilkaShoppingLine(item, bilkaContext, bilkaCatalog),
                             onEditPantry = {
                                 editPantryItem = item
                             }
@@ -263,8 +312,10 @@ fun ShoppingScreen(state: MealPlannerState) {
                         onEditPantry = {
                             editPantryItem = item
                         },
-                        onAddToPantry = {
-                            addToPantryItem = item
+                        onAddToPantry = if (bilkaLoading ||
+                            bilkaContext?.purchase(item.ingredient.id)?.purchasedAmountBase != null
+                        ) null else {
+                            { addToPantryItem = item }
                         }
                     )
                 }
@@ -307,6 +358,7 @@ private fun ShoppingItemCard(
     state: MealPlannerState,
     included: Boolean,
     checked: Boolean,
+    bilkaInfo: String? = null,
     onEditPantry: (() -> Unit)? = null,
     onAddToPantry: (() -> Unit)? = null
 ) {
@@ -369,6 +421,15 @@ private fun ShoppingItemCard(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
+                bilkaInfo?.let { info ->
+                    Text(
+                        info,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
 
             Spacer(Modifier.width(6.dp))
