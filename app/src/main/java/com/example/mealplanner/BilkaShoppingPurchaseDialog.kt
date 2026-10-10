@@ -137,8 +137,10 @@ internal fun BilkaPurchaseDialog(
     val estimated = if (!manual && count != null)
         BilkaPackageMath.estimatedCostOre(currentProduct?.priceOre, count)
     else null
+    // Estimated shelf price is informative, NOT an actual receipt amount.
+    // Only an amount explicitly typed by the user is saved as paid_total_ore.
     val paidOre = if (paidText.isBlank()) {
-        estimated
+        null
     } else {
         parseDanishDecimal(paidText)?.let {
             (it * 100).takeIf { n -> n.isFinite() && n >= 0 && n <= 1e9 }
