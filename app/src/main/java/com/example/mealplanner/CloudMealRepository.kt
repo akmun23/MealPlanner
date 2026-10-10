@@ -1441,7 +1441,7 @@ class CloudMealRepository(
         // Resize them at upload, not just at display, to avoid huge originals.
         val bytes = prepareImage(
             imageUri.toUri(),
-            maxDimension = if (kind == "ingredients") 384 else 1600
+            maxDimension = if (kind == "ingredients") PantryImageRules.INGREDIENT_UPLOAD_MAX_PIXELS else 1600
         )
         val path = $$"$$householdId/$$kind/$$objectId-${UUID.randomUUID()}.jpg"
         supabase.storage["meal-images"].upload(path, bytes) {
