@@ -1043,8 +1043,10 @@ class CloudMealRepository(
         }
 
         if (recipe.ingredients.isNotEmpty()) {
-            supabase.from("recipe_ingredients").insert(
-                recipe.ingredients.map {
+            // Idempotent across Room/WorkManager retries and repeated writes:
+            // the primary key is (recipe_id, ingredient_id).
+            supabase.from("recipe_ingredients").upsert(
+                RecipeRequirementRules.combineIngredients(recipe.ingredients).map {
                     RecipeIngredientRow(
                         householdId = householdId,
                         recipeId = recipe.id,
@@ -1052,7 +1054,9 @@ class CloudMealRepository(
                         amountBase = it.amountBase
                     )
                 }
-            )
+            ) {
+                onConflict = "recipe_id,ingredient_id"
+            }
         }
 
         supabase.from("recipe_pantry_prerequisites").delete {
@@ -1063,8 +1067,8 @@ class CloudMealRepository(
         }
 
         if (recipe.pantryPrerequisites.isNotEmpty()) {
-            supabase.from("recipe_pantry_prerequisites").insert(
-                recipe.pantryPrerequisites.map {
+            supabase.from("recipe_pantry_prerequisites").upsert(
+                RecipeRequirementRules.combinePrerequisites(recipe.pantryPrerequisites).map {
                     RecipePantryPrerequisiteRow(
                         householdId = householdId,
                         recipeId = recipe.id,
@@ -1072,7 +1076,9 @@ class CloudMealRepository(
                         minimumAmountBase = it.minimumAmountBase
                     )
                 }
-            )
+            ) {
+                onConflict = "recipe_id,ingredient_id"
+            }
         }
 
         recipe.copy(
