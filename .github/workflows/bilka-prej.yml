@@ -41,5 +41,9 @@ jobs:
           assert phase7.count("$ready$") == 2, "Readiness RPC requires matching SQL dollar quotes"
           assert "revoke all on function public.bilka_nightly_scheduler_ready()" in phase7.lower(), "Readiness RPC must not be public"
           assert "where public.shopping_product_overrides.purchased_amount_base is null" in phase6.lower(), "Repeat purchases must be blocked"
+          stage_fix = Path("supabase/migrations/20261011010000_fix_prej_stage_key_regex.sql").read_text()
+          assert "{12,256}" not in stage_fix.split("as $")[1], "Do not use unsupported PostgreSQL regex repetition bounds"
+          assert "length(p_api_key) not between 21 and 265" in stage_fix, "Keep Prej key length validation"
+          assert "revoke all on function public.prej_stage_key(uuid,text)" in stage_fix.lower(), "Staging must stay service-role only"
           print("Migration source integrity passed")
           PY
