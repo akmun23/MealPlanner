@@ -36,7 +36,7 @@ All public tables have RLS enabled, grants restricted, and composite foreign key
 
 1. Review `supabase/migrations/20261010093000_bilka_phase1.sql`.
 2. Run Android tests: `./gradlew :app:testDebugUnitTest`, and build with `./gradlew :app:assembleDebug`. The existing GitHub PR workflow runs both, including release/benchmark checks.
-3. Apply migration to an isolated Supabase test database before production. Verify every new table exists, all six are RLS-enabled, and that:
+3. Apply migration to an isolated Supabase test database before production. Run `supabase/tests/bilka_phase1_contract.sql` in the SQL editor or with psql, then verify with authenticated member/non-member sessions that:
    - `anon` cannot select or mutate any new table.
    - a non-member cannot read or change another household's defaults, candidates, jobs, or shopping overrides.
    - both authorized members can update one shared default.
@@ -70,3 +70,5 @@ None of these eight feedback rows has been modified, marked completed, or delete
 - **Phase 5:** Nightly price updates that never change product selection.
 - **Phase 6:** Shopping-list product cards, whole-pack calculations, one-off substitutes, pantry quantities.
 - **Phase 7:** Cross-household isolation, offline/retry, end-to-end integration tests.
+
+The GitHub Android CI runs the Kotlin tests, **not** the SQL migration or RLS session tests. SQL verification needs an isolated Supabase database after applying the migration.
