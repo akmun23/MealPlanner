@@ -206,6 +206,8 @@ private sealed interface AppPage {
     data object Settings : AppPage
     data object PlannerSettings : AppPage
     data object BilkaApiSettings : AppPage
+    data object BilkaProducts : AppPage
+    data class BilkaProductPicker(val ingredientId: String, val ingredientName: String) : AppPage
     data object SyncStatus : AppPage
     data object DataBackup : AppPage
     data object IngredientCategories : AppPage
@@ -278,7 +280,9 @@ fun MealPlannerApp(
             AppPage.Settings -> null
             AppPage.MealHistory -> null
             AppPage.PlannerSettings -> AppPage.Settings
-            AppPage.BilkaApiSettings -> AppPage.Settings
+            AppPage.BilkaApiSettings -> AppPage.BilkaProducts
+            AppPage.BilkaProducts -> AppPage.Settings
+            is AppPage.BilkaProductPicker -> AppPage.BilkaProducts
             AppPage.SyncStatus -> AppPage.Settings
             AppPage.DataBackup -> AppPage.Settings
             AppPage.IngredientCategories -> AppPage.Settings
@@ -365,12 +369,30 @@ fun MealPlannerApp(
             onIngredientCategories = { page = AppPage.IngredientCategories },
             onRecipeCategories = { page = AppPage.RecipeCategories },
             onPlannerSettings = { page = AppPage.PlannerSettings },
-            onBilkaApiSettings = { page = AppPage.BilkaApiSettings },
+            onBilkaApiSettings = { page = AppPage.BilkaProducts },
             onSyncStatus = { page = AppPage.SyncStatus },
             onDataBackup = { page = AppPage.DataBackup },
             themeMode = themeMode,
             onThemeModeChange = onThemeModeChange,
             onLogout = onLogout
+        )
+
+        AppPage.BilkaProducts -> BilkaProductsScreen(
+            householdId = household.id,
+            onBack = { navigateBack() },
+            onImport = { page = AppPage.BilkaApiSettings },
+            onPick = { ingredientId, ingredientName ->
+                page = AppPage.BilkaProductPicker(ingredientId, ingredientName)
+            }
+        )
+
+        is AppPage.BilkaProductPicker -> BilkaProductPickerScreen(
+            householdId = household.id,
+            ingredientId = current.ingredientId,
+            ingredientName = current.ingredientName,
+            onBack = { navigateBack() },
+            onSaved = { page = AppPage.BilkaProducts },
+            onImport = { page = AppPage.BilkaApiSettings }
         )
 
         AppPage.BilkaApiSettings -> BilkaApiSettingsScreen(
