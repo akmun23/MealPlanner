@@ -11,6 +11,7 @@ declare
         'ingredient_bilka_defaults',
         'shopping_product_overrides',
         'bilka_discovery_jobs',
+        'prej_user_credentials',
         'prej_api_usage'
     ];
 begin
@@ -57,12 +58,38 @@ begin
         end if;
     end loop;
 
+    if has_table_privilege('authenticated', 'public.prej_user_credentials', 'SELECT')
+        or has_table_privilege('authenticated', 'public.prej_user_credentials', 'INSERT')
+        or has_table_privilege('authenticated', 'public.prej_user_credentials', 'UPDATE')
+        or has_table_privilege('authenticated', 'public.prej_user_credentials', 'DELETE')
+    then
+        raise exception 'User-owned Prej key references must be server-only';
+    end if;
+
     if has_table_privilege('authenticated', 'public.prej_api_usage', 'SELECT')
         or has_table_privilege('authenticated', 'public.prej_api_usage', 'INSERT')
         or has_table_privilege('authenticated', 'public.prej_api_usage', 'UPDATE')
         or has_table_privilege('authenticated', 'public.prej_api_usage', 'DELETE')
     then
         raise exception 'Quota accounting must be server-only';
+    end if;
+
+    if not exists (
+        select 1 from pg_constraint
+        where conrelid = 'public.prej_api_usage'::regclass
+          and contype = 'p'
+          and pg_get_constraintdef(oid) like '%(user_id, quota_date_utc)%'
+    ) then
+        raise exception 'Prej daily API budget must be per-user, not global';
+    end if;
+
+    if not exists (
+        select 1 from pg_constraint
+        where conrelid = 'public.prej_user_credentials'::regclass
+          and contype = 'p'
+          and pg_get_constraintdef(oid) like '%(user_id)%'
+    ) then
+        raise exception 'Prej credential storage must be per-user';
     end if;
 
     foreach table_name in array array[
