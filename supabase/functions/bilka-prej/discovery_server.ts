@@ -290,9 +290,8 @@ export async function discoverProducts(ctx: DiscoveryServices) {
     return products.filter((product) => known.has(String(product.id)));
   }
 
-  // Specific names first, then synonyms, then broad grouped terms.
-  // Fixed household choices were excluded in discoveryStatus and must never
-  // be queried or replaced automatically.
+  // Query only the saved ingredient names: no hardcoded ingredient synonyms
+  // or broadening guesses. Chosen household products are never replaced.
   const attempted = new Map<string, Set<string>>();
   const truncated = new Set<string>();
   const maxStages = Math.max(0, ...initial.pendingIngredients.map((i) =>
@@ -320,9 +319,8 @@ export async function discoverProducts(ctx: DiscoveryServices) {
     }
   }
 
-  // Only mark an ingredient as NO_MATCH once every distinct fallback query
-  // was actually tried. An 8-call/25-second cutoff must leave it PENDING so
-  // another button press can continue from cached results.
+  // Only mark an ingredient as NO_MATCH after its exact query was tried.
+  // A run cutoff must leave it PENDING so the next request can resume.
   for (const ingredient of remaining.values()) {
     const queries = searchQueries(ingredient.name);
     const done = attempted.get(ingredient.id);
