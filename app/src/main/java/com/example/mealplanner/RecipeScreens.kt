@@ -46,6 +46,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -712,6 +713,43 @@ internal fun RecipeDetailScreen(
                 }
             }
 
+            if (recipe.instructionSteps.isNotEmpty()) {
+                item {
+                    SectionCard("Fremgangsmåde") {
+                        RecipeInstructionRules.numbered(recipe.instructionSteps).forEach { (label, step) ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                                verticalAlignment = Alignment.Top
+                            ) {
+                                Text(
+                                    label,
+                                    modifier = Modifier.width(48.dp),
+                                    fontWeight = FontWeight.Bold
+                                )
+                                Text(step.text, modifier = Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (!recipe.sourceUrl.isNullOrBlank()) {
+                item {
+                    val uriHandler = LocalUriHandler.current
+                    SectionCard("Opskriftslink") {
+                        if (recipe.sourceUrl.startsWith("https://") ||
+                            recipe.sourceUrl.startsWith("http://")
+                        ) {
+                            TextButton(onClick = { uriHandler.openUri(recipe.sourceUrl) }) {
+                                Text(recipe.sourceUrl)
+                            }
+                        } else {
+                            Text(recipe.sourceUrl)
+                        }
+                    }
+                }
+            }
+
             if (recipe.notes.isNotBlank()) {
                 item {
                     SectionCard("Noter") {
@@ -781,6 +819,12 @@ internal fun RecipeEditorScreen(
         )
     }
     var notes by remember(recipeId) { mutableStateOf(existing?.notes ?: "") }
+    var sourceUrl by remember(recipeId) { mutableStateOf(existing?.sourceUrl.orEmpty()) }
+    val instructionSteps = remember(recipeId) {
+        mutableStateListOf<RecipeInstructionStep>().apply {
+            addAll(existing?.instructionSteps.orEmpty())
+        }
+    }
     var imageUri by remember(recipeId) { mutableStateOf(existing?.imageUri) }
     var ingredientSearch by remember { mutableStateOf("") }
     var prerequisiteSearch by remember { mutableStateOf("") }
@@ -1155,6 +1199,82 @@ internal fun RecipeEditorScreen(
             }
 
             item {
+                SectionCard("Fremgangsmåde") {
+                    RecipeInstructionRules.numbered(instructionSteps.toList())
+                        .forEachIndexed { index, entry ->
+                            val (label, step) = entry
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.Top
+                            ) {
+                                Text(
+                                    label,
+                                    modifier = Modifier.width(42.dp).padding(top = 12.dp),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                OutlinedTextField(
+                                    value = step.text,
+                                    onValueChange = { value ->
+                                        instructionSteps[index] = step.copy(text = value)
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    label = {
+                                        Text(if (step.level == 1) "Undertrin" else "Trin")
+                                    },
+                                    minLines = 2
+                                )
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                TextButton(onClick = {
+                                    val changed = RecipeInstructionRules.move(
+                                        instructionSteps.toList(), index, -1
+                                    )
+                                    instructionSteps.clear()
+                                    instructionSteps.addAll(changed)
+                                }) { Text("Op") }
+                                TextButton(onClick = {
+                                    val changed = RecipeInstructionRules.move(
+                                        instructionSteps.toList(), index, 1
+                                    )
+                                    instructionSteps.clear()
+                                    instructionSteps.addAll(changed)
+                                }) { Text("Ned") }
+                                TextButton(onClick = {
+                                    val changed = RecipeInstructionRules.remove(
+                                        instructionSteps.toList(), index
+                                    )
+                                    instructionSteps.clear()
+                                    instructionSteps.addAll(changed)
+                                }) { Text("Fjern") }
+                            }
+                        }
+                    OutlinedButton(
+                        onClick = {
+                            instructionSteps.add(RecipeInstructionStep(text = "", level = 0))
+                        }
+                    ) { Text("Tilføj trin") }
+                    if (instructionSteps.any { it.level == 0 }) {
+                        TextButton(
+                            onClick = {
+                                instructionSteps.add(RecipeInstructionStep(text = "", level = 1))
+                            }
+                        ) { Text("Tilføj undertrin") }
+                    }
+                }
+            }
+
+            item {
+                OutlinedTextField(
+                    value = sourceUrl,
+                    onValueChange = { sourceUrl = it },
+                    label = { Text("Link til opskrift") },
+                    placeholder = { Text("https://...") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+            }
+
+            item {
                 OutlinedTextField(
                     value = notes,
                     onValueChange = { notes = it },
@@ -1175,6 +1295,8 @@ internal fun RecipeEditorScreen(
                                 prepMinutes = prepMinutes,
                                 categoryId = categoryId,
                                 notes = notes,
+                                instructionSteps = instructionSteps.toList(),
+                                sourceUrl = sourceUrl,
                                 imageUri = imageUri,
                                 pantryPrerequisites =
                                     if (mealType == MealType.DINNER) {
@@ -1197,6 +1319,8 @@ internal fun RecipeEditorScreen(
                                 prepMinutes = prepMinutes,
                                 categoryId = categoryId,
                                 notes = notes,
+                                instructionSteps = instructionSteps.toList(),
+                                sourceUrl = sourceUrl,
                                 imageUri = imageUri,
                                 pantryPrerequisites =
                                     if (mealType == MealType.DINNER) {
