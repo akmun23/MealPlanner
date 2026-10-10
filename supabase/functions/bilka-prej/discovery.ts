@@ -74,6 +74,10 @@ export function scoreCandidate(ingredientName: string, product: PrejProduct): nu
   const name = normalizeIngredient(product.name ?? "");
   if (!wanted || !name) return 0;
   if (name === wanted) return 1;
+  // Word boundaries vary between provider products: "Basmati ris" and
+  // "Basmatiris" should match without inventing a synonym.
+  const compact = wanted.replaceAll(" ", "");
+  if (compact.length >= 5 && name.replaceAll(" ", "").includes(compact)) return 0.88;
   const parts = wanted.split(" ").filter((p) => p.length > 2);
   if (!parts.length || !parts.every((p) => matchesToken(name, p))) return 0;
   return parts.length > 1 ? 0.83 : 0.78;
