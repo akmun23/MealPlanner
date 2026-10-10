@@ -46,6 +46,8 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.Modifier
@@ -58,6 +60,32 @@ private data class RecipeListUi(
     val recipe: Recipe,
     val categoryName: String,
     val proteinNames: List<String>
+)
+
+// Flat, Bundle-compatible savers preserve unsaved long recipes on rotation.
+private val recipeStepSaver = listSaver<SnapshotStateList<RecipeInstructionStep>, String>(
+    save = { steps -> steps.flatMap { listOf(it.id, it.text, it.level.toString()) } },
+    restore = { stored ->
+        mutableStateListOf<RecipeInstructionStep>().apply {
+            stored.chunked(3).filter { it.size == 3 }.forEach { parts ->
+                add(RecipeInstructionStep(parts[0], parts[1], parts[2].toIntOrNull() ?: 0))
+            }
+        }
+    }
+)
+private val recipeDraftSaver = listSaver<SnapshotStateList<DraftRequirement>, String>(
+    save = { drafts ->
+        drafts.flatMap { listOf(it.ingredientId, it.amount.toString(), it.unit.name) }
+    },
+    restore = { stored ->
+        mutableStateListOf<DraftRequirement>().apply {
+            stored.chunked(3).filter { it.size == 3 }.forEach { parts ->
+                val amount = parts[1].toDoubleOrNull()
+                val unit = MeasurementUnit.entries.find { it.name == parts[2] }
+                if (amount != null && unit != null) add(DraftRequirement(parts[0], amount, unit))
+            }
+        }
+    }
 )
 
 @Composable
@@ -804,14 +832,14 @@ internal fun RecipeEditorScreen(
         state.recipes.find { it.id == id }
     }
 
-    var name by remember(recipeId) { mutableStateOf(existing?.name ?: "") }
-    var mealType by remember(recipeId) {
+    var name by rememberSaveable(recipeId) { mutableStateOf(existing?.name ?: "") }
+    var mealType by rememberSaveable(recipeId) {
         mutableStateOf(existing?.mealType ?: initialMealType)
     }
-    var autoRotationEnabled by remember(recipeId) {
+    var autoRotationEnabled by rememberSaveable(recipeId) {
         mutableStateOf(existing?.autoRotationEnabled ?: true)
     }
-    var prepMinutesText by remember(recipeId) {
+    var prepMinutesText by rememberSaveable(recipeId) {
         mutableStateOf(existing?.prepMinutes?.toString() ?: "")
     }
     val prepMinutes = prepMinutesText
@@ -821,7 +849,7 @@ internal fun RecipeEditorScreen(
         ?.takeIf { it in 1..1440 }
     val prepTimeValid =
         prepMinutesText.isBlank() || prepMinutes != null
-    var categoryId by remember(recipeId) {
+    var categoryId by rememberSaveable(recipeId) {
         mutableStateOf(
             existing?.categoryId
                 ?: state.recipeCategories
@@ -830,16 +858,16 @@ internal fun RecipeEditorScreen(
                 ?: state.recipeCategories.firstOrNull()?.id
         )
     }
-    var notes by remember(recipeId) { mutableStateOf(existing?.notes ?: "") }
-    var sourceUrl by remember(recipeId) { mutableStateOf(existing?.sourceUrl.orEmpty()) }
-    val instructionSteps = remember(recipeId) {
+    var notes by rememberSaveable(recipeId) { mutableStateOf(existing?.notes ?: "") }
+    var sourceUrl by rememberSaveable(recipeId) { mutableStateOf(existing?.sourceUrl.orEmpty()) }
+    val instructionSteps = rememberSaveable(recipeId, saver = recipeStepSaver) {
         mutableStateListOf<RecipeInstructionStep>().apply {
             addAll(existing?.instructionSteps.orEmpty())
         }
     }
-    var imageUri by remember(recipeId) { mutableStateOf(existing?.imageUri) }
-    var ingredientSearch by remember { mutableStateOf("") }
-    var prerequisiteSearch by remember { mutableStateOf("") }
+    var imageUri by rememberSaveable(recipeId) { mutableStateOf(existing?.imageUri) }
+    var ingredientSearch by rememberSaveable(recipeId) { mutableStateOf("") }
+    var prerequisiteSearch by rememberSaveable(recipeId) { mutableStateOf("") }
     val recipeNameAvailable =
         name.isBlank() ||
             state.isRecipeNameAvailable(
@@ -847,7 +875,7 @@ internal fun RecipeEditorScreen(
                 excludingId = existing?.id
             )
 
-    val drafts = remember(recipeId) {
+    val drafts = rememberSaveable(recipeId, saver = recipeDraftSaver) {
         mutableStateListOf<DraftRequirement>().apply {
             existing?.ingredients?.forEach { requirement ->
                 val ingredient = state.ingredients.find {
@@ -869,7 +897,7 @@ internal fun RecipeEditorScreen(
         }
     }
 
-    val prerequisiteDrafts = remember(recipeId) {
+    val prerequisiteDrafts = rememberSaveable(recipeId, saver = recipeDraftSaver) {
         mutableStateListOf<DraftRequirement>().apply {
             existing?.pantryPrerequisites?.forEach { prerequisite ->
                 val ingredient = state.ingredients.find {
@@ -964,8 +992,12 @@ internal fun RecipeEditorScreen(
         drafts.toList(), prerequisiteDrafts.toList()
     )
     val initialForm = remember(recipeId) { formSnapshot() }
-    val hasUnsavedChanges = formSnapshot() != initialForm
-    var showDiscardDialog by remember(recipeId) { mutableStateOf(false) }
+    var changesSeen by rememberSaveable(recipeId) { mutableStateOf(false) }
+    val hasUnsavedChanges = changesSeen || formSnapshot() != initialForm
+    androidx.compose.runtime.LaunchedEffect(hasUnsavedChanges) {
+        if (hasUnsavedChanges) changesSeen = true
+    }
+    var showDiscardDialog by rememberSaveable(recipeId) { mutableStateOf(false) }
 
     fun requestBack() {
         if (hasUnsavedChanges) showDiscardDialog = true else onBack()
