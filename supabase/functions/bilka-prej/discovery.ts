@@ -54,15 +54,20 @@ export function groupSearchesAtStage(ingredients: IngredientNeed[], stage: numbe
 function matchesToken(haystack: string, needle: string): boolean {
   const tokens = haystack.split(" ");
   if (tokens.includes(needle)) return true;
-  // Generic support for compounded words and Danish inflections, not a list
-  // of assumed ingredient substitutions. Short tokens may have false hits,
-  // so only 4+ letter tokens get flexible standalone matching.
-  if (needle.length >= 4 && tokens.some((t) => t.startsWith(needle) || t.endsWith(needle))) {
-    return true;
-  }
+
+  // Danish food compounds can end in the target noun (e.g. "hvedemel"),
+  // but a prefix is NOT an ingredient match: "fløde" must not suggest
+  // "flødebolle" or "flødelikør".
+  if (needle.length >= 4 && tokens.some((t) => t.endsWith(needle))) return true;
+
   const stem = needle.replace(/(erne|ende|ere|er|ene|en|et|e)$/g, "");
-  return stem.length >= 4 &&
-    tokens.some((t) => t === stem || t.startsWith(stem));
+  if (stem.length < 4) return false;
+  // Match only explicit inflection suffixes, never an arbitrary longer word.
+  const forms = new Set([
+    stem, stem + "e", stem + "er", stem + "erne",
+    stem + "en", stem + "ene", stem + "et",
+  ]);
+  return tokens.some((t) => forms.has(t));
 }
 
 /**
@@ -77,7 +82,7 @@ export function scoreCandidate(ingredientName: string, product: PrejProduct): nu
   // Word boundaries vary between provider products: "Basmati ris" and
   // "Basmatiris" should match without inventing a synonym.
   const compact = wanted.replaceAll(" ", "");
-  if (compact.length >= 5 && name.replaceAll(" ", "").includes(compact)) return 0.88;
+  if (compact.length >= 5 && name.split(" ").includes(compact)) return 0.88;
   const parts = wanted.split(" ").filter((p) => p.length > 2);
   if (!parts.length || !parts.every((p) => matchesToken(name, p))) return 0;
   return parts.length > 1 ? 0.83 : 0.78;
