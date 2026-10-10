@@ -1,3 +1,4 @@
+import { discoverProducts, discoveryStatus, DiscoveryError } from "./discovery_server.ts";
 import {
   batchIds,
   dailyRemaining,
@@ -12,7 +13,7 @@ const PREJ_BASE = "https://api.prej.app";
 const DAILY_BUDGET = 20; // 25 free calls; keep 5 in reserve (including key checks).
 
 type Payload = {
-  action?: "status" | "set-key" | "remove-key" | "refresh";
+  action?: "status" | "set-key" | "remove-key" | "refresh" | "discover" | "discovery-status";
   apiKey?: unknown;
   householdId?: unknown;
 };
@@ -36,14 +37,14 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-async function adminRequest(path: string, method: "GET" | "POST", body?: unknown): Promise<unknown> {
+async function adminRequest(path: string, method: "GET" | "POST", body?: unknown, prefer?: string): Promise<unknown> {
   const response = await fetch(SUPABASE_URL + path, {
     method,
     headers: {
       apikey: SERVICE_KEY,
       Authorization: "Bearer " + SERVICE_KEY,
       "Content-Type": "application/json",
-      Prefer: "return=representation,resolution=merge-duplicates",
+      Prefer: prefer ?? "return=representation,resolution=merge-duplicates",
     },
     body: body == null ? undefined : JSON.stringify(body),
     signal: AbortSignal.timeout(15_000),
@@ -152,6 +153,34 @@ async function removeKey(userId: string): Promise<Response> {
   return json({ connected: false });
 }
 
+async function verifiedHousehold(userId: string, householdId: unknown): Promise<string> {
+  if (!uuid(householdId)) throw new ClientError("invalid_household_id", 400);
+  const memberships = await adminRequest(
+    "/rest/v1/household_members?select=household_id&user_id=eq." +
+      encodeURIComponent(userId) + "&household_id=eq." + encodeURIComponent(householdId),
+    "GET",
+  ) as unknown[];
+  if (!memberships.length) throw new ClientError("not_household_member", 403);
+  return householdId;
+}
+
+async function discoveryAction(userId: string, householdId: unknown, run: boolean): Promise<Response> {
+  const id = await verifiedHousehold(userId, householdId);
+  const services = {
+    admin: adminRequest,
+    rpc,
+    fetchPrej: fetch,
+    userId,
+    householdId: id,
+  };
+  return json(run ? await discoverProducts(services) : await discoveryStatus(services).then(
+    (s) => ({
+      total: s.total, chosen: s.chosen, ready: s.ready,
+      noMatch: s.noMatch, pending: s.pending, remainingQueries: s.remainingQueries,
+    })
+  ));
+}
+
 async function refresh(userId: string, householdId: unknown): Promise<Response> {
   if (!uuid(householdId)) throw new ClientError("invalid_household_id", 400);
   const memberships = await adminRequest(
@@ -248,10 +277,12 @@ Deno.serve(async (req) => {
       case "set-key": return await storeKey(userId, input.apiKey);
       case "remove-key": return await removeKey(userId);
       case "refresh": return await refresh(userId, input.householdId);
+      case "discover": return await discoveryAction(userId, input.householdId, true);
+      case "discovery-status": return await discoveryAction(userId, input.householdId, false);
       default: return json({ error: "unknown_action" }, 400);
     }
   } catch (err) {
-    if (err instanceof ClientError) return json({ error: err.code }, err.status);
+    if (err instanceof ClientError || err instanceof DiscoveryError) return json({ error: err.code }, err.status);
     // No logging: even thrown provider/database errors could contain credentials.
     return json({ error: "internal_error" }, 500);
   }
