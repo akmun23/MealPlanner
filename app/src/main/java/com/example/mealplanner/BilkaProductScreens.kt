@@ -240,6 +240,43 @@ internal fun BilkaProductsScreen(
                     }
                 }
             }
+            if (!busy && data != null) {
+                item {
+                    SectionCard("Mangler dit mærke?") {
+                        Text(
+                            "Søg direkte i Bilkas varer. Det bruger højst ét Prej-kald, " +
+                                "medmindre vi allerede har søgningen gemt.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        androidx.compose.material3.OutlinedTextField(
+                            value = moreQuery,
+                            onValueChange = { moreQuery = it.take(80) },
+                            label = { Text("Varenavn eller mærke") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                        OutlinedButton(
+                            onClick = {
+                                searchingMore = true
+                                moreMessage = null
+                                scope.launch {
+                                    BilkaPrejClient.manualSearch(
+                                        householdId, ingredientId, moreQuery
+                                    ).onSuccess { info ->
+                                        val count = info["count"]?.toString()?.trim('"') ?: "0"
+                                        moreMessage = "Fandt $count forslag. Vælg dit produkt nedenfor."
+                                        reload()
+                                    }.onFailure { moreMessage = it.message }
+                                    searchingMore = false
+                                }
+                            },
+                            enabled = !searchingMore && moreQuery.trim().length >= 2,
+                            modifier = Modifier.fillMaxWidth()
+                        ) { Text(if (searchingMore) "Søger …" else "Søg i Bilka") }
+                        moreMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                    }
+                }
+            }
             if (busy) item { CircularProgressIndicator() }
             else if (error != null) {
                 item {
@@ -325,6 +362,9 @@ internal fun BilkaProductPickerScreen(
     var error by remember(ingredientId) { mutableStateOf<String?>(null) }
     var search by remember(ingredientId) { mutableStateOf("") }
     var cheapest by remember(ingredientId) { mutableStateOf(true) }
+    var moreQuery by remember(ingredientId) { mutableStateOf(ingredientName) }
+    var searchingMore by remember(ingredientId) { mutableStateOf(false) }
+    var moreMessage by remember(ingredientId) { mutableStateOf<String?>(null) }
 
     suspend fun reload() {
         busy = true
