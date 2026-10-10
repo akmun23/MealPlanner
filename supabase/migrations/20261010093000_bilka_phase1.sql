@@ -1,5 +1,5 @@
 -- Bilka integration, phase 1: schema and access control only.
--- No product import, external requests, scheduled jobs or credentials are introduced here.
+-- No product import, external requests, scheduled jobs or raw credentials are introduced here.
 -- Keep the chosen product immutable across price refreshes: the worker only updates bilka_products.
 
 create table public.bilka_products (
@@ -131,10 +131,28 @@ create index idx_bilka_discovery_jobs_pending
     on public.bilka_discovery_jobs(status, next_attempt_at, created_at)
     where status in ('PENDING', 'FAILED');
 
--- Quota accounting must not be directly writable or readable from Android clients.
--- The later Edge Function will reserve calls atomically via a server-only operation.
+-- Personal Prej credentials are encrypted in Supabase Vault by a later Edge Function.
+-- Only an opaque Vault secret reference and redacted metadata are stored here.
+-- This table must not have any direct authenticated/anon grants or RLS policies.
+create table public.prej_user_credentials (
+    user_id uuid primary key references auth.users(id) on delete cascade,
+    vault_secret_id uuid not null unique,
+    key_last_four text not null check (length(key_last_four) = 4),
+    enabled boolean not null default true,
+    verified_at timestamptz,
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+comment on table public.prej_user_credentials is
+    'Server-only metadata and Supabase Vault reference for each user-owned Prej key. Never contains plaintext keys.';
+
+-- Quotas are PER USER/PREJ ACCOUNT, never pooled among household members.
+-- A future server-only operation must reserve calls atomically before Prej requests.
 create table public.prej_api_usage (
-    quota_date_utc date primary key,
+    user_id uuid not null references public.prej_user_credentials(user_id) on delete cascade,
+    quota_date_utc date not null,
+    primary key (user_id, quota_date_utc),
     calls_reserved integer not null default 0 check (calls_reserved >= 0),
     calls_completed integer not null default 0 check (calls_completed >= 0),
     last_remaining_reported integer check (
@@ -145,7 +163,7 @@ create table public.prej_api_usage (
 );
 
 comment on table public.prej_api_usage is
-    'Server-only UTC daily quota accounting. Never stores API credentials.';
+    'Server-only per-user UTC daily quota accounting. Never pools credentials or quotas.';
 
 -- Every table in the exposed public schema has RLS.
 alter table public.bilka_products enable row level security;
@@ -153,6 +171,7 @@ alter table public.ingredient_bilka_candidates enable row level security;
 alter table public.ingredient_bilka_defaults enable row level security;
 alter table public.shopping_product_overrides enable row level security;
 alter table public.bilka_discovery_jobs enable row level security;
+alter table public.prej_user_credentials enable row level security;
 alter table public.prej_api_usage enable row level security;
 
 -- Revoke default public-schema grants before granting minimal permissions.
@@ -161,6 +180,7 @@ revoke all on public.ingredient_bilka_candidates from anon, authenticated;
 revoke all on public.ingredient_bilka_defaults from anon, authenticated;
 revoke all on public.shopping_product_overrides from anon, authenticated;
 revoke all on public.bilka_discovery_jobs from anon, authenticated;
+revoke all on public.prej_user_credentials from anon, authenticated;
 revoke all on public.prej_api_usage from anon, authenticated;
 
 -- Non-sensitive product catalog is read-only for authenticated app users.
@@ -193,4 +213,5 @@ on public.shopping_product_overrides for all to authenticated
 using (private.is_household_member(household_id))
 with check (private.is_household_member(household_id));
 
--- prej_api_usage deliberately has no client policy and no client grants.
+-- prej_user_credentials and prej_api_usage deliberately have no client policies or client grants.
+-- They must be accessed only by authenticated/authorized server-side operations.
