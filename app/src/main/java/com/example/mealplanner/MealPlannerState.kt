@@ -1953,7 +1953,7 @@ class MealPlannerState(
         return totals.mapNotNull { (ingredientId, requiredBase) ->
             val ingredient = ingredientsById[ingredientId]
                 ?: return@mapNotNull null
-            if (ingredient.neverBuy) return@mapNotNull null
+            if (!ShoppingIngredientRules.isAutomaticallyPurchased(ingredient)) return@mapNotNull null
 
             ShoppingItem(
                 ingredient = ingredient,
