@@ -13,7 +13,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -83,7 +82,11 @@ private fun ingredientStatusLabel(item: BilkaIngredientStatus): String = when (i
 }
 
 @Composable
-internal fun BilkaApiSettingsScreen(householdId: String, onBack: () -> Unit) {
+internal fun BilkaApiSettingsScreen(
+    householdId: String,
+    onBack: () -> Unit,
+    onViewProducts: () -> Unit
+) {
     val scope = rememberCoroutineScope()
     var apiKey by remember { mutableStateOf("") }
     var keyInputOpen by remember { mutableStateOf(false) }
@@ -94,7 +97,6 @@ internal fun BilkaApiSettingsScreen(householdId: String, onBack: () -> Unit) {
     var localBudget by remember { mutableStateOf(20) }
     var providerRemaining by remember { mutableStateOf<String?>(null) }
     var importStatus by remember { mutableStateOf<JsonObject?>(null) }
-    var showingAll by remember { mutableStateOf(false) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var confirmRemove by remember { mutableStateOf(false) }
@@ -158,8 +160,6 @@ internal fun BilkaApiSettingsScreen(householdId: String, onBack: () -> Unit) {
     val pending = importStatus.bilkaNumber("pending")
     val noMatch = importStatus.bilkaNumber("noMatch")
     val incomplete = importStatus.bilkaNumber("incomplete")
-    val items = importStatus.bilkaIngredients()
-    val shownItems = if (showingAll) items else items.take(12)
     val actionable = pending > 0
 
     SubpageScaffold(title = "Bilka-produkter", onBack = onBack) { padding ->
@@ -344,39 +344,17 @@ internal fun BilkaApiSettingsScreen(householdId: String, onBack: () -> Unit) {
                 }
             }
 
-            if (items.isNotEmpty()) {
-                item {
-                    SectionCard("3. Se dine ingredienser") {
-                        Text(
-                            "Her kan du se, hvilke ingredienser der har fået forslag. " +
-                            "Du skal selv vælge det endelige produkt – vi vælger ikke automatisk.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        shownItems.forEachIndexed { index, ingredient ->
-                            if (index > 0) HorizontalDivider()
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 7.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Text(
-                                    ingredient.name,
-                                    modifier = Modifier.weight(1f),
-                                    fontWeight = FontWeight.Medium
-                                )
-                                Text(
-                                    ingredientStatusLabel(ingredient),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
-                        if (items.size > 12) {
-                            TextButton(onClick = { showingAll = !showingAll }) {
-                                Text(if (showingAll) "Vis færre" else "Vis alle ${items.size} ingredienser")
-                            }
-                        }
-                    }
+            item {
+                SectionCard("3. Vælg dine faste varer") {
+                    Text(
+                        "Se alle ingredienser og sammenlign konkrete Bilka-varer " +
+                            "på den selvstændige produktside.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    Button(
+                        onClick = onViewProducts,
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Gå til produktoversigten") }
                 }
             }
 
