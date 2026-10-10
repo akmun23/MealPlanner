@@ -22,6 +22,8 @@ import kotlinx.serialization.json.Json
  * transmitted once to Supabase for Vault storage; never write it to preferences,
  * Room, logs, BuildConfig or a third-party endpoint from Android.
  */
+private class BilkaApiError(message: String) : RuntimeException(message)
+
 internal object BilkaPrejClient {
     private val http = HttpClient(CIO)
     private val json = Json
@@ -43,7 +45,7 @@ internal object BilkaPrejClient {
     ): Result<JsonObject> = withContext(Dispatchers.IO) {
         runCatching {
             val accessToken = SupabaseProvider.client.auth.currentSessionOrNull()?.accessToken
-                ?: error("Log ind for at bruge Bilka API")
+                ?: throw BilkaApiError("Log ind for at bruge Bilka API")
             val payload = buildJsonObject {
                 put("action", action)
                 apiKey?.let { put("apiKey", it) }
@@ -58,10 +60,10 @@ internal object BilkaPrejClient {
                 setBody(payload.toString())
             }
             val result = json.parseToJsonElement(response.bodyAsText()) as? JsonObject
-                ?: error("Ugyldigt serversvar")
+                ?: throw BilkaApiError("Ugyldigt serversvar")
             if (response.status.value !in 200..299) {
                 val code = result["error"]?.jsonPrimitive?.content ?: "server_error"
-                error(when (code) {
+                throw BilkaApiError(when (code) {
                     "invalid_key", "invalid_key_format" -> "Prej API-nøglen er ugyldig"
                     "prej_rate_limited", "daily_budget_exhausted", "prej_daily_limit" ->
                         "Dagens Prej-kvote er brugt"
@@ -73,6 +75,14 @@ internal object BilkaPrejClient {
                 })
             }
             result
-        }
+        }.fold(
+            onSuccess = { Result.success(it) },
+            onFailure = { throwable ->
+                Result.failure(
+                    if (throwable is BilkaApiError) throwable
+                    else BilkaApiError("Forbindelsen til Bilka API fejlede")
+                )
+            }
+        )
     }
 }
