@@ -1043,6 +1043,16 @@ class MealPlannerState(
         return true
     }
 
+    fun canChangeIngredientQuantityType(id: String, newType: QuantityType): Boolean {
+        val ingredient = ingredients.find { it.id == id } ?: return false
+        return canChangeIngredientQuantityType(
+            ingredient = ingredient,
+            newType = newType,
+            pantryBase = pantry[id] ?: 0.0,
+            recipes = recipes.toList()
+        )
+    }
+
     fun updateIngredient(
         id: String,
         name: String,
@@ -1059,6 +1069,11 @@ class MealPlannerState(
             name.isBlank() ||
             preferredUnit.quantityType != type
         ) return false
+
+        if (!canChangeIngredientQuantityType(id, type)) {
+            lastError = "Typen kan ikke ændres, mens ingrediensen er på lager eller bruges i en opskrift."
+            return false
+        }
 
         if (!isIngredientNameAvailable(name, excludingId = id)) {
             lastError = "Ingrediensen findes allerede."
@@ -1696,7 +1711,9 @@ class MealPlannerState(
         val ingredient = ingredients.find { it.id == ingredientId } ?: return
         if (unit.quantityType != ingredient.quantityType) return
 
-        val base = unit.toBase(amount.coerceAtLeast(0.0))
+        if (!amount.isFinite() || amount < 0.0) return
+        val base = unit.toBase(amount)
+        if (!base.isFinite()) return
         pantry[ingredientId] = base
 
         enqueueMutation(
@@ -1713,10 +1730,13 @@ class MealPlannerState(
         unit: MeasurementUnit
     ) {
         val ingredient = ingredients.find { it.id == ingredientId } ?: return
-        if (unit.quantityType != ingredient.quantityType || amount <= 0.0) return
+        if (unit.quantityType != ingredient.quantityType ||
+            !amount.isFinite() || amount <= 0.0
+        ) return
 
         val addedBase = unit.toBase(amount)
         val next = (pantry[ingredientId] ?: 0.0) + addedBase
+        if (!next.isFinite()) return
         pantry[ingredientId] = next
 
         enqueueMutation(
