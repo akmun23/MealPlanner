@@ -9,6 +9,14 @@ data class DayToggleResult(
 
 object WeekRules {
 
+    /** Only ask for destructive regeneration confirmation when there is a plan to replace. */
+    fun needsRegenerationConfirmation(
+        currentPlan: Map<DayOfWeek, String?>,
+        sandwichRecipeId: String?
+    ): Boolean =
+        currentPlan.values.any { it != null } || sandwichRecipeId != null
+
+
     fun toggleHome(
         day: DayOfWeek,
         modes: Map<DayOfWeek, DayMode>,
