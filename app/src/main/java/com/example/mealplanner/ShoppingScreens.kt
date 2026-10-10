@@ -87,6 +87,8 @@ fun ShoppingScreen(state: MealPlannerState) {
                 bilkaContext = decodeBilkaShoppingContext(weekly.getOrThrow())
             }.onFailure { bilkaLoadError = true }
         } else {
+            bilkaCatalog = null
+            bilkaContext = null
             bilkaLoadError = true
         }
         bilkaLoading = false
@@ -198,7 +200,7 @@ fun ShoppingScreen(state: MealPlannerState) {
         if (!state.isLocalMode && bilkaLoadError) {
             item {
                 Text(
-                    "Bilka-pakker kunne ikke hentes. Du kan prøve igen uden at ændre din indkøbsliste.",
+                    "Bilka er midlertidigt utilgængelig. Du kan stadig bruge Lager manuelt.",
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall
                 )
@@ -337,7 +339,7 @@ fun ShoppingScreen(state: MealPlannerState) {
                         onEditPantry = {
                             editPantryItem = item
                         },
-                        onAddToPantry = if (bilkaLoading || bilkaLoadError ||
+                        onAddToPantry = if (bilkaLoading ||
                             bilkaContext?.purchase(item.ingredient.id)?.purchasedAmountBase != null
                         ) null else {
                             { addToPantryItem = item }
