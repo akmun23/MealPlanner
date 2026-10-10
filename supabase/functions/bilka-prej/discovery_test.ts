@@ -46,7 +46,7 @@ Deno.test("Danish ingredient text is kept rather than broadened to another food"
   eq(searchTerm("Pizzamel"), "pizzamel");
 });
 
-Deno.test("one Prej request can produce suggestions for multiple ingredients and never selects defaults", async () => {
+Deno.test("independent exact searches produce suggestions without selecting defaults", async () => {
   const products: unknown[] = [];
   const candidates: unknown[] = [];
   const caches: unknown[] = [];
