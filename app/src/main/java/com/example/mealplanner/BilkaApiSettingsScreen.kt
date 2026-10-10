@@ -161,6 +161,7 @@ internal fun BilkaApiSettingsScreen(householdId: String, onBack: () -> Unit) {
                         fun count(field: String) = data[field]?.jsonPrimitive?.content ?: "0"
                         Text("Standardvalg: ${count("chosen")} · Klar til valg: ${count("ready")}")
                         Text("Mangler søgning: ${count("pending")} · Ingen match: ${count("noMatch")}")
+                        if (count("incomplete") != "0") Text("Kræver en mere præcis søgning: ${count("incomplete")}")
                     }
                     Button(
                         onClick = {
