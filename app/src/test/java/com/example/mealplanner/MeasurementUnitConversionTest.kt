@@ -14,7 +14,7 @@ class MeasurementUnitConversionTest {
     @Test
     fun volumeConversionPreservesTheUnderlyingQuantity() {
         assertEquals(1250.0, MeasurementUnit.LITRE.convertAmountTo(1.25, MeasurementUnit.MILLILITRE)!!, 0.000001)
-        assertEquals(2.0, MeasurementUnit.TABLESPOON.convertAmountTo(6.0, MeasurementUnit.TEASPOON)!!, 0.000001)
+        assertEquals(2.0, MeasurementUnit.TEASPOON.convertAmountTo(6.0, MeasurementUnit.TABLESPOON)!!, 0.000001)
     }
 
     @Test
