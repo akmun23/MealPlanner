@@ -1,17 +1,18 @@
 package com.example.mealplanner
 
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -23,6 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import java.text.NumberFormat
@@ -125,6 +127,7 @@ internal fun BilkaPurchaseDialog(
             )
         ))
     }
+    var alternativesOpen by remember(ingredient.id) { mutableStateOf(false) }
     var paidText by remember(ingredient.id) { mutableStateOf("") }
     var priceEdited by remember(ingredient.id) { mutableStateOf(false) }
     var saving by remember(ingredient.id) { mutableStateOf(false) }
@@ -167,35 +170,60 @@ internal fun BilkaPurchaseDialog(
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
-                    "Vælg varen, som du købte denne gang. Husstandens faste Bilka-valg ændres ikke.",
+                    "Vælg kun hvad du købte; standardvaren ændres ikke.",
                     style = MaterialTheme.typography.bodySmall
                 )
                 if (candidates.isNotEmpty()) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        candidates.forEach { product ->
-                            FilterChip(
-                                selected = !manual && selectedId == product.id,
-                                onClick = {
-                                    manual = false
-                                    selectedId = product.id
-                                    val size = BilkaPackageMath.applicablePackBase(
-                                        ingredient, product,
-                                        if (product.id == defaultRow?.productId)
-                                            defaultRow.packageBaseAmountOverride else null
-                                    )
-                                    packageCountText = (BilkaPackageMath.packageCount(
-                                        item.requiredBase, item.pantryBase, size
-                                    )?.coerceAtLeast(1) ?: 1).toString()
-                                    if (!priceEdited) paidText = ""
-                                },
-                                label = {
-                                    Text(
-                                        productLabel(product),
-                                        maxLines = 2
-                                    )
-                                },
-                                modifier = Modifier.fillMaxWidth()
+                    val selectedName = if (manual) "Anden vare" else
+                        currentProduct?.let(::productLabel) ?: "Vælg et produkt"
+                    Text(
+                        "Vare til dette køb",
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                    Box(modifier = Modifier.fillMaxWidth()) {
+                        OutlinedButton(
+                            onClick = { alternativesOpen = true },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                selectedName,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
+                        }
+                        DropdownMenu(
+                            expanded = alternativesOpen,
+                            onDismissRequest = { alternativesOpen = false },
+                            modifier = Modifier.heightIn(max = 290.dp)
+                        ) {
+                            candidates.forEach { product ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            productLabel(product),
+                                            maxLines = 2,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    },
+                                    onClick = {
+                                        alternativesOpen = false
+                                        manual = false
+                                        selectedId = product.id
+                                        val size = BilkaPackageMath.applicablePackBase(
+                                            ingredient, product,
+                                            if (product.id == defaultRow?.productId)
+                                                defaultRow.packageBaseAmountOverride else null
+                                        )
+                                        packageCountText = (
+                                            BilkaPackageMath.packageCount(
+                                                item.requiredBase, item.pantryBase, size
+                                            )?.coerceAtLeast(1) ?: 1
+                                        ).toString()
+                                        if (!priceEdited) paidText = ""
+                                        error = null
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -214,15 +242,10 @@ internal fun BilkaPurchaseDialog(
                         singleLine = true
                     )
                 } else {
-                    Text(
-                        "Købte pakker",
-                        style = MaterialTheme.typography.bodyMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
                     OutlinedTextField(
                         value = packageCountText,
                         onValueChange = { packageCountText = it.filter(Char::isDigit).take(3) },
-                        label = { Text("Antal hele pakker") },
+                        label = { Text("Hele pakker") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
@@ -253,7 +276,7 @@ internal fun BilkaPurchaseDialog(
                 }
                 if (baseAmount != null) {
                     Text(
-                        "Tilføjes til Lager: " +
+                        "Til Lager: " +
                             state.formatBaseAmount(ingredient, baseAmount),
                         fontWeight = FontWeight.SemiBold
                     )
@@ -265,7 +288,7 @@ internal fun BilkaPurchaseDialog(
                         paidText = it.filter { c -> c.isDigit() || c == ',' || c == '.' }
                         priceEdited = true
                     },
-                    label = { Text("Faktisk betalt i kr. (valgfrit)") },
+                    label = { Text("Betalt (kr.) – valgfrit") },
                     placeholder = { Text("F.eks. 24,95") },
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
