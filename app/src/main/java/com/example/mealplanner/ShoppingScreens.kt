@@ -34,6 +34,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.derivedStateOf
@@ -72,8 +74,13 @@ fun ShoppingScreen(state: MealPlannerState) {
         }
         bilkaLoading = true
         bilkaLoadError = false
-        val catalog = BilkaPrejClient.catalog(state.householdIdentifier)
-        val weekly = BilkaPrejClient.shoppingContext(state.householdIdentifier, weekId)
+        val (catalog, weekly) = coroutineScope {
+            val catalogJob = async { BilkaPrejClient.catalog(state.householdIdentifier) }
+            val weeklyJob = async {
+                BilkaPrejClient.shoppingContext(state.householdIdentifier, weekId)
+            }
+            catalogJob.await() to weeklyJob.await()
+        }
         if (catalog.isSuccess && weekly.isSuccess) {
             runCatching {
                 bilkaCatalog = parseBilkaCatalog(catalog.getOrThrow())
@@ -425,15 +432,8 @@ private fun ShoppingItemCard(
                 )
 
                 Text(
-                    "Behov: " + state.formatBaseAmount(item.ingredient, item.requiredBase),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-
-                Text(
-                    "Lager: " + state.formatBaseAmount(item.ingredient, item.pantryBase),
+                    "Behov " + state.formatBaseAmount(item.ingredient, item.requiredBase) +
+                        "  ·  Lager " + state.formatBaseAmount(item.ingredient, item.pantryBase),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
@@ -444,7 +444,7 @@ private fun ShoppingItemCard(
                         info,
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.primary,
-                        maxLines = 2,
+                        maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
                 }
