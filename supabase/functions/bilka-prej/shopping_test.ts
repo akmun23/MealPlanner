@@ -111,3 +111,35 @@ Deno.test("duplicate attempt returns a controlled error without adding stock", a
   } catch (e) { reason = (e as CheckoutError).code; }
   equal(reason, "purchase_not_saved_or_already_recorded");
 });
+
+
+Deno.test("UUID validation accepts the canonical five groups and rejects malformed identifiers", async () => {
+  const correct = backend();
+  const validWeek = await shoppingContext(correct.shopping, weekId);
+  equal(validWeek.defaults.length, 1);
+  assertTrue(correct.methods.some((method) => method.includes("&id=eq." + weekId)),
+    "A valid UUID must reach the household-scoped week lookup");
+
+  const invalid = backend();
+  let error = "";
+  try {
+    await shoppingContext(invalid.shopping, "2a8bf4c0-55f4-49d5-bba0-4ef76836f56b-extra");
+  } catch (e) {
+    error = (e as CheckoutError).code;
+  }
+  equal(error, "invalid_week");
+  equal(invalid.methods, []); // Reject before any database access.
+
+  let ingredientError = "";
+  try {
+    await recordPurchase(invalid.shopping, {
+      weekId,
+      ingredientId: "invalid-ingredient",
+      manualProductName: "Hvedemel",
+      amountBase: 1000,
+    });
+  } catch (e) {
+    ingredientError = (e as CheckoutError).code;
+  }
+  equal(ingredientError, "invalid_ingredient");
+});
