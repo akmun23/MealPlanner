@@ -2,6 +2,7 @@ import { discoverProducts, discoveryStatus, DiscoveryError } from "./discovery_s
 import { catalog, saveHouseholdDefault } from "./catalog_server.ts";
 import { manualProductSearch } from "./manual_search_server.ts";
 import { shoppingContext, recordPurchase, CheckoutError } from "./shopping_server.ts";
+import { ALLOWED_BILKA_RPCS } from "./rpc_allowlist.ts";
 import {
   batchIds,
   dailyRemaining,
@@ -70,16 +71,7 @@ async function adminRequest(path: string, method: "GET" | "POST" | "PATCH", body
 }
 
 async function rpc(name: string, args: Record<string, unknown>): Promise<unknown> {
-  const safe = new Set([
-    "prej_store_key",
-    "prej_read_key",
-    "prej_forget_key",
-    "prej_record_key_check",
-    "prej_reserve_call",
-    "prej_complete_call",
-    "bilka_record_purchase",
-  ]);
-  if (!safe.has(name)) throw new Error("Unknown RPC");
+  if (!ALLOWED_BILKA_RPCS.has(name)) throw new Error("Unknown RPC");
   return await adminRequest("/rest/v1/rpc/" + name, "POST", args);
 }
 
