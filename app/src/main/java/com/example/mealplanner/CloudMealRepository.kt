@@ -47,6 +47,7 @@ private data class IngredientRow(
     val name: String,
     @SerialName("quantity_type") val quantityType: String,
     @SerialName("preferred_unit") val preferredUnit: String,
+    @SerialName("never_buy") val neverBuy: Boolean = false,
     @SerialName("shopping_category_id") val shoppingCategoryId: String? = null,
     @SerialName("image_path") val imagePath: String? = null
 )
@@ -536,6 +537,7 @@ class CloudMealRepository(
                             shoppingCategoryId = row.shoppingCategoryId,
                             isProtein =
                                 proteinByIngredient[row.id]?.isProtein == true,
+                            neverBuy = row.neverBuy,
                             imageUri = row.imagePath?.let(MealImageReference::forPath),
                             imagePath = row.imagePath
                         )
@@ -866,6 +868,7 @@ class CloudMealRepository(
                 name = ingredient.name,
                 quantityType = ingredient.quantityType.name,
                 preferredUnit = ingredient.preferredUnit.name,
+                neverBuy = ingredient.neverBuy,
                 shoppingCategoryId = ingredient.shoppingCategoryId,
                 imagePath = finalImage.first
             )
