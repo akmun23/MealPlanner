@@ -98,6 +98,10 @@ Deno.test("one Prej request can produce suggestions for multiple ingredients and
   eq(first.requestsUsed, 1);
   eq(first.ready, 2);
   eq(first.pending, 0);
+  eq(first.total, 2); // "Købes aldrig" is excluded.
+  eq(first.items.map((i) => [i.name, i.state]), [
+    ["Mel", "READY"], ["Pizzamel", "READY"]
+  ]);
   eq(apiCalls.length, 1);
   eq(apiCalls[0].includes("chain=bilka"), true);
   eq(candidates.length, 2); // One validated SKU candidate per ingredient.
