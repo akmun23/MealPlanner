@@ -6,7 +6,7 @@ export type ShoppingService = {
   rpc: Rpc;
   householdId: string;
 };
-const uuid = (s: string) => /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(s);
+const uuid = (s: string) => /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(s);
 const onlyNumber = (s: string) => /^\d+$/.test(s);
 const list = <T>(x: unknown): T[] => Array.isArray(x) ? x as T[] : [];
 const encode = (v: string) => encodeURIComponent(v);
