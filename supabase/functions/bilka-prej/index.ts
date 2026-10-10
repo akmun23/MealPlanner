@@ -43,7 +43,7 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
-async function adminRequest(path: string, method: "GET" | "POST", body?: unknown, prefer?: string): Promise<unknown> {
+async function adminRequest(path: string, method: "GET" | "POST" | "PATCH", body?: unknown, prefer?: string): Promise<unknown> {
   const response = await fetch(SUPABASE_URL + path, {
     method,
     headers: {
@@ -168,6 +168,12 @@ async function verifyStoredKey(userId: string): Promise<Response> {
 }
 
 async function removeKey(userId: string): Promise<Response> {
+  // Revoking a key must also revoke all previously granted background consent,
+  // so importing another key never silently resumes paid/provider API calls.
+  await adminRequest(
+    "/rest/v1/prej_nightly_preferences?user_id=eq." + encodeURIComponent(userId),
+    "PATCH", { enabled: false, updated_at: new Date().toISOString() },
+  );
   await rpc("prej_forget_key", { p_user_id: userId });
   return json({ connected: false });
 }
