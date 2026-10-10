@@ -36,6 +36,7 @@ internal fun BilkaApiSettingsScreen(householdId: String, onBack: () -> Unit) {
     var connected by remember { mutableStateOf(false) }
     var suffix by remember { mutableStateOf<String?>(null) }
     var quota by remember { mutableStateOf("–") }
+    var importStatus by remember { mutableStateOf<JsonObject?>(null) }
     var busy by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var confirmRemove by remember { mutableStateOf(false) }
@@ -55,6 +56,8 @@ internal fun BilkaApiSettingsScreen(householdId: String, onBack: () -> Unit) {
         BilkaPrejClient.status()
             .onSuccess(::applyStatus)
             .onFailure { message = it.message }
+        BilkaPrejClient.discoveryStatus(householdId)
+            .onSuccess { importStatus = it }
         busy = false
     }
 
@@ -146,6 +149,66 @@ internal fun BilkaApiSettingsScreen(householdId: String, onBack: () -> Unit) {
                     }
                 }
             }
+            item {
+                SectionCard("Find manglende Bilka-produkter") {
+                    Text(
+                        "Søg efter produktkandidater til ingredienser, som endnu ikke har et standardprodukt. " +
+                        "Søgninger grupperes og genbruger gemte resultater for at spare API-kald.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    val data = importStatus
+                    if (data != null) {
+                        fun count(field: String) = data[field]?.jsonPrimitive?.content ?: "0"
+                        Text("Standardvalg: ${count("chosen")} · Klar til valg: ${count("ready")}")
+                        Text("Mangler søgning: ${count("pending")} · Ingen match: ${count("noMatch")}")
+                    }
+                    Button(
+                        onClick = {
+                            busy = true
+                            message = null
+                            scope.launch {
+                                BilkaPrejClient.discoverProducts(householdId)
+                                    .onSuccess { info ->
+                                        val used = info["requestsUsed"]?.jsonPrimitive?.content ?: "0"
+                                        val cached = info["fromCache"]?.jsonPrimitive?.content ?: "0"
+                                        val pending = info["pending"]?.jsonPrimitive?.content ?: "0"
+                                        val reason = info["stopReason"]?.jsonPrimitive?.content
+                                        importStatus = info
+                                        message = "Import: $used Prej-kald, $cached genbrugte søgninger. " +
+                                            "$pending ingredienser mangler stadig." +
+                                            when (reason) {
+                                                "daily_budget_exhausted", "prej_daily_limit" ->
+                                                    " Dagens API-budget er opbrugt."
+                                                "run_call_limit" ->
+                                                    " Tryk igen for at fortsætte inden for budgettet."
+                                                "prej_key_invalid", "no_api_key" ->
+                                                    " Kontrollér din Prej-nøgle."
+                                                "prej_burst_limit" -> " Prøv igen senere."
+                                                "prej_unavailable", "invalid_provider_response" ->
+                                                    " Prej kunne ikke levere nye resultater."
+                                                else -> ""
+                                            }
+                                        BilkaPrejClient.status().onSuccess(::applyStatus)
+                                    }
+                                    .onFailure { message = it.message }
+                                busy = false
+                            }
+                        },
+                        enabled = connected && !busy &&
+                            (importStatus == null ||
+                             importStatus?.get("pending")?.jsonPrimitive?.content != "0"),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Hent manglende produkter")
+                    }
+                    Text(
+                        "Produktvalg med mærke, billede og pakkestørrelse kommer på næste skærm i fase 4. " +
+                        "Ingen produkter vælges automatisk.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            }
+
             if (connected) {
                 item {
                     OutlinedButton(
