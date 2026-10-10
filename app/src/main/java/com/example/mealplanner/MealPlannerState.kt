@@ -97,6 +97,12 @@ class MealPlannerState(
     var weeklyPlanId by mutableStateOf<String?>(null)
         private set
 
+    var displayedWeekStart by mutableStateOf(currentWeekStart())
+        private set
+
+    var isWeekChanging by mutableStateOf(false)
+        private set
+
     var isLoading by mutableStateOf(true)
         private set
 
@@ -471,8 +477,8 @@ class MealPlannerState(
         val startingGenerations = CloudSyncDomain.entries
             .associateWith(syncTracker::generation)
         if (offlineSyncQueue.hasPendingMutations()) return
-        val snapshot = repository.loadCurrent(
-        )
+        val requestedWeek = displayedWeekStart
+        val snapshot = repository.loadCurrent(requestedWeek)
 
         var applied = false
         reloadMutex.withLock {
@@ -480,7 +486,8 @@ class MealPlannerState(
                 !syncTracker.isCurrent(startingGenerations) ||
                 (expectedGenerations != null &&
                     !syncTracker.isCurrent(expectedGenerations)) ||
-                offlineSyncQueue.hasPendingMutations()
+                offlineSyncQueue.hasPendingMutations() ||
+                displayedWeekStart != requestedWeek
             ) {
                 return@withLock
             }
@@ -545,11 +552,14 @@ class MealPlannerState(
                 }
 
                 CloudSyncDomain.WEEK -> {
-                    val week = repository.loadWeekSnapshot()
+                    val requestedWeek = displayedWeekStart
+                    val week = repository.loadWeekSnapshot(requestedWeek)
                     val shopping = repository.loadShoppingSnapshot(
                         week.weeklyPlanId
                     )
-                    if (!syncTracker.isCurrent(generationSnapshot)) {
+                    if (!syncTracker.isCurrent(generationSnapshot) ||
+                        displayedWeekStart != requestedWeek
+                    ) {
                         return@withLock
                     }
                     applyWeekSnapshot(week)
@@ -712,6 +722,7 @@ class MealPlannerState(
 
         weeklyPlanId = snapshot.weeklyPlanId
             .takeUnless { it.startsWith("offline-week-") }
+        displayedWeekStart = snapshot.viewWeekStart
         weeklySandwichRecipeId = snapshot.weeklySandwichRecipeId
         sandwichDay = snapshot.sandwichDay
     }
@@ -817,7 +828,8 @@ class MealPlannerState(
             weeklyPlanId = planId,
             weeklySandwichRecipeId = weeklySandwichRecipeId,
             sandwichDay = sandwichDay,
-            history = history.toList()
+            history = history.toList(),
+            viewWeekStart = displayedWeekStart
         )
     }
 
@@ -954,6 +966,7 @@ class MealPlannerState(
     }
 
     private fun canEditWeek(): Boolean {
+        if (isWeekChanging) return false
         if (weeklyPlanId != null) return true
         lastError = "Ugeplanen kan opdateres, når forbindelsen er tilbage. Lager og opskrifter virker offline."
         return false
@@ -1766,7 +1779,7 @@ class MealPlannerState(
     }
 
     fun generateWeek() {
-        if (isPlanning || weeklyPlanId == null) return
+        if (isPlanning || isWeekChanging || weeklyPlanId == null) return
 
         val recipesSnapshot = recipes.toList()
         val pantrySnapshot = pantry.toMap()
@@ -1799,7 +1812,7 @@ class MealPlannerState(
                         lockedDays = lockSnapshot,
                         history = historySnapshot,
                         proteinIngredientIds = proteinIngredientIds,
-                        weekStart = currentWeekStart(),
+                        weekStart = displayedWeekStart,
                         weights = weightsSnapshot
                     )
                 }
@@ -1854,7 +1867,7 @@ class MealPlannerState(
                         currentPlan = planSnapshot,
                         history = historySnapshot,
                         proteinIngredientIds = proteinIngredientIds,
-                        weekStart = currentWeekStart(),
+                        weekStart = displayedWeekStart,
                         weights = weightsSnapshot
                     )
                 }
@@ -2090,6 +2103,52 @@ class MealPlannerState(
         val unit = ingredient.preferredUnit
         val value = unit.fromBase(amountBase)
         return "${formatNumber(value)} ${unit.labelFor(value)}"
+    }
+
+    /**
+     * Navigate between server-backed weekly plans. All pending changes are
+     * persisted before switching, and each week has its own plan/checks/locks.
+     * The local-only mode keeps the existing single-week behavior for now.
+     */
+    fun changeDisplayedWeek(offsetWeeks: Long) {
+        if (offsetWeeks == 0L || isWeekChanging || isPlanning || isLocalOnly) return
+        val target = displayedWeekStart.plusWeeks(offsetWeeks)
+        isWeekChanging = true
+        scope.launch {
+            try {
+                mutationQueueMutex.withLock {
+                    if (offlineSyncQueue.hasPendingMutations()) {
+                        offlineSyncQueue.drainInApp(repository)
+                    }
+                    if (offlineSyncQueue.hasPendingMutations()) {
+                        error("Pending offline mutations")
+                    }
+                    reloadMutex.withLock {
+                        val week = repository.loadWeekSnapshot(target)
+                        val shopping = repository.loadShoppingSnapshot(week.weeklyPlanId)
+                        Snapshot.withMutableSnapshot {
+                            applyWeekSnapshot(week)
+                            applyShoppingSnapshot(shopping)
+                            displayedWeekStart = target
+                        }
+                        roomCache.save(currentSnapshot())
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                lastError = "Ugen kunne ikke hentes. Tjek forbindelsen og prøv igen."
+            } finally {
+                isWeekChanging = false
+            }
+        }
+    }
+
+    fun showCurrentWeek() {
+        if (isWeekChanging || isPlanning || isLocalOnly) return
+        val current = currentWeekStart()
+        val delta = java.time.temporal.ChronoUnit.WEEKS.between(displayedWeekStart, current)
+        changeDisplayedWeek(delta)
     }
 
     private fun currentWeekStart(): LocalDate =
