@@ -133,7 +133,10 @@ fun ShoppingScreen(state: MealPlannerState) {
         val selection = bilkaContext
         if (!state.isLocalMode && bilkaLoadError && !allowManualAfterError) {
             AlertDialog(
-                onDismissRequest = { addToPantryItem = null },
+                onDismissRequest = {
+                    addToPantryItem = null
+                    allowManualAfterError = false
+                },
                 title = { Text("Bilka kan ikke kontrollere købet") },
                 text = {
                     Text(
@@ -150,6 +153,7 @@ fun ShoppingScreen(state: MealPlannerState) {
                 dismissButton = {
                     TextButton(onClick = {
                         addToPantryItem = null
+                        allowManualAfterError = false
                         scope.launch { refreshBilkaChoices() }
                     }) {
                         Text("Prøv igen")
@@ -166,7 +170,10 @@ fun ShoppingScreen(state: MealPlannerState) {
                 state = state,
                 catalog = catalog,
                 shopping = selection,
-                onDismiss = { addToPantryItem = null },
+                onDismiss = {
+                    addToPantryItem = null
+                    allowManualAfterError = false
+                },
                 onSaved = {
                     addToPantryItem = null
                     allowManualAfterError = false
@@ -177,7 +184,10 @@ fun ShoppingScreen(state: MealPlannerState) {
             AddPurchasedToPantryDialog(
                 item = item,
                 state = state,
-                onDismiss = { addToPantryItem = null }
+                onDismiss = {
+                    addToPantryItem = null
+                    allowManualAfterError = false
+                }
             )
         }
     }
