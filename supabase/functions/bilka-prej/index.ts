@@ -307,7 +307,7 @@ Deno.serve(async (req) => {
           typeof input.ingredientId === "string" ? input.ingredientId : "",
           typeof input.productId === "string" ? input.productId : "",
         );
-        if ("error" in result) return json({ error: result.error }, result.status);
+        if (result.error) return json({ error: result.error }, result.status ?? 400);
         return json(result);
       }
       default: return json({ error: "unknown_action" }, 400);
