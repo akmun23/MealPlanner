@@ -5,7 +5,8 @@ begin;
 do $purchase_test$
 declare
   h uuid := gen_random_uuid(); w uuid := gen_random_uuid();
-  ingredient uuid := gen_random_uuid(); owner_id uuid;
+  ingredient uuid := gen_random_uuid(); sku_ingredient uuid := gen_random_uuid();
+  owner_id uuid; sku_id text := '999999987600001';
   added numeric; stored numeric; repeated boolean := false;
 begin
   select id into owner_id from auth.users limit 1;
@@ -42,7 +43,29 @@ begin
       and product_id is null and manual_product_name='Temporary brand'
       and package_count=2 and purchased_amount_base=2000 and paid_total_ore=2495
   ) then raise exception 'Purchase record is missing'; end if;
-  raise notice 'Purchase fixture passed: 300 + 2000 = 2300, replay rejected';
+  -- Second ingredient: a chosen Bilka SKU is registered without changing
+  -- the household default or requiring a real external Prej call.
+  insert into public.ingredients(id,household_id,name,quantity_type,preferred_unit)
+    values(sku_ingredient,h,'Temporary SKU flour','MASS','KILOGRAM');
+  insert into public.bilka_products(
+    id,chain_slug,name,brand,package_quantity,package_unit,
+    package_base_amount,quantity_kind,price_ore
+  ) values(sku_id,'bilka','Temporary flour 1kg','Testbrand',1,'kg',1000,'MASS',1250);
+  insert into public.ingredient_bilka_defaults(household_id,ingredient_id,product_id)
+    values(h,sku_ingredient,sku_id);
+  added := public.bilka_record_purchase(
+    h,w,sku_ingredient,sku_id,null,2,2000,2500
+  );
+  select amount_base into stored from public.pantry_items
+    where household_id=h and ingredient_id=sku_ingredient;
+  if added <> 2000 or stored <> 2000 then
+    raise exception 'Incorrect SKU stock credit: %, %',added,stored;
+  end if;
+  if not exists(
+    select 1 from public.ingredient_bilka_defaults
+    where household_id=h and ingredient_id=sku_ingredient and product_id=sku_id
+  ) then raise exception 'Checkout changed permanent product choice'; end if;
+    raise notice 'Purchase fixture passed: 300 + 2000 = 2300, replay rejected';
 end;
 $purchase_test$;
 rollback;
