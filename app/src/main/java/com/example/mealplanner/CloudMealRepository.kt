@@ -589,8 +589,10 @@ class CloudMealRepository(
                             isProtein =
                                 proteinByIngredient[row.id]?.isProtein == true,
                             neverBuy = row.neverBuy,
-                            imageUri = row.imagePath?.let(MealImageReference::forPath)
-                                ?: bilkaImages[row.id],
+                            imageUri = PantryImageRules.displayImage(
+                                manualImageUri = row.imagePath?.let(MealImageReference::forPath),
+                                bilkaImageUrl = bilkaImages[row.id]
+                            ),
                             imagePath = row.imagePath
                         )
                     },
