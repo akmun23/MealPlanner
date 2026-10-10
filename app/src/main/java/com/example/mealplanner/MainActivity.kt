@@ -550,14 +550,20 @@ fun MealPlannerApp(
         }
         }
 
+        // Keep transient feedback above the navigation bar (or the editor's
+        // fixed save action), rather than at hard-coded screen coordinates.
+        val overlayBottom = when {
+            page is AppPage.RecipeEditor -> 84.dp
+            page == null && !WindowInsets.isImeVisible -> 86.dp
+            else -> 16.dp
+        }
+        val hasSyncStatus = state.syncIndicator != SyncIndicator.IDLE
         SnackbarHost(
             hostState = messageHostState,
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(
-                    horizontal = 16.dp,
-                    vertical = 126.dp
-                )
+                .padding(horizontal = 16.dp)
+                .padding(bottom = overlayBottom + if (hasSyncStatus) 56.dp else 0.dp)
         )
 
         SyncStatusBadge(
@@ -568,7 +574,7 @@ fun MealPlannerApp(
             },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 86.dp)
+                .padding(bottom = overlayBottom)
         )
     }
 }
@@ -1318,6 +1324,7 @@ internal fun SubpageScaffold(
     title: String,
     onBack: () -> Unit,
     action: (@Composable () -> Unit)? = null,
+    bottomBar: (@Composable () -> Unit)? = null,
     content: @Composable (PaddingValues) -> Unit
 ) {
     Scaffold(
@@ -1348,6 +1355,7 @@ internal fun SubpageScaffold(
                 )
             )
         },
+        bottomBar = { bottomBar?.invoke() },
         content = content
     )
 }
