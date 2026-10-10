@@ -1,4 +1,5 @@
 import { discoverProducts, discoveryStatus, DiscoveryError } from "./discovery_server.ts";
+import { catalog, saveHouseholdDefault } from "./catalog_server.ts";
 import {
   batchIds,
   dailyRemaining,
@@ -13,9 +14,11 @@ const PREJ_BASE = "https://api.prej.app";
 const DAILY_BUDGET = 20; // 25 free calls; keep 5 in reserve (including key checks).
 
 type Payload = {
-  action?: "status" | "set-key" | "verify-key" | "remove-key" | "refresh" | "discover" | "discovery-status";
+  action?: "status" | "set-key" | "verify-key" | "remove-key" | "refresh" | "discover" | "discovery-status" | "catalog" | "choose-product";
   apiKey?: unknown;
   householdId?: unknown;
+  ingredientId?: unknown;
+  productId?: unknown;
 };
 
 class ClientError extends Error {
@@ -293,6 +296,20 @@ Deno.serve(async (req) => {
       case "refresh": return await refresh(userId, input.householdId);
       case "discover": return await discoveryAction(userId, input.householdId, true);
       case "discovery-status": return await discoveryAction(userId, input.householdId, false);
+      case "catalog": {
+        const householdId = await verifiedHousehold(userId, input.householdId);
+        return json(await catalog({ admin: adminRequest, householdId }));
+      }
+      case "choose-product": {
+        const householdId = await verifiedHousehold(userId, input.householdId);
+        const result = await saveHouseholdDefault(
+          { admin: adminRequest, householdId },
+          typeof input.ingredientId === "string" ? input.ingredientId : "",
+          typeof input.productId === "string" ? input.productId : "",
+        );
+        if ("error" in result) return json({ error: result.error }, result.status);
+        return json(result);
+      }
       default: return json({ error: "unknown_action" }, 400);
     }
   } catch (err) {
