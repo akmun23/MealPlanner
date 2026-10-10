@@ -293,6 +293,7 @@ fun WeekScreen(
             }
             Spacer(Modifier.width(8.dp))
             Text("Ny madplan", fontWeight = FontWeight.Bold)
+        }
         Spacer(Modifier.height(8.dp))
         if (start != LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)) &&
             !state.isLocalMode
@@ -408,9 +409,6 @@ fun WeekScreen(
                 state = state,
                 onOpenRecipe = onOpenRecipe
             )
-        }
-
-
         }
     }
 }
