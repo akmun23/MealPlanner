@@ -114,7 +114,12 @@ export async function recordPurchase(ctx: ShoppingService, input: CheckoutPayloa
       throw new CheckoutError("incompatible_package_units", 400);
     }
     const override = defaults.find((x) => x.product_id === productId)?.package_base_amount_override;
-    const packageBase = override ?? product.package_base_amount;
+    // Unknown source units cannot safely be compared to ingredient base units.
+    // Android asks for an explicit purchased amount in this case; accept that
+    // amount rather than validating against an untyped provider package size.
+    const packageBase = product.quantity_kind === ingredientRows[0].quantity_type
+      ? override ?? product.package_base_amount
+      : null;
     if (packageBase != null) {
       const expected = packageBase * packages;
       const tolerance = Math.max(0.0001, expected * 1e-7);
