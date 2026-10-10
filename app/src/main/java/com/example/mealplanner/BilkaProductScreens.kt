@@ -347,6 +347,7 @@ internal fun BilkaProductPickerScreen(
     var search by remember(ingredientId) { mutableStateOf("") }
     var cheapest by remember(ingredientId) { mutableStateOf(true) }
     var moreQuery by remember(ingredientId) { mutableStateOf(ingredientName) }
+    var searchOtherBrand by remember(ingredientId) { mutableStateOf(false) }
     var searchingMore by remember(ingredientId) { mutableStateOf(false) }
     var moreMessage by remember(ingredientId) { mutableStateOf<String?>(null) }
 
@@ -391,10 +392,14 @@ internal fun BilkaProductPickerScreen(
             }
             if (!busy && data != null) {
                 item {
-                    SectionCard("Mangler dit mærke?") {
+                    TextButton(onClick = { searchOtherBrand = !searchOtherBrand }) {
+                        Text(if (searchOtherBrand) "Skjul varesøgning" else "Mangler dit mærke? Søg i Bilka")
+                    }
+                }
+                if (searchOtherBrand) item {
+                    SectionCard("Find en anden vare") {
                         Text(
-                            "Søg direkte i Bilkas varer. Det bruger højst ét Prej-kald, " +
-                                "medmindre vi allerede har søgningen gemt.",
+"Søg på mærke eller varenavn. Gemte søgninger bruger ingen API-kald.",
                             style = MaterialTheme.typography.bodySmall
                         )
                         androidx.compose.material3.OutlinedTextField(
@@ -442,16 +447,19 @@ internal fun BilkaProductPickerScreen(
             } else {
                 item { SearchField(search, { search = it }, "Søg efter mærke eller produkt") }
                 item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
                         FilterChip(
                             selected = cheapest,
                             onClick = { cheapest = true },
-                            label = { Text("Laveste kr/kg eller liter") }
+                            label = { Text("Laveste enhedspris") }
                         )
                         FilterChip(
                             selected = !cheapest,
                             onClick = { cheapest = false },
-                            label = { Text("Mest relevant") }
+                            label = { Text("Relevans") }
                         )
                     }
                 }
@@ -478,19 +486,29 @@ internal fun BilkaProductPickerScreen(
                         ) {
                             BilkaProductPhoto(product)
                             Column(modifier = Modifier.weight(1f)) {
-                                Text(product.brandLabel, fontWeight = FontWeight.SemiBold)
-                                Text(product.name, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                                Text(packageLabel(product), style = MaterialTheme.typography.bodySmall)
-                                Text(money(product.priceOre), fontWeight = FontWeight.Bold)
-                                unitLabel(product)?.let {
-                                    Text(it, style = MaterialTheme.typography.bodySmall)
-                                }
-                                if (product.isOffer == true) {
-                                    Text("Tilbud", color = MaterialTheme.colorScheme.primary)
-                                }
-                                if (product.id == currentId) {
-                                    Text("Nuværende standard", style = MaterialTheme.typography.bodySmall)
-                                }
+                                Text(
+                                    product.name,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    product.brandLabel + " · " + packageLabel(product) +
+                                        (if (product.id == currentId) " · Fast valg" else ""),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    money(product.priceOre) +
+                                        (unitLabel(product)?.let { "  ·  $it" } ?: "") +
+                                        (if (product.isOffer == true) " · Tilbud" else ""),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
                             if (chosen) {
                                 Icon(Icons.Filled.CheckCircle, contentDescription = "Valgt")
@@ -501,7 +519,7 @@ internal fun BilkaProductPickerScreen(
                 item {
                     Text(
                         selected?.let { id ->
-                            data?.products?.firstOrNull { it.id == id }?.let {
+                            data?.product(id)?.let {
                                 "Valgt: " + it.brandLabel + " · " + it.name + " · " + packageLabel(it)
                             }
                         } ?: "Tryk på produktet, du vil bruge som standard."
