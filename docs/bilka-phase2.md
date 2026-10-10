@@ -1,6 +1,6 @@
 # Bilka phase 2 – server-only Prej integration
 
-This phase implements a per-user BYO Prej key, atomic quotas, and batch refreshes for **already-selected Bilka products**. It does not search for new ingredient candidates (phase 3), schedule a nightly job (phase 5), or add the Android product selector (phase 4).
+This phase implements a per-user BYO Prej key, atomic quotas, and batch refreshes for **already-selected Bilka products**. It includes a simple Android **Settings → Bilka – min Prej API-nøgle** screen. It does not search for new ingredient candidates (phase 3), schedule a nightly job (phase 5), or add the ingredient product selector (phase 4).
 
 ## Setup
 
@@ -8,7 +8,8 @@ This phase implements a per-user BYO Prej key, atomic quotas, and batch refreshe
 2. Apply `supabase/migrations/20261010110000_prej_credentials_quota_rpc.sql`.
 3. Execute `supabase/tests/bilka_phase2_contract.sql` in a test database. It verifies RPC privileges, quota foreign key and server-only tables. No real key is needed.
 4. Deploy `supabase/functions/bilka-prej` as an Edge Function with **JWT verification enabled**.
-5. Run `deno check supabase/functions/bilka-prej/index.ts` and `deno test supabase/functions/bilka-prej/prej_test.ts` (also checked by GitHub Actions).
+5. In Android Settings → **Bilka – min Prej API-nøgle**, verify each user can independently save/replace/remove their key and see the per-user quota. No key is stored on Android.
+6. Run `deno check supabase/functions/bilka-prej/index.ts` and `deno test supabase/functions/bilka-prej/prej_test.ts` (also checked by GitHub Actions).
 
 The function uses Supabase's injected `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. Do **not** put user keys or service keys in the repository, APK, app preferences, logs, or SQL migrations.
 
@@ -44,7 +45,7 @@ The Edge Function updates `bilka_products`, never `ingredient_bilka_defaults`. I
 ## Not yet supported
 
 - Automatic bulk ingredient discovery / grouping (phase 3).
-- User-facing Android key-entry and product-selection interfaces (phase 3/4).
+- The Android key-entry screen is included in phase 2. Ingredient product discovery and selection interfaces will be added in phase 3/4.
 - Nightly schedule (phase 5), which must respect the chosen account/credential.
 - Multiple 500-ID batch windows per invocation; phase 2 handles one safe batch at a time.
 - Deployment is a separate step from merging the GitHub PR and must occur after database migration/tests.
