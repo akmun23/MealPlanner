@@ -97,6 +97,7 @@ data class Ingredient(
     val preferredUnit: MeasurementUnit,
     val shoppingCategoryId: String? = null,
     val isProtein: Boolean = false,
+    val neverBuy: Boolean = false,
     val imageUri: String? = null,
     val imagePath: String? = null
 )
