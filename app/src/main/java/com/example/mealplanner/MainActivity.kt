@@ -1449,6 +1449,7 @@ internal fun ImagePickerBox(
 
     Box(
         modifier = modifier
+            .fillMaxWidth()
             .height(height)
             .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
@@ -1528,24 +1529,27 @@ internal fun AppThumbnail(
     fallback: String,
     modifier: Modifier = Modifier
 ) {
+    // Layout dimensions are owned by the placeholder, never the source image.
+    // An image selected from a 4000px camera file or Prej must not resize rows.
     val boxSize = 60.dp
-    val actualModifier = if (modifier == Modifier) Modifier.size(boxSize) else modifier
-
-    if (!imageUri.isNullOrBlank()) {
-        MealImage(
-            imageUri = imageUri,
-            modifier = actualModifier.clip(RoundedCornerShape(16.dp)),
-            thumbnail = true,
-            fallback = fallback
-        )
-    } else {
-        Surface(
-            modifier = actualModifier,
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.primaryContainer,
-            tonalElevation = 2.dp
+    Surface(
+        modifier = modifier.requiredSize(boxSize),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.primaryContainer,
+        tonalElevation = 2.dp
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
         ) {
-            Box(contentAlignment = Alignment.Center) {
+            if (!imageUri.isNullOrBlank()) {
+                MealImage(
+                    imageUri = imageUri,
+                    modifier = Modifier.fillMaxSize(),
+                    thumbnail = true,
+                    fallback = fallback
+                )
+            } else {
                 Text(
                     fallback,
                     style = MaterialTheme.typography.headlineMedium,
