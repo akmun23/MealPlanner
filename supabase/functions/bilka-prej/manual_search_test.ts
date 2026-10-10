@@ -20,7 +20,7 @@ Deno.test("manual product search reserves one user call and never changes defaul
     admin: async (path: string, method: "GET" | "POST", body?: unknown): Promise<unknown> => {
       if (method === "GET") {
         if (path.includes("/ingredients?")) return [{
-          id: ingredient, name: "Mel", never_buy: false
+          id: ingredient, name: "Hvedemel", never_buy: false
         }];
         if (path.includes("/bilka_search_cache?")) return cache;
         if (path.includes("/bilka_products?")) return productRows;
