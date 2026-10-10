@@ -24,7 +24,17 @@ begin
   ) then
     raise exception 'Cron Vault secret not configured but readiness reported true';
   end if;
-  raise notice 'Readiness permissions and reported status are consistent';
+  if to_regclass('public.idx_bilka_candidates_ingredient_household') is null
+     or to_regclass('public.idx_bilka_defaults_ingredient_household') is null
+     or to_regclass('public.idx_bilka_jobs_ingredient_household') is null
+     or to_regclass('public.idx_bilka_shopping_ingredient_household') is null
+     or to_regclass('public.idx_bilka_shopping_week_household') is null
+     or to_regclass('public.idx_bilka_nightly_attempted_by') is null
+     or to_regclass('public.idx_bilka_nightly_prefs_user') is null
+  then
+    raise exception 'A required Bilka foreign-key join index is missing';
+  end if;
+  raise notice 'Readiness permissions, scheduling and all join indexes verified';
 end
 $verify$;
 rollback;
