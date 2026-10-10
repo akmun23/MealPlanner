@@ -38,6 +38,12 @@ internal object BilkaPrejClient {
     suspend fun refresh(householdId: String): Result<JsonObject> =
         call("refresh", householdId = householdId)
 
+    suspend fun discoveryStatus(householdId: String): Result<JsonObject> =
+        call("discovery-status", householdId = householdId)
+
+    suspend fun discoverProducts(householdId: String): Result<JsonObject> =
+        call("discover", householdId = householdId)
+
     private suspend fun call(
         action: String,
         apiKey: String? = null,
