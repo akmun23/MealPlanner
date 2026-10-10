@@ -1,4 +1,4 @@
-import { groupSearches, rankCandidates, searchTerm, scoreCandidate } from "./discovery.ts";
+import { groupSearches, groupSearchesAtStage, rankCandidates, searchQueries, searchTerm, scoreCandidate } from "./discovery.ts";
 import { discoverProducts } from "./discovery_server.ts";
 
 function eq(actual: unknown, expected: unknown) {
@@ -8,19 +8,19 @@ function eq(actual: unknown, expected: unknown) {
 }
 
 const flour = {
-  id: 14, name: "Budget Hvedemel 2 kg", brand: "Budget",
+  id: 14, name: "Budget Hvedemel 2 kg", brand: "Budget", category_name: "Kolonial",
   quantity: 2, unit: "kg",
   prices: [{ chain_slug: "bilka", price: 1800, unit_price: 900,
     unit_price_label: "9,00 kr/kg", last_seen_date: "2026-10-10" }],
 };
 const pizza = {
-  id: 25, name: "Casa Italia Pizzamel Tipo 00", brand: "Casa Italia",
+  id: 25, name: "Casa Italia Pizzamel Tipo 00", brand: "Casa Italia", category_name: "Kolonial",
   quantity: 1, unit: "kg",
   prices: [{ chain_slug: "bilka", price: 2500, unit_price: 2500,
     unit_price_label: "25,00 kr/kg", last_seen_date: "2026-10-10" }],
 };
 
-Deno.test("Mel and Pizzamel share a search, but are still independently matched", () => {
+Deno.test("specific ingredient searches precede shared broad fallback terms", () => {
   const groups = groupSearches([
     { id: "one", name: "Mel" },
     { id: "two", name: "Pizzamel" },
@@ -29,6 +29,14 @@ Deno.test("Mel and Pizzamel share a search, but are still independently matched"
   eq(groups.length, 2);
   eq(groups[0].query, "mel");
   eq(groups[0].ingredients.map((i) => i.id), ["one", "two"]);
+  const exact = groupSearchesAtStage([
+    { id: "one", name: "Mel" },
+    { id: "two", name: "Pizzamel" },
+    { id: "three", name: "Kartofler" },
+  ], 0);
+  eq(exact.length, 3);
+  eq(searchQueries("Pizzamel"), ["pizzamel", "tipo 00", "mel"]);
+  eq(searchQueries("Rødløg"), ["rødløg", "løg"]);
   if (!rankCandidates("Mel", [flour, pizza]).length) throw new Error("Missing flour");
   eq(rankCandidates("Pizzamel", [flour, pizza])[0].product.id, 25);
   eq(scoreCandidate("Tomat", flour), 0);
@@ -95,25 +103,26 @@ Deno.test("one Prej request can produce suggestions for multiple ingredients and
     },
   };
   const first = await discoverProducts(ctx);
-  eq(first.requestsUsed, 1);
+  eq(first.requestsUsed, 2);
   eq(first.ready, 2);
   eq(first.pending, 0);
   eq(first.total, 2); // "Købes aldrig" is excluded.
   eq(first.items.map((i) => [i.name, i.state]), [
     ["Mel", "READY"], ["Pizzamel", "READY"]
   ]);
-  eq(apiCalls.length, 1);
+  eq(apiCalls.length, 2);
   eq(apiCalls[0].includes("chain=bilka"), true);
   eq(apiCalls[0].includes("grocery=1"), true);
   eq(candidates.length, 2); // One validated SKU candidate per ingredient.
-  eq(caches.length, 1);
-  eq((caches[0] as {query_key:string}).query_key.startsWith("q:bilka:grocery1:"), true);
+  eq(caches.length, 2);
+  eq((caches[0] as {query_key:string}).query_key.startsWith("q:bilka:grocery1:food2:"), true);
+  eq(apiCalls.map((url) => new URL(url).searchParams.get("q")), ["mel", "pizzamel"]);
   if (!rpcCalls.includes("prej_reserve_call")) throw new Error("Quota reservation missing");
 
   const second = await discoverProducts(ctx);
   eq(second.requestsUsed, 0);
   eq(second.pending, 0);
-  eq(apiCalls.length, 1);
+  eq(apiCalls.length, 2);
 });
 
 Deno.test("unit-price order never automatically changes household defaults", () => {
@@ -124,4 +133,73 @@ Deno.test("unit-price order never automatically changes household defaults", () 
   ], 10);
   if (options.length !== 2) throw new Error("Missing candidates");
   // Discovery only ranks: there is no call to ingredient_bilka_defaults here.
+});
+
+Deno.test("a chosen SKU avoids further discovery and is never replaced", async () => {
+  const writes: string[] = [];
+  const info = await discoverProducts({
+    userId: "owner",
+    householdId: "house",
+    admin: async (path: string, method: "GET" | "POST"): Promise<unknown> => {
+      if (method === "POST") {
+        writes.push(path);
+        return [];
+      }
+      if (path.includes("/ingredients?")) return [
+        { id: "preferred", name: "Hvedemel", never_buy: false },
+      ];
+      if (path.includes("/ingredient_bilka_defaults?")) return [
+        { ingredient_id: "preferred", product_id: "50042" },
+      ];
+      if (path.includes("/ingredient_bilka_candidates?")) return [];
+      if (path.includes("/bilka_discovery_jobs?")) return [];
+      throw new Error("Unexpected GET " + path);
+    },
+    rpc: async () => { throw new Error("Selected product must not use Prej quota"); },
+    fetchPrej: async () => { throw new Error("Selected product must not be researched"); },
+  });
+  eq(info.chosen, 1);
+  eq(info.pending, 0);
+  eq(info.requestsUsed, 0);
+  eq(writes, []);
+});
+
+Deno.test("exact search failure falls back to a synonym before a broad query", async () => {
+  const calls: string[] = [];
+  const suggestions: Array<Record<string, unknown>> = [];
+  const jobs: Array<Record<string, unknown>> = [];
+  const caches: Array<Record<string, unknown>> = [];
+  const ctx = {
+    userId: "user",
+    householdId: "house",
+    admin: async (path: string, method: "GET" | "POST", body?: unknown): Promise<unknown> => {
+      if (method === "GET") {
+        if (path.includes("/ingredients?")) return [{ id: "pizza", name: "Pizzamel", never_buy: false }];
+        if (path.includes("/ingredient_bilka_defaults?")) return [];
+        if (path.includes("/ingredient_bilka_candidates?")) return suggestions;
+        if (path.includes("/bilka_discovery_jobs?")) return jobs;
+        if (path.includes("/bilka_search_cache?")) return caches;
+        if (path.includes("/bilka_products?")) return [];
+        throw new Error("Unexpected GET " + path);
+      }
+      const rows = body as Array<Record<string, unknown>>;
+      if (path.includes("/ingredient_bilka_candidates?")) suggestions.push(...rows);
+      if (path.includes("/bilka_search_cache?")) caches.push(...rows);
+      if (path.includes("/bilka_discovery_jobs?")) jobs.push(...rows);
+      return rows;
+    },
+    rpc: async (name: string): Promise<unknown> =>
+      name === "prej_read_key" ? "test-key" : true,
+    fetchPrej: async (url: string | URL | Request): Promise<Response> => {
+      const query = new URL(String(url)).searchParams.get("q")!;
+      calls.push(query);
+      return Response.json({ products: query === "tipo 00" ? [pizza] : [], total: 0 });
+    },
+  };
+  const result = await discoverProducts(ctx);
+  eq(calls, ["pizzamel", "tipo 00"]);
+  eq(result.ready, 1);
+  eq(result.requestsUsed, 2);
+  eq(suggestions.length, 1);
+  eq(result.pending, 0);
 });
