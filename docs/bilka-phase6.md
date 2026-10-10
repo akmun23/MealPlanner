@@ -50,3 +50,20 @@ Ingen fase-6-migration eller deployment udføres, før du har verificeret den ny
 Test på mindst én smal Android-skærm (ca. 320–360 dp) og med forstørret systemtekst. Kontrollér at ingen produktkort eller knapper ligger oven på andre, og at indkøbsrækkerne forbliver korte. Test rulle- og tastaturadfærd i købsdialogen samt dropdown med ti alternativer. Brug en stor ingrediensliste (100+ ingredienser), mange produktforslag, et produkt uden billede, forkerte enheder, ukendt pakkestørrelse og manglende netværk. Kontrollér korrekt dansk beløbsformat, og at ingen bruger ser rå SQL/API-fejl eller personlige API-nøgler.
 
 Test et konkret køb i to enheder: 1,2 kg mangler, produkt 1 kg, 2 hele pakker registreres til 2 kg. Dobbelttryk/gentaget anmodning må ikke lægge 4 kg på Lager. Bekræft at et engangsalternativ ikke ændrer standardproduktet. Dette kræver Android-enhed/emulator og den fase-6-deployerede RPC efter grøn CI; det er endnu ikke udført.
+
+## Endelig gennemgang efter grøn CI (før merge)
+
+Denne ekstra gennemgang blev gennemført **efter** de tre tidligere grønne CI-checks. Da rettelserne ændrer PR-head, kræves ny CI-validering.
+
+- [x] **Virkelig SQL-funktionsprøve, uden varige produktionsændringer:** Migration og fixture kørt i én `BEGIN ... ROLLBACK`-transaktion mod den tilsluttede Supabase-database. Der blev oprettet en midlertidig husstand, uge og ingrediens; køb af to pakker på i alt 2000 g øgede 300 g Lager til præcis 2300 g. Gentaget køb blev afvist, og købsposten var korrekt. Efter rollback blev der ikke oprettet varige rækker eller funktioner. Testen er gemt til gentagelse i `supabase/tests/bilka_phase6_purchase_rollback.sql`.
+- [x] **Netværksafbrydelse under køb:** Hvis serverens svar går tabt efter at transaktionen er gennemført, kontrollerer klienten nu ugens købspost, før den viser en fejl eller inviterer brugeren til et nyt køb. Beskeden opfordrer ikke til usikker dobbeltregistrering.
+- [x] **Fejl ved Bilka-indlæsning:** Før et eventuelt manuelt Lager-tilvalg vises en kort, klar advarsel om, at et tidligere køb kan være registreret på en anden enhed. Normal manuel registrering kan stadig vælges bevidst; den er aldrig utilsigtet standard-fallback efter forbindelsesfejl.
+- [x] **Ukendt måleenhed fra Prej:** Hvis produktets enhedstype er ukendt, accepterer checkout brugerens eksplicit kontrollerede købte mængde i stedet for at sammenligne med en ikke-typebestemt pakke. En Deno-regressionstest dækker det. Kendte, uforenelige enheder afvises fortsat.
+- [x] **Ugeafgrænsning:** En åbnet købsdialog holder fast i den uge, brugeren faktisk så; dialogen lukkes ved ugeskift.
+- [x] **Lille skærm:** Den rullebare del af købsdialogen får maksimal højde ud fra telefonens aktuelle skærmhøjde, dog aldrig over 460 dp. Lange ingrediensnavne beskæres efter højst to linjer.
+- [x] **Responsiv produktliste:** Kompakte trelinjers produktkort, fast billedramme, fold-ud-søgning og en gemmeknap ved valgt vare, ikke nederst efter en lang liste.
+- [x] **Ingen unødige API-kald:** Indkøbslisten henter kun relevante ingredienser; den separate produktoversigt henter husstandskataloget. Enhedskvoter bruges ikke ved visning eller køb, kun ved Prej-opslag.
+
+### Begrænsning
+
+GitHub CI kontrollerer Kotlin-kompilering, unit tests og Deno tests. Et visuelt bevis for fejlfrit layout ved 320 dp skærmbredde, forstørret skrifttype og åbent tastatur kræver en fysisk Android-enhed eller emulator. Den automatiske testpakke erstatter ikke en sådan visuel accepttest. Ligeledes skal backend være deployet efter CI for at kunne udføre end-to-end-test mellem to rigtige brugere.
