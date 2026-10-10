@@ -3,6 +3,7 @@ package com.example.mealplanner
 import io.github.jan.supabase.auth.auth
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -12,6 +13,8 @@ import io.ktor.http.contentType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.buildJsonArray
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -25,7 +28,13 @@ import kotlinx.serialization.json.Json
 private class BilkaApiError(message: String) : RuntimeException(message)
 
 internal object BilkaPrejClient {
-    private val http = HttpClient(CIO)
+    private val http = HttpClient(CIO) {
+        install(HttpTimeout) {
+            connectTimeoutMillis = 8_000
+            socketTimeoutMillis = 30_000
+            requestTimeoutMillis = 35_000
+        }
+    }
     private val json = Json
 
     suspend fun status(): Result<JsonObject> = call("status")
@@ -57,8 +66,29 @@ internal object BilkaPrejClient {
         call("manual-search", householdId = householdId,
             ingredientId = ingredientId, query = query)
 
-    suspend fun catalog(householdId: String): Result<JsonObject> =
-        call("catalog", householdId = householdId)
+    suspend fun shoppingContext(
+        householdId: String,
+        weekId: String
+    ): Result<JsonObject> =
+        call("shopping-context", householdId = householdId, weekId = weekId)
+
+    suspend fun recordPurchase(
+        householdId: String,
+        weekId: String,
+        ingredientId: String,
+        productId: String?,
+        manualProductName: String?,
+        packageCount: Int?,
+        amountBase: Double,
+        paidTotalOre: Long?
+    ): Result<JsonObject> =
+        call("record-purchase", householdId = householdId, weekId = weekId,
+            ingredientId = ingredientId, productId = productId,
+            manualProductName = manualProductName, packageCount = packageCount,
+            amountBase = amountBase, paidTotalOre = paidTotalOre)
+
+    suspend fun catalog(householdId: String, ingredientIds: List<String>? = null): Result<JsonObject> =
+        call("catalog", householdId = householdId, ingredientIds = ingredientIds)
 
     suspend fun chooseProduct(
         householdId: String,
@@ -79,9 +109,15 @@ internal object BilkaPrejClient {
         apiKey: String? = null,
         householdId: String? = null,
         ingredientId: String? = null,
+        ingredientIds: List<String>? = null,
         productId: String? = null,
         query: String? = null,
-        enabled: Boolean? = null
+        enabled: Boolean? = null,
+        weekId: String? = null,
+        manualProductName: String? = null,
+        packageCount: Int? = null,
+        amountBase: Double? = null,
+        paidTotalOre: Long? = null
     ): Result<JsonObject> = withContext(Dispatchers.IO) {
         runCatching {
             val accessToken = SupabaseProvider.client.auth.currentSessionOrNull()?.accessToken
@@ -91,9 +127,17 @@ internal object BilkaPrejClient {
                 apiKey?.let { put("apiKey", it) }
                 householdId?.let { put("householdId", it) }
                 ingredientId?.let { put("ingredientId", it) }
+                ingredientIds?.let { ids ->
+                    put("ingredientIds", buildJsonArray { ids.forEach { add(it) } })
+                }
                 productId?.let { put("productId", it) }
                 query?.let { put("query", it) }
                 enabled?.let { put("enabled", it) }
+                weekId?.let { put("weekId", it) }
+                manualProductName?.let { put("manualProductName", it) }
+                packageCount?.let { put("packageCount", it) }
+                amountBase?.let { put("amountBase", it) }
+                paidTotalOre?.let { put("paidTotalOre", it) }
             }
             val response = http.post(
                 BuildConfig.SUPABASE_URL.trimEnd('/') + "/functions/v1/bilka-prej"
@@ -117,6 +161,14 @@ internal object BilkaPrejClient {
                     "prej_key_invalid" -> "Nøglen er blevet ugyldig. Tilføj den igen"
                     "not_authenticated" -> "Log ind igen"
                     "invalid_search" -> "Skriv et konkret varenavn på mindst to tegn."
+                    "purchase_not_saved_or_already_recorded" ->
+                        "Købet kunne ikke gemmes – muligvis er det allerede lagt på Lager."
+                    "incompatible_package_units", "package_amount_mismatch" ->
+                        "Pakkestørrelsen stemmer ikke med ingrediensen."
+                    "invalid_packages", "invalid_amount", "invalid_cost" ->
+                        "Kontrollér købt antal, mængde og pris."
+                    "not_household_product" ->
+                        "Varen er ikke et godkendt Bilka-forslag til denne ingrediens."
                     "invalid_product_choice", "not_a_suggested_product" ->
                         "Denne vare er ikke længere tilgængelig. Opdatér produktlisten."
                     "prej_burst_limit" -> "For mange kald. Prøv igen senere"

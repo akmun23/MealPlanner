@@ -44,6 +44,7 @@ class MealPlannerState(
     )
     private val isLocalOnly = householdId == "local-household-1"
     val isLocalMode: Boolean get() = isLocalOnly
+    val householdIdentifier: String get() = householdId
     private val repository = CloudMealRepository(
         context = context.applicationContext,
         householdId = householdId

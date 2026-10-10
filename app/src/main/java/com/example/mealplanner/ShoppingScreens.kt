@@ -31,6 +31,11 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.derivedStateOf
@@ -55,9 +60,62 @@ private data class ShoppingSections(
 
 @Composable
 fun ShoppingScreen(state: MealPlannerState) {
-    var addToPantryItem by remember {
+    val scope = rememberCoroutineScope()
+    val weekId = state.weeklyPlanId
+    val requestedIngredientIds by remember(state) {
+        derivedStateOf {
+            state.shoppingItems().map { it.ingredient.id }.distinct().sorted()
+        }
+    }
+    var bilkaCatalog by remember(weekId) { mutableStateOf<BilkaProductCatalog?>(null) }
+    var bilkaContext by remember(weekId) { mutableStateOf<BilkaShoppingContext?>(null) }
+    var bilkaLoading by remember(weekId) { mutableStateOf(!state.isLocalMode) }
+    var bilkaLoadError by remember(weekId) { mutableStateOf(false) }
+
+    suspend fun refreshBilkaChoices() {
+        if (state.isLocalMode || weekId == null) {
+            bilkaLoading = false
+            return
+        }
+        bilkaLoading = true
+        bilkaLoadError = false
+        val (catalog, weekly) = coroutineScope {
+            val catalogJob = async {
+                BilkaPrejClient.catalog(
+                    state.householdIdentifier,
+                    requestedIngredientIds
+                )
+            }
+            val weeklyJob = async {
+                BilkaPrejClient.shoppingContext(state.householdIdentifier, weekId)
+            }
+            catalogJob.await() to weeklyJob.await()
+        }
+        if (catalog.isSuccess && weekly.isSuccess) {
+            runCatching {
+                bilkaCatalog = parseBilkaCatalog(catalog.getOrThrow())
+                bilkaContext = decodeBilkaShoppingContext(weekly.getOrThrow())
+            }.onFailure {
+                bilkaCatalog = null
+                bilkaContext = null
+                bilkaLoadError = true
+            }
+        } else {
+            bilkaCatalog = null
+            bilkaContext = null
+            bilkaLoadError = true
+        }
+        bilkaLoading = false
+    }
+
+    LaunchedEffect(weekId, state.householdIdentifier, requestedIngredientIds) {
+        refreshBilkaChoices()
+    }
+
+    var addToPantryItem by remember(weekId) {
         mutableStateOf<ShoppingItem?>(null)
     }
+    var allowManualAfterError by remember(weekId) { mutableStateOf(false) }
     var editPantryItem by remember {
         mutableStateOf<ShoppingItem?>(null)
     }
@@ -71,11 +129,67 @@ fun ShoppingScreen(state: MealPlannerState) {
     }
 
     addToPantryItem?.let { item ->
-        AddPurchasedToPantryDialog(
-            item = item,
-            state = state,
-            onDismiss = { addToPantryItem = null }
-        )
+        val catalog = bilkaCatalog
+        val selection = bilkaContext
+        if (!state.isLocalMode && bilkaLoadError && !allowManualAfterError) {
+            AlertDialog(
+                onDismissRequest = {
+                    addToPantryItem = null
+                    allowManualAfterError = false
+                },
+                title = { Text("Bilka kan ikke kontrollere købet") },
+                text = {
+                    Text(
+                        "Købet kan allerede være lagt på Lager fra en anden enhed. " +
+                            "Prøv igen, eller brug manuel registrering, hvis du er sikker på, " +
+                            "at varen endnu ikke er registreret."
+                    )
+                },
+                confirmButton = {
+                    TextButton(onClick = { allowManualAfterError = true }) {
+                        Text("Brug manuelt")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        addToPantryItem = null
+                        allowManualAfterError = false
+                        scope.launch { refreshBilkaChoices() }
+                    }) {
+                        Text("Prøv igen")
+                    }
+                }
+            )
+        } else if (!state.isLocalMode && weekId != null && catalog != null && selection != null &&
+            (catalog.productsFor(item.ingredient.id).isNotEmpty() ||
+                selection.default(item.ingredient.id) != null)
+        ) {
+            BilkaPurchaseDialog(
+                weekId = weekId,
+                item = item,
+                state = state,
+                catalog = catalog,
+                shopping = selection,
+                onDismiss = {
+                    addToPantryItem = null
+                    allowManualAfterError = false
+                },
+                onSaved = {
+                    addToPantryItem = null
+                    allowManualAfterError = false
+                    scope.launch { refreshBilkaChoices() }
+                }
+            )
+        } else {
+            AddPurchasedToPantryDialog(
+                item = item,
+                state = state,
+                onDismiss = {
+                    addToPantryItem = null
+                    allowManualAfterError = false
+                }
+            )
+        }
     }
 
     val sections by remember {
@@ -135,6 +249,29 @@ fun ShoppingScreen(state: MealPlannerState) {
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold
             )
+        }
+
+        if (!state.isLocalMode && bilkaLoading) {
+            item {
+                Text(
+                    "Henter Bilka-pakker…",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        }
+
+        if (!state.isLocalMode && bilkaLoadError) {
+            item {
+                Text(
+                    "Bilka er midlertidigt utilgængelig. Du kan stadig bruge Lager manuelt.",
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                TextButton(onClick = { scope.launch { refreshBilkaChoices() } }) {
+                    Text("Hent Bilka-pakker igen")
+                }
+            }
         }
 
         if (shoppingItems.isNotEmpty()) {
@@ -202,6 +339,7 @@ fun ShoppingScreen(state: MealPlannerState) {
                                 state = state,
                                 included = true,
                                 checked = false,
+                                bilkaInfo = bilkaShoppingLine(item, bilkaContext, bilkaCatalog),
                                 onEditPantry = {
                                     editPantryItem = item
                                 }
@@ -236,6 +374,7 @@ fun ShoppingScreen(state: MealPlannerState) {
                             state = state,
                             included = true,
                             checked = false,
+                            bilkaInfo = bilkaShoppingLine(item, bilkaContext, bilkaCatalog),
                             onEditPantry = {
                                 editPantryItem = item
                             }
@@ -260,11 +399,14 @@ fun ShoppingScreen(state: MealPlannerState) {
                         state = state,
                         included = true,
                         checked = true,
+                        bilkaInfo = bilkaShoppingLine(item, bilkaContext, bilkaCatalog),
                         onEditPantry = {
                             editPantryItem = item
                         },
-                        onAddToPantry = {
-                            addToPantryItem = item
+                        onAddToPantry = if (bilkaLoading ||
+                            bilkaContext?.purchase(item.ingredient.id)?.purchasedAmountBase != null
+                        ) null else {
+                            { addToPantryItem = item }
                         }
                     )
                 }
@@ -307,6 +449,7 @@ private fun ShoppingItemCard(
     state: MealPlannerState,
     included: Boolean,
     checked: Boolean,
+    bilkaInfo: String? = null,
     onEditPantry: (() -> Unit)? = null,
     onAddToPantry: (() -> Unit)? = null
 ) {
@@ -355,20 +498,22 @@ private fun ShoppingItemCard(
                 )
 
                 Text(
-                    "Behov: " + state.formatBaseAmount(item.ingredient, item.requiredBase),
+                    "Behov " + state.formatBaseAmount(item.ingredient, item.requiredBase) +
+                        "  ·  Lager " + state.formatBaseAmount(item.ingredient, item.pantryBase),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
-
-                Text(
-                    "Lager: " + state.formatBaseAmount(item.ingredient, item.pantryBase),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
+                bilkaInfo?.let { info ->
+                    Text(
+                        info,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
 
             Spacer(Modifier.width(6.dp))

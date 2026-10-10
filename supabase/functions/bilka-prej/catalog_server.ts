@@ -27,13 +27,24 @@ export function eligibleChoice(
     );
 }
 
-export async function catalog(ctx: CatalogServices) {
+export async function catalog(ctx: CatalogServices, ingredientIds?: string[]) {
   const household = encoded(ctx.householdId);
+  if (ingredientIds !== undefined &&
+      (ingredientIds.length > 200 || !ingredientIds.every((id) => uuidRe.test(id)))) {
+    throw new Error("invalid_catalog_filter");
+  }
+  if (ingredientIds?.length === 0) {
+    return { candidates: [], defaults: [], products: [] };
+  }
+  const filter = ingredientIds
+    ? "&ingredient_id=in.(" + [...new Set(ingredientIds)].join(",") + ")"
+    : "";
   const [candidatesRaw, defaultsRaw] = await Promise.all([
     ctx.admin("/rest/v1/ingredient_bilka_candidates?select=ingredient_id,product_id,display_rank" +
-      "&household_id=eq." + household + "&match_status=eq.SUGGESTED&limit=5000", "GET"),
+      "&household_id=eq." + household + filter +
+      "&match_status=eq.SUGGESTED&limit=5000", "GET"),
     ctx.admin("/rest/v1/ingredient_bilka_defaults?select=ingredient_id,product_id" +
-      "&household_id=eq." + household + "&limit=1000", "GET"),
+      "&household_id=eq." + household + filter + "&limit=1000", "GET"),
   ]);
   const candidates = list<{ ingredient_id: string; product_id: string; display_rank: number }>(candidatesRaw);
   const defaults = list<ProductChoice>(defaultsRaw);
