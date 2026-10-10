@@ -75,7 +75,12 @@ fun ShoppingScreen(state: MealPlannerState) {
         bilkaLoading = true
         bilkaLoadError = false
         val (catalog, weekly) = coroutineScope {
-            val catalogJob = async { BilkaPrejClient.catalog(state.householdIdentifier) }
+            val catalogJob = async {
+                BilkaPrejClient.catalog(
+                    state.householdIdentifier,
+                    state.shoppingItems().map { it.ingredient.id }.distinct()
+                )
+            }
             val weeklyJob = async {
                 BilkaPrejClient.shoppingContext(state.householdIdentifier, weekId)
             }
