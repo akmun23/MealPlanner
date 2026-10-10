@@ -1001,7 +1001,8 @@ class MealPlannerState(
         shoppingCategoryId: String?,
         isProtein: Boolean,
         imageUri: String? = null,
-        preferredUnit: MeasurementUnit = MeasurementUnit.defaultFor(type)
+        preferredUnit: MeasurementUnit = MeasurementUnit.defaultFor(type),
+        neverBuy: Boolean = false
     ): Boolean {
         val clean = name.normalizedDisplayName()
         if (clean.isBlank() || preferredUnit.quantityType != type) return false
@@ -1017,6 +1018,7 @@ class MealPlannerState(
             preferredUnit = preferredUnit,
             shoppingCategoryId = shoppingCategoryId,
             isProtein = isProtein,
+            neverBuy = neverBuy,
             imageUri = imageUri
         )
 
@@ -1034,7 +1036,8 @@ class MealPlannerState(
         shoppingCategoryId: String?,
         isProtein: Boolean,
         preferredUnit: MeasurementUnit,
-        imageUri: String? = null
+        imageUri: String? = null,
+        neverBuy: Boolean = false
     ): Boolean {
         val index = ingredients.indexOfFirst { it.id == id }
         if (
@@ -1054,6 +1057,7 @@ class MealPlannerState(
             preferredUnit = preferredUnit,
             shoppingCategoryId = shoppingCategoryId,
             isProtein = isProtein,
+            neverBuy = neverBuy,
             imageUri = imageUri
         )
         ingredients[index] = updated
@@ -1949,6 +1953,7 @@ class MealPlannerState(
         return totals.mapNotNull { (ingredientId, requiredBase) ->
             val ingredient = ingredientsById[ingredientId]
                 ?: return@mapNotNull null
+            if (ingredient.neverBuy) return@mapNotNull null
 
             ShoppingItem(
                 ingredient = ingredient,
