@@ -261,7 +261,7 @@ internal fun BilkaPurchaseDialog(
                     OutlinedTextField(
                         value = amountText,
                         onValueChange = {
-                            amountText = it.filter { c -> c.isDigit() || c == ',' || c == '.' }
+                            amountText = it.filter { c -> c.isDigit() || c == ',' || c == '.' }.take(20)
                         },
                         label = { Text("Faktisk købt mængde") },
                         modifier = Modifier.fillMaxWidth(),
@@ -291,7 +291,7 @@ internal fun BilkaPurchaseDialog(
                 OutlinedTextField(
                     value = paidText,
                     onValueChange = {
-                        paidText = it.filter { c -> c.isDigit() || c == ',' || c == '.' }
+                        paidText = it.filter { c -> c.isDigit() || c == ',' || c == '.' }.take(20)
                         priceEdited = true
                     },
                     label = { Text("Betalt (kr.) – valgfrit") },
@@ -318,10 +318,31 @@ internal fun BilkaPurchaseDialog(
                             packageCount = if (manual) null else count,
                             amountBase = amount,
                             paidTotalOre = paidOre
-                        ).onSuccess {
-                            state.refreshNow()
-                            onSaved()
-                        }.onFailure { error = it.message ?: "Købet kunne ikke gemmes." }
+                        ).let { purchaseResult ->
+                            if (purchaseResult.isSuccess) {
+                                state.refreshNow()
+                                onSaved()
+                            } else {
+                                // The database may have committed even if the network
+                                // lost its response. Verify the week before inviting
+                                // the user to try again or manually credit the stock.
+                                val confirmed = BilkaPrejClient.shoppingContext(
+                                    state.householdIdentifier, weekId
+                                ).getOrNull()?.let { latest ->
+                                    runCatching {
+                                        decodeBilkaShoppingContext(latest)
+                                            .purchase(ingredient.id)?.purchasedAmountBase
+                                    }.getOrNull()
+                                }
+                                if (confirmed != null && confirmed > 0.0) {
+                                    state.refreshNow()
+                                    onSaved()
+                                } else {
+                                    error = "Købet kunne ikke bekræftes. " +
+                                        "Opdatér indkøbslisten, før du prøver igen."
+                                }
+                            }
+                        }
                         saving = false
                     }
                 }
