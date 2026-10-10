@@ -1,7 +1,9 @@
 package com.example.mealplanner
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.PaddingValues
@@ -9,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -129,12 +133,17 @@ private fun statusLabel(row: BilkaListIngredient): String = when (row.state) {
 
 @Composable
 private fun BilkaProductPhoto(p: BilkaProduct) {
-    val modifier = Modifier.size(76.dp)
+    val modifier = Modifier.size(76.dp).clip(RoundedCornerShape(12.dp))
     val fallback: @Composable () -> Unit = {
-        Icon(Icons.Filled.ImageNotSupported, contentDescription = "Intet billede")
+        Box(
+            modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Filled.ImageNotSupported, contentDescription = "Intet billede")
+        }
     }
     if (p.imageUrl.isNullOrBlank()) {
-        fallback()
+        Box(modifier = modifier) { fallback() }
     } else {
         SubcomposeAsyncImage(
             model = p.imageUrl,
