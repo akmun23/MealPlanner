@@ -158,6 +158,8 @@ internal object BilkaPrejClient {
                     "prej_key_not_configured" -> "Tilføj først din Prej API-nøgle"
                     "prej_key_not_verified" ->
                         "Kontrollér først din Prej-nøgle, før automatisk opdatering aktiveres"
+                    "nightly_scheduler_not_ready" ->
+                        "Automatisk opdatering kan først aktiveres, når serverens tidsplan er klar"
                     "prej_key_invalid" -> "Nøglen er blevet ugyldig. Tilføj den igen"
                     "not_authenticated" -> "Log ind igen"
                     "invalid_search" -> "Skriv et konkret varenavn på mindst to tegn."
