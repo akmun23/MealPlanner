@@ -261,28 +261,57 @@ internal fun PantryAmountDialog(
                     singleLine = true
                 )
 
+                if (amountText.isBlank() ||
+                    parseDanishDecimal(amountText)?.let { !it.isFinite() || it < 0.0 } != false
+                ) {
+                    Text(
+                        "Angiv en gyldig mængde. Brug Tøm lager for at fjerne beholdningen.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+
+                if (currentBase > 0.0) {
+                    TextButton(onClick = {
+                        state.setPantry(ingredient.id, 0.0, unit)
+                        onDismiss()
+                    }) {
+                        Text("Tøm lager")
+                    }
+                }
+
                 SimpleSelector(
                     label = unit.selectorLabel(),
                     options = MeasurementUnit.compatibleWith(
                         ingredient.quantityType
                     ),
                     optionText = { it.selectorLabel() },
-                    onSelected = { unit = it }
+                    onSelected = { selected ->
+                        val entered = parseDanishDecimal(amountText)
+                        if (entered != null && entered.isFinite()) {
+                            amountText = formatDisplayNumber(
+                                selected.fromBase(unit.toBase(entered))
+                            )
+                        }
+                        unit = selected
+                    }
                 )
             }
         },
         confirmButton = {
+            val amount = parseDanishDecimal(amountText)
+                ?.takeIf { it.isFinite() && it >= 0.0 }
             Button(
                 onClick = {
-                    val amount = parseDanishDecimal(amountText) ?: 0.0
-
+                    val validAmount = amount ?: return@Button
                     state.setPantry(
                         ingredientId = ingredient.id,
-                        amount = amount,
+                        amount = validAmount,
                         unit = unit
                     )
                     onDismiss()
-                }
+                },
+                enabled = amount != null
             ) {
                 Text("Gem")
             }
