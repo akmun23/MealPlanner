@@ -80,7 +80,7 @@ Deno.test("wrong pack size and mismatched quantity types are rejected", async ()
   try {
     await recordPurchase(shopping, { weekId, ingredientId,
       productId: "42", packageCount: 2, amountBase: 1200 });
-  } catch (e) { failure = (e as CheckoutError).reason; }
+  } catch (e) { failure = (e as CheckoutError).code; }
   equal(failure, "package_amount_mismatch");
 
   const wrongKind = backend({ kind: "VOLUME" });
@@ -88,7 +88,7 @@ Deno.test("wrong pack size and mismatched quantity types are rejected", async ()
   try {
     await recordPurchase(wrongKind.shopping, { weekId, ingredientId,
       productId: "42", packageCount: 2, amountBase: 2000 });
-  } catch (e) { failure = (e as CheckoutError).reason; }
+  } catch (e) { failure = (e as CheckoutError).code; }
   equal(failure, "incompatible_package_units");
 });
 
@@ -108,6 +108,6 @@ Deno.test("duplicate attempt returns a controlled error without adding stock", a
   try {
     await recordPurchase(x.shopping, { weekId, ingredientId, productId: "42",
       packageCount: 1, amountBase: 1000 });
-  } catch (e) { reason = (e as CheckoutError).reason; }
+  } catch (e) { reason = (e as CheckoutError).code; }
   equal(reason, "purchase_not_saved_or_already_recorded");
 });
