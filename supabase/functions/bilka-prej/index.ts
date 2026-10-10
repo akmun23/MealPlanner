@@ -77,6 +77,7 @@ async function rpc(name: string, args: Record<string, unknown>): Promise<unknown
     "prej_record_key_check",
     "prej_reserve_call",
     "prej_complete_call",
+    "bilka_record_purchase",
   ]);
   if (!safe.has(name)) throw new Error("Unknown RPC");
   return await adminRequest("/rest/v1/rpc/" + name, "POST", args);
