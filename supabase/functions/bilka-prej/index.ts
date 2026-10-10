@@ -176,7 +176,7 @@ async function discoveryAction(userId: string, householdId: unknown, run: boolea
   return json(run ? await discoverProducts(services) : await discoveryStatus(services).then(
     (s) => ({
       total: s.total, chosen: s.chosen, ready: s.ready,
-      noMatch: s.noMatch, pending: s.pending, remainingQueries: s.remainingQueries,
+      noMatch: s.noMatch, incomplete: s.incomplete, pending: s.pending, remainingQueries: s.remainingQueries,
     })
   ));
 }
