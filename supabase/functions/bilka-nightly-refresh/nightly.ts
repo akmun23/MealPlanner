@@ -1,4 +1,4 @@
-import { batchIds, dailyRemaining, toBilkaCacheRow, type PrejProduct } from "./prej.ts";
+import { batchIds, dailyRemaining, toBilkaCacheRow, type PrejProduct, type BilkaCacheRow } from "./prej.ts";
 
 export type Admin = (path: string, method: "GET" | "POST" | "PATCH", body?: unknown, prefer?: string) => Promise<unknown>;
 export type Rpc = (name: string, args: Record<string, unknown>) => Promise<unknown>;
@@ -105,7 +105,7 @@ export async function performNightly(deps: NightlyDeps) {
         const requested = new Set(ids);
         const prices = (body.products as PrejProduct[])
           .map(toBilkaCacheRow)
-          .filter((r) => r !== null && requested.has(r.id))
+          .filter((r): r is BilkaCacheRow => r !== null && requested.has(r.id))
           .map((r) => ({
             id: r.id, price_ore: r.price_ore, unit_price_ore: r.unit_price_ore,
             unit_price_basis: r.unit_price_basis, is_offer: r.is_offer,
