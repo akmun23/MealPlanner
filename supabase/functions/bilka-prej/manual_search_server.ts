@@ -1,5 +1,6 @@
 import { dailyRemaining, isFoodSearchResult, toBilkaCacheRow, type PrejProduct } from "./prej.ts";
 import { type CatalogServices } from "./catalog_server.ts";
+import { rankCandidates } from "./discovery.ts";
 
 type Backend = CatalogServices & {
   rpc: (name: string, args: Record<string, unknown>) => Promise<unknown>;
@@ -28,12 +29,19 @@ export async function manualProductSearch(
     "GET"
   ) as Array<{product_ids: string[]; expires_at: string}>;
 
-  let products: Array<{ id: string }> = [];
+  let products: Array<{ id: string; name: string; unit_price_ore?: number | null }> = [];
   let fromCache = false;
   if (cached?.length && Date.parse(cached[0].expires_at) > Date.now()) {
     fromCache = true;
-    products = cached[0].product_ids.filter((id) => /^\d+$/.test(id))
-      .map((id) => ({ id })).slice(0, 100);
+    const ids = cached[0].product_ids.filter((id) => /^\d+$/.test(id)).slice(0, 100);
+    if (ids.length) {
+      // Cached IDs alone cannot be checked for ingredient relevance.
+      products = await ctx.admin(
+        "/rest/v1/bilka_products?select=id,name,unit_price_ore&chain_slug=eq.bilka" +
+          "&id=in.(" + ids.join(",") + ")&limit=100",
+        "GET",
+      ) as Array<{ id: string; name: string; unit_price_ore?: number | null }>;
+    }
   } else {
     const apiKey = await ctx.rpc("prej_read_key", { p_user_id: ctx.userId });
     if (typeof apiKey !== "string" || !apiKey) throw new Error("prej_key_not_configured");
@@ -86,8 +94,22 @@ export async function manualProductSearch(
     }]);
   }
 
-  // Display only the first ten candidates. This is discovery, not automatic selection.
-  const visible = products.slice(0, 10);
+  // Manual queries must still correspond to the actual ingredient, not just
+  // share a prefix like "Fløde"/"Flødebolle" or "Flødelikør". Re-check
+  // cached products as well, including entries from older cache versions.
+  // The user still explicitly chooses the final product; no defaults change.
+  const visible = rankCandidates(
+    ingredients[0].name,
+    products.map((p) => ({
+      id: Number(p.id),
+      name: p.name,
+      prices: [{
+        chain_slug: "bilka",
+        unit_price: p.unit_price_ore ?? null,
+      }],
+    })),
+    10,
+  );
   if (visible.length) {
     await ctx.admin(
       "/rest/v1/ingredient_bilka_candidates?on_conflict=household_id,ingredient_id,product_id",
@@ -95,9 +117,9 @@ export async function manualProductSearch(
       visible.map((p, i) => ({
         household_id: ctx.householdId,
         ingredient_id: ingredientId,
-        product_id: p.id,
+        product_id: String(p.product.id),
         match_status: "SUGGESTED",
-        match_score: null,
+        match_score: p.score,
         display_rank: i
       })),
       "resolution=ignore-duplicates,return=minimal"

@@ -20,9 +20,10 @@ Deno.test("manual product search reserves one user call and never changes defaul
     admin: async (path: string, method: "GET" | "POST", body?: unknown): Promise<unknown> => {
       if (method === "GET") {
         if (path.includes("/ingredients?")) return [{
-          id: ingredient, name: "Mel", never_buy: false
+          id: ingredient, name: "Hvedemel", never_buy: false
         }];
         if (path.includes("/bilka_search_cache?")) return cache;
+        if (path.includes("/bilka_products?")) return productRows;
         throw new Error("Unexpected GET " + path);
       }
       seen.push(path);
@@ -71,6 +72,58 @@ Deno.test("manual product search reserves one user call and never changes defaul
 
   const second = await manualProductSearch(ctx, ingredient, "hvedemel");
   assert(second.fromCache, "Second call from cache");
+  assert(second.count === 1, "Cached results must be relevance-checked too");
   assert(realRequests === 1, "Second search must use zero Prej calls");
   assert((cache[0] as {query_key:string}).query_key.startsWith("q:bilka:grocery1:food2:"), "No reuse of unfiltered search cache");
+});
+
+Deno.test("manual search refuses Flødebolle and flødelikør as Fløde", async () => {
+  const savedProducts: unknown[] = [];
+  const candidates: Array<Record<string, unknown>> = [];
+  const caches: Array<Record<string, unknown>> = [];
+  let providerCalls = 0;
+  const ctx = {
+    householdId: house,
+    userId: "one-user",
+    admin: async (path: string, method: "GET" | "POST", body?: unknown): Promise<unknown> => {
+      if (method === "GET") {
+        if (path.includes("/ingredients?")) return [
+          { id: ingredient, name: "Fløde", never_buy: false },
+        ];
+        if (path.includes("/bilka_search_cache?")) return caches;
+        if (path.includes("/bilka_products?")) return savedProducts;
+        throw new Error("Unexpected GET " + path);
+      }
+      const data = body as Array<Record<string, unknown>>;
+      if (path.includes("/bilka_products?")) savedProducts.push(...data);
+      if (path.includes("/bilka_search_cache?")) caches.push(...data);
+      if (path.includes("/ingredient_bilka_candidates?")) candidates.push(...data);
+      return data;
+    },
+    rpc: async (name: string): Promise<unknown> =>
+      name === "prej_read_key" ? "fake-key" : true,
+    request: async (): Promise<Response> => {
+      providerCalls++;
+      return Response.json({
+        total: 3, products: [
+          { id: 87649, name: "Holiday Flødelikør 17%", category_name: "Drikkevarer",
+            prices: [{ chain_slug: "bilka", price: 6495 }] },
+          { id: 135282, name: "SNCK Proteinbar Flødebolle", category_name: "Slik & snacks",
+            prices: [{ chain_slug: "bilka", price: 2200 }] },
+          { id: 100101, name: "Arla Piskefløde 38%", category_name: "Mejeri & køl",
+            prices: [{ chain_slug: "bilka", price: 1895 }] },
+        ],
+      });
+    },
+  };
+  const first = await manualProductSearch(ctx, ingredient, "fløde");
+  assert(first.count === 1, "Only actual whipping cream is relevant");
+  assert(candidates.length === 1, "No non-cream candidates");
+  assert(candidates[0].product_id === "100101", "Expected piskefløde");
+  assert(candidates[0].match_score !== null, "Ranked by ingredient match");
+  const second = await manualProductSearch(ctx, ingredient, "fløde");
+  assert(second.count === 1 && second.fromCache, "Cache path must be relevance-filtered");
+  assert(providerCalls === 1, "No extra Prej call for cached search");
+  assert(candidates.every((c) => c.product_id === "100101"),
+    "Cache cannot reintroduce invalid suggestions");
 });
