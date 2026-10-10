@@ -343,6 +343,7 @@ internal fun BilkaProductPickerScreen(
     var selected by remember(ingredientId) { mutableStateOf<String?>(null) }
     var busy by remember(ingredientId) { mutableStateOf(true) }
     var saving by remember(ingredientId) { mutableStateOf(false) }
+    var saveError by remember(ingredientId) { mutableStateOf<String?>(null) }
     var error by remember(ingredientId) { mutableStateOf<String?>(null) }
     var search by remember(ingredientId) { mutableStateOf("") }
     var cheapest by remember(ingredientId) { mutableStateOf(true) }
@@ -514,40 +515,44 @@ internal fun BilkaProductPickerScreen(
                                 Icon(Icons.Filled.CheckCircle, contentDescription = "Valgt")
                             }
                         }
+                        if (chosen && product.id != currentId && product.id in suggestions) {
+                            Button(
+                                onClick = {
+                                    saving = true
+                                    saveError = null
+                                    scope.launch {
+                                        BilkaPrejClient.chooseProduct(
+                                            householdId, ingredientId, product.id
+                                        ).onSuccess { onSaved() }
+                                            .onFailure {
+                                                saveError = "Valget kunne ikke gemmes. Prøv igen."
+                                            }
+                                        saving = false
+                                    }
+                                },
+                                enabled = !saving,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(start = 12.dp, end = 12.dp, bottom = 10.dp)
+                            ) {
+                                Text(if (saving) "Gemmer…" else "Gem som fast vare")
+                            }
+                            saveError?.let { message ->
+                                Text(
+                                    message,
+                                    color = MaterialTheme.colorScheme.error,
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
+                                )
+                            }
+                        }
                     }
                 }
                 item {
                     Text(
-                        selected?.let { id ->
-                            data?.product(id)?.let {
-                                "Valgt: " + it.brandLabel + " · " + it.name + " · " + packageLabel(it)
-                            }
-                        } ?: "Tryk på produktet, du vil bruge som standard."
+                        "Dit faste valg deles i husstanden. Det skifter ikke automatisk.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
-                    Button(
-                        onClick = {
-                            val id = selected ?: return@Button
-                            saving = true
-                            error = null
-                            scope.launch {
-                                BilkaPrejClient.chooseProduct(householdId, ingredientId, id)
-                                    .onSuccess { onSaved() }
-                                    .onFailure { error = it.message }
-                                saving = false
-                            }
-                        },
-                        enabled = !saving && BilkaSelectionRules.canConfirm(
-                            selected, suggestions, currentId
-                        ),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text(if (currentId == null) "Gem som fast produkt" else "Skift standardprodukt")
-                    }
-                    Text(
-                        "Dit valg deles i husstanden. Prisen opdateres senere, men mærke og størrelse skifter aldrig automatisk.",
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                    TextButton(onClick = onImport) { Text("Mangler den rigtige vare?") }
                 }
             }
         }
