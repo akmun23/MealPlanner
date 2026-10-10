@@ -16,6 +16,10 @@ The PR is intended for review/merge **before** the migration is applied to the h
 - One-off alternative purchases are tied to a **specific weekly plan**, never to the household default.
 - Purchased quantities are **whole packages**, with the actual purchased amount held separately from the recipe requirement (supports freezer/pantry restocking).
 - Unknown package measurements remain nullable; a household may explicitly override the package base amount.
+- Each tester may provide their **own personal Prej key**, under their own Prej account, through a later secure UI.
+- Each key is stored through a future authorized Edge Function in **Supabase Vault**. Only an opaque secret ID and redacted metadata live in the app database; Android cannot read the secret.
+- API quotas are counted **per user/account**, never globally or by household. Keys and quotas cannot be pooled or rotated across users to increase throughput.
+- The nightly household sync must later have an explicit authorized user/account; it must not silently use another member's key. Product preferences and catalog remain household/shared.
 - Catalog discovery and Prej quota accounting are server-owned. Data access obeys RLS.
 - Subsequent phases will use a queue for **new text searches** and batches of <=500 **already-known product IDs** for price refresh. These must not be confused.
 
@@ -28,9 +32,10 @@ The PR is intended for review/merge **before** the migration is applied to the h
 | `ingredient_bilka_defaults` | Household read/write | Exactly one stable product ID per household ingredient |
 | `shopping_product_overrides` | Household read/write | Different product bought for one plan / ingredient |
 | `bilka_discovery_jobs` | Household read only | Backend search queue status (one job per ingredient) |
-| `prej_api_usage` | Server only | Daily API budget tracking, by UTC date |
+| `prej_user_credentials` | Server only | Per-user reference to a key encrypted in Supabase Vault, redacted last four characters |
+| `prej_api_usage` | Server only | Daily API budget tracking, by user/account and UTC date |
 
-All public tables have RLS enabled, grants restricted, and composite foreign keys to guard household boundaries. `private.is_household_member()` is the existing shared authorization primitive.
+All seven public tables have RLS enabled, grants restricted, and composite foreign keys to guard household boundaries. `private.is_household_member()` is the existing shared authorization primitive.
 
 ### Migration and verification
 
@@ -43,7 +48,7 @@ All public tables have RLS enabled, grants restricted, and composite foreign key
    - authenticated users cannot write to the product catalog, candidate list, job queue, or quota table.
    - attempted cross-household ingredient/plan references violate composite foreign keys.
    - changing `bilka_products.price_ore` does not modify `ingredient_bilka_defaults.product_id`.
-4. **Do not put the Prej key in GitHub, Gradle, Android, migrations or SQL.** Configure a server-side secret only when the Edge Function is implemented in phase 2.
+4. **Do not put any Prej keys in GitHub, Gradle, Android source, migrations or SQL files.** Stage each user-owned key in Supabase Vault through a privileged, authenticated Edge Function during phase 2. Testers must use independent, legitimate Prej accounts and accept the provider's terms.
 
 This migration was intentionally **not applied to the production Supabase project** as part of this PR.
 
@@ -64,7 +69,7 @@ None of these eight feedback rows has been modified, marked completed, or delete
 
 ## Next phases (not part of this PR)
 
-- **Phase 2:** Prej server-side client, API credential via Supabase secret, shared quota reservation and batch refresh client.
+- **Phase 2:** Server-side Prej client, user-provided keys encrypted in Supabase Vault, credential verification, per-user quota reservation, batch refresh client, and secure API-key UI integration preparation.
 - **Phase 3:** Search queue + candidate discovery using Bilka category queries and individual searches where needed.
 - **Phase 4:** Compose product selector with photos, brand, name, sizes, unit and package prices.
 - **Phase 5:** Nightly price updates that never change product selection.
@@ -72,3 +77,11 @@ None of these eight feedback rows has been modified, marked completed, or delete
 - **Phase 7:** Cross-household isolation, offline/retry, end-to-end integration tests.
 
 The GitHub Android CI runs the Kotlin tests, **not** the SQL migration or RLS session tests. SQL verification needs an isolated Supabase database after applying the migration.
+
+## User-provided Prej keys: provider and security constraints
+
+- Prej states the free plan is limited to **one key per account**; creating duplicate accounts solely to bypass limits is prohibited. It also describes the key as personal and non-transferable. Before distributing bring-your-own-key support beyond a private test, confirm the intended server-side use is acceptable to Prej.
+- No tester should be able to inspect another member's key, and no quota will be pooled.
+- The future key entry UI must support verifying the key, checking remaining quota, replacing/revoking it, and displaying only its last four characters.
+- `prej_user_credentials.vault_secret_id` contains only an opaque pointer. Both `prej_user_credentials` and `prej_api_usage` are intentionally inaccessible from the Data API for app users.
+- Household selection is separate: a user may share the resulting matched Bilka product with their household without handing over their API credential.
