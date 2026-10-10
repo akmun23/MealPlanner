@@ -12,7 +12,7 @@ const list = <T>(x: unknown): T[] => Array.isArray(x) ? x as T[] : [];
 const encode = (v: string) => encodeURIComponent(v);
 
 export class CheckoutError extends Error {
-  constructor(public reason: string, public status: number) { super(reason); }
+  constructor(public code: string, public status: number) { super(code); }
 }
 async function checkedWeek(ctx: ShoppingService, weekId: string) {
   if (!uuid(weekId)) throw new CheckoutError("invalid_week", 400);
