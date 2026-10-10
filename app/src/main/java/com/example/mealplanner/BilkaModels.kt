@@ -27,7 +27,7 @@ enum class BilkaCandidateStatus {
 
 @Serializable
 enum class BilkaDiscoveryStatus {
-    PENDING, RUNNING, COMPLETE, NO_MATCH, FAILED
+    PENDING, RUNNING, COMPLETE, NO_MATCH, FAILED, INCOMPLETE
 }
 
 @Serializable
