@@ -52,6 +52,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -259,6 +261,39 @@ fun WeekScreen(
                 Icon(Icons.Filled.ChevronRight, contentDescription = "Næste uge")
             }
         }
+        Spacer(Modifier.height(12.dp))
+        Button(
+            onClick = {
+                if (WeekRules.needsRegenerationConfirmation(
+                        currentPlan = state.plan,
+                        sandwichRecipeId = state.weeklySandwichRecipeId
+                    )
+                ) {
+                    showGenerateConfirmation = true
+                } else {
+                    state.generateWeek()
+                }
+            },
+            enabled = state.recipes.any { it.mealType == MealType.DINNER } &&
+                homeCount > 0 &&
+                !state.isPlanning &&
+                !state.isWeekChanging,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(52.dp),
+            shape = RoundedCornerShape(16.dp)
+        ) {
+            if (state.isPlanning) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp
+                )
+            } else {
+                Icon(Icons.Filled.Refresh, contentDescription = null)
+            }
+            Spacer(Modifier.width(8.dp))
+            Text("Ny madplan", fontWeight = FontWeight.Bold)
+        Spacer(Modifier.height(8.dp))
         if (start != LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)) &&
             !state.isLocalMode
         ) {
@@ -375,39 +410,6 @@ fun WeekScreen(
             )
         }
 
-        item(key = "week-generate") {
-        Button(
-            onClick = {
-                if (WeekRules.needsRegenerationConfirmation(
-                        currentPlan = state.plan,
-                        sandwichRecipeId = state.weeklySandwichRecipeId
-                    )
-                ) {
-                    showGenerateConfirmation = true
-                } else {
-                    state.generateWeek()
-                }
-            },
-            enabled = state.recipes.any { it.mealType == MealType.DINNER } &&
-                homeCount > 0 &&
-                !state.isPlanning &&
-                !state.isWeekChanging,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp),
-            shape = RoundedCornerShape(16.dp)
-        ) {
-            if (state.isPlanning) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(18.dp),
-                    strokeWidth = 2.dp
-                )
-            } else {
-                Icon(Icons.Filled.Refresh, contentDescription = null)
-            }
-            Spacer(Modifier.width(8.dp))
-            Text("Ny madplan", fontWeight = FontWeight.Bold)
-        }
 
         }
     }
@@ -472,7 +474,71 @@ fun DayCard(
     } else ""
 
     var showRecipePicker by remember { mutableStateOf(false) }
+    var recipeSearch by remember { mutableStateOf("") }
     var showTimePicker by remember { mutableStateOf(false) }
+
+    if (showRecipePicker) {
+        val choices = state.recipes
+            .filter {
+                it.mealType == MealType.DINNER &&
+                    it.id != state.weeklySandwichRecipeId &&
+                    (recipeSearch.isBlank() ||
+                        it.name.contains(recipeSearch.trim(), ignoreCase = true))
+            }
+            .sortedBy { it.name.lowercase() }
+        AlertDialog(
+            onDismissRequest = { showRecipePicker = false },
+            title = { Text("Vælg ret til ${day.danishName()}") },
+            text = {
+                Column {
+                    SearchField(
+                        value = recipeSearch,
+                        onValueChange = { recipeSearch = it },
+                        placeholder = "Søg efter ret"
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
+                        item {
+                            TextButton(onClick = {
+                                state.setRecipeForDay(day, null)
+                                showRecipePicker = false
+                                recipeSearch = ""
+                            }) { Text("Ingen ret") }
+                        }
+                        items(choices, key = { it.id }) { candidate ->
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        state.setRecipeForDay(day, candidate.id)
+                                        showRecipePicker = false
+                                        recipeSearch = ""
+                                    }
+                                    .padding(vertical = 12.dp)
+                            ) {
+                                Text(candidate.name, fontWeight = FontWeight.SemiBold)
+                                candidate.prepMinutes?.let {
+                                    Text(
+                                        "$it min",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                        if (choices.isEmpty()) {
+                            item { EmptyCard("Ingen retter matcher søgningen.") }
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showRecipePicker = false }) {
+                    Text("Annuller")
+                }
+            }
+        )
+    }
 
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -546,7 +612,7 @@ fun DayCard(
                     ) {
                         Icon(
                             imageVector = if (isLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
-                            contentDescription = if (isLocked) "Lås op" else "Lås ret",
+                            contentDescription = if (isLocked) "Lås op for ${day.danishName()}" else "Lås ret for ${day.danishName()}",
                             tint = if (isLocked) {
                                 MaterialTheme.colorScheme.primary
                             } else {
@@ -558,7 +624,10 @@ fun DayCard(
 
                 Switch(
                     checked = !away,
-                    onCheckedChange = { state.toggleEatingAtHome(day) }
+                    onCheckedChange = { state.toggleEatingAtHome(day) },
+                    modifier = Modifier.semantics {
+                        contentDescription = "Spiser hjemme ${day.danishName()}"
+                    }
                 )
             }
 
@@ -654,53 +723,12 @@ fun DayCard(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Box(modifier = Modifier.weight(1f)) {
-                            OutlinedButton(
-                                onClick = { showRecipePicker = true },
-                                modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp)
-                            ) {
-                                Text("Skift ret")
-                            }
+                        OutlinedButton(
+                            onClick = { showRecipePicker = true },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp)
+                        ) { Text("Skift ret") }
 
-                            DropdownMenu(
-                                expanded = showRecipePicker,
-                                onDismissRequest = { showRecipePicker = false }
-                            ) {
-                                DropdownMenuItem(
-                                    text = { Text("Ingen ret") },
-                                    onClick = {
-                                        state.setRecipeForDay(day, null)
-                                        showRecipePicker = false
-                                    }
-                                )
-
-                                state.recipes
-                                    .filter {
-                                        it.mealType == MealType.DINNER &&
-                                            it.id != state.weeklySandwichRecipeId
-                                    }
-                                    .sortedBy { it.name.lowercase() }
-                                    .forEach { candidate ->
-                                        DropdownMenuItem(
-                                            text = {
-                                                Text(
-                                                    buildString {
-                                                        append(candidate.name)
-                                                        candidate.prepMinutes?.let {
-                                                            append(" · $it min")
-                                                        }
-                                                    }
-                                                )
-                                            },
-                                            onClick = {
-                                                state.setRecipeForDay(day, candidate.id)
-                                                showRecipePicker = false
-                                            }
-                                        )
-                                    }
-                            }
-                        }
 
                         if (!isLocked && recipe != null) {
                             IconButton(
