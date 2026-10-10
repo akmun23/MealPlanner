@@ -57,6 +57,27 @@ internal object BilkaPrejClient {
         call("manual-search", householdId = householdId,
             ingredientId = ingredientId, query = query)
 
+    suspend fun shoppingContext(
+        householdId: String,
+        weekId: String
+    ): Result<JsonObject> =
+        call("shopping-context", householdId = householdId, weekId = weekId)
+
+    suspend fun recordPurchase(
+        householdId: String,
+        weekId: String,
+        ingredientId: String,
+        productId: String?,
+        manualProductName: String?,
+        packageCount: Int?,
+        amountBase: Double,
+        paidTotalOre: Long?
+    ): Result<JsonObject> =
+        call("record-purchase", householdId = householdId, weekId = weekId,
+            ingredientId = ingredientId, productId = productId,
+            manualProductName = manualProductName, packageCount = packageCount,
+            amountBase = amountBase, paidTotalOre = paidTotalOre)
+
     suspend fun catalog(householdId: String): Result<JsonObject> =
         call("catalog", householdId = householdId)
 
@@ -81,7 +102,12 @@ internal object BilkaPrejClient {
         ingredientId: String? = null,
         productId: String? = null,
         query: String? = null,
-        enabled: Boolean? = null
+        enabled: Boolean? = null,
+        weekId: String? = null,
+        manualProductName: String? = null,
+        packageCount: Int? = null,
+        amountBase: Double? = null,
+        paidTotalOre: Long? = null
     ): Result<JsonObject> = withContext(Dispatchers.IO) {
         runCatching {
             val accessToken = SupabaseProvider.client.auth.currentSessionOrNull()?.accessToken
@@ -94,6 +120,11 @@ internal object BilkaPrejClient {
                 productId?.let { put("productId", it) }
                 query?.let { put("query", it) }
                 enabled?.let { put("enabled", it) }
+                weekId?.let { put("weekId", it) }
+                manualProductName?.let { put("manualProductName", it) }
+                packageCount?.let { put("packageCount", it) }
+                amountBase?.let { put("amountBase", it) }
+                paidTotalOre?.let { put("paidTotalOre", it) }
             }
             val response = http.post(
                 BuildConfig.SUPABASE_URL.trimEnd('/') + "/functions/v1/bilka-prej"
@@ -117,6 +148,14 @@ internal object BilkaPrejClient {
                     "prej_key_invalid" -> "Nøglen er blevet ugyldig. Tilføj den igen"
                     "not_authenticated" -> "Log ind igen"
                     "invalid_search" -> "Skriv et konkret varenavn på mindst to tegn."
+                    "purchase_not_saved_or_already_recorded" ->
+                        "Købet kunne ikke gemmes – muligvis er det allerede lagt på Lager."
+                    "incompatible_package_units", "package_amount_mismatch" ->
+                        "Pakkestørrelsen stemmer ikke med ingrediensen."
+                    "invalid_packages", "invalid_amount", "invalid_cost" ->
+                        "Kontrollér købt antal, mængde og pris."
+                    "not_household_product" ->
+                        "Varen er ikke et godkendt Bilka-forslag til denne ingrediens."
                     "invalid_product_choice", "not_a_suggested_product" ->
                         "Denne vare er ikke længere tilgængelig. Opdatér produktlisten."
                     "prej_burst_limit" -> "For mange kald. Prøv igen senere"
