@@ -36,6 +36,84 @@ comment on table public.prej_nightly_preferences is
 comment on table public.bilka_nightly_runs is
     'Once-per-local-day claim prevents duplicated cron calls or charging two members for the same household refresh.';
 
+
+-- The worker is permitted to change only PRICE fields, never the chosen SKU,
+-- original brand, package, product photo or ingredient_bilka_defaults.
+create function public.bilka_update_prices_only(p_updates jsonb)
+returns integer
+language plpgsql
+security definer
+set search_path = ''
+as $
+declare
+    v_count integer;
+begin
+    if jsonb_typeof(p_updates) is distinct from 'array'
+       or jsonb_array_length(p_updates) > 500 then
+        raise exception 'Expected at most 500 price updates';
+    end if;
+    with incoming as (
+        select distinct on (id) id, price_ore, unit_price_ore,
+            unit_price_basis, is_offer, price_updated_at
+        from jsonb_to_recordset(p_updates) as x(
+            id text, price_ore bigint, unit_price_ore numeric,
+            unit_price_basis text, is_offer boolean, price_updated_at timestamptz
+        )
+        where id ~ '^[0-9]+ It is intentionally
+-- disabled until an operator provisions the *same* random secret in Supabase
+-- Edge Function secrets and Vault (name bilka_nightly_cron_token).
+create extension if not exists pg_cron with schema pg_catalog;
+create extension if not exists pg_net with schema extensions;
+
+select cron.schedule(
+    'mealplanner-bilka-prices',
+    '0 * * * *',
+    $job$
+    select net.http_post(
+        url := 'https://tylwghmkkooflyaptwgf.supabase.co/functions/v1/bilka-nightly-refresh',
+        headers := jsonb_build_object(
+            'Content-Type', 'application/json',
+            'x-mealplanner-cron-token',
+                (select decrypted_secret from vault.decrypted_secrets
+                  where name = 'bilka_nightly_cron_token' limit 1)
+        ),
+        body := '{}'::jsonb,
+        timeout_milliseconds := 20000
+    )
+    where extract(hour from timezone('Europe/Copenhagen', now())) = 5
+      and exists (
+          select 1 from vault.decrypted_secrets
+           where name = 'bilka_nightly_cron_token'
+             and length(decrypted_secret) >= 32
+      );
+    $job$
+);
+ and price_ore >= 0
+        order by id
+    ), applied as (
+        update public.bilka_products p
+            set price_ore = i.price_ore,
+                unit_price_ore = i.unit_price_ore,
+                unit_price_basis = i.unit_price_basis,
+                is_offer = i.is_offer,
+                price_updated_at = coalesce(i.price_updated_at, now()),
+                updated_at = now()
+        from incoming i
+        where p.id = i.id and p.chain_slug = 'bilka'
+        returning p.id
+    )
+    select count(*) into v_count from applied;
+    return v_count;
+end;
+$;
+
+revoke all on function public.bilka_update_prices_only(jsonb)
+    from public, anon, authenticated;
+grant execute on function public.bilka_update_prices_only(jsonb)
+    to service_role;
+comment on function public.bilka_update_prices_only(jsonb) is
+    'Server-only batch price update; intentionally cannot modify product IDs, brand, packaging or household defaults.';
+
 -- Use the documented pg_cron + pg_net scheduling mechanism. It is intentionally
 -- disabled until an operator provisions the *same* random secret in Supabase
 -- Edge Function secrets and Vault (name bilka_nightly_cron_token).
