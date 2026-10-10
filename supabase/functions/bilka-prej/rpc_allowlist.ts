@@ -9,4 +9,5 @@ export const ALLOWED_BILKA_RPCS: ReadonlySet<string> = new Set([
   // Single-use, atomic checkout; this is not the same as a direct table write.
   "bilka_record_purchase",
   "bilka_update_prices_only",
+  "bilka_nightly_scheduler_ready",
 ]);
