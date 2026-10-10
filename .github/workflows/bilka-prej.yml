@@ -1,0 +1,25 @@
+name: Bilka Prej Edge checks
+
+on:
+  pull_request:
+    branches: [ master ]
+  push:
+    branches: [ master ]
+
+concurrency:
+  group: bilka-prej-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  edge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Type-check Edge Function
+        run: deno check supabase/functions/bilka-prej/index.ts
+      - name: Test Bilka-only mappings and batching
+        run: deno test supabase/functions/bilka-prej/prej_test.ts
