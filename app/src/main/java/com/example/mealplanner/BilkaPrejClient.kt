@@ -3,6 +3,7 @@ package com.example.mealplanner
 import io.github.jan.supabase.auth.auth
 import io.ktor.client.HttpClient
 import io.ktor.client.engine.cio.CIO
+import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.header
 import io.ktor.client.request.post
 import io.ktor.client.request.setBody
@@ -26,7 +27,13 @@ import kotlinx.serialization.json.Json
 private class BilkaApiError(message: String) : RuntimeException(message)
 
 internal object BilkaPrejClient {
-    private val http = HttpClient(CIO)
+    private val http = HttpClient(CIO) {
+        install(HttpTimeout) {
+            connectTimeoutMillis = 8_000
+            socketTimeoutMillis = 30_000
+            requestTimeoutMillis = 35_000
+        }
+    }
     private val json = Json
 
     suspend fun status(): Result<JsonObject> = call("status")
