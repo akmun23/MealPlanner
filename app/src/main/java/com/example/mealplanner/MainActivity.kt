@@ -1535,7 +1535,7 @@ internal fun AppThumbnail(
 ) {
     // Layout dimensions are owned by the placeholder, never the source image.
     // An image selected from a 4000px camera file or Prej must not resize rows.
-    val boxSize = 60.dp
+    val boxSize = PantryImageRules.THUMBNAIL_SIZE_DP.dp
     Surface(
         modifier = modifier.requiredSize(boxSize),
         shape = RoundedCornerShape(16.dp),
