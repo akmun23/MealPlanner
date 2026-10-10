@@ -156,11 +156,12 @@ fun ShoppingScreen(state: MealPlannerState) {
                     }
                 }
             )
-        } else if (!state.isLocalMode && catalog != null && selection != null &&
+        } else if (!state.isLocalMode && weekId != null && catalog != null && selection != null &&
             (catalog.productsFor(item.ingredient.id).isNotEmpty() ||
                 selection.default(item.ingredient.id) != null)
         ) {
             BilkaPurchaseDialog(
+                weekId = weekId,
                 item = item,
                 state = state,
                 catalog = catalog,
