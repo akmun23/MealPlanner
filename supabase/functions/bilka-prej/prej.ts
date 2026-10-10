@@ -17,6 +17,31 @@ export interface PrejProduct {
   quantity?: number | null;
   unit?: string | null;
   prices?: PrejPrice[];
+  category_name?: string | null;
+  category_slug?: string | null;
+}
+
+/** Provider grocery=1 still returns pet products, cosmetics, toys and household
+ * goods. Only cache food-category products as potential ingredient matches.
+ * Unknown/missing categories are not safe to auto-suggest. A previously selected
+ * SKU is preserved separately and its price updates never depend on this filter.
+ */
+export function isFoodSearchResult(product: PrejProduct): boolean {
+  const category = (product.category_name ?? product.category_slug ?? "")
+    .toLowerCase()
+    .replaceAll("æ", "ae").replaceAll("ø", "oe").replaceAll("å", "aa")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9]+/g, " ").trim();
+  if (!category) return false;
+  const blocked = [
+    /^personlig pleje(?: |$)/, /^dyremad(?: |$)/, /^dyr(?: |$)/,
+    /^husholdning(?: |$)/, /^oevrigt(?: |$)/, /^baby boern(?: |$)/,
+    /^legetoej(?: |$)/, /^elektronik(?: |$)/, /^bolig(?: |$)/,
+    /^have(?: |$)/, /^sport(?: |$)/, /^fritid(?: |$)/,
+    /^toej(?: |$)/, /^mode(?: |$)/, /^boeger(?: |$)/,
+    /^rengoering(?: |$)/, /^skoenhed(?: |$)/,
+  ];
+  return !blocked.some((rule) => rule.test(category));
 }
 
 export type BilkaCacheRow = {

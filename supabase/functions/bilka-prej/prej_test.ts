@@ -1,4 +1,4 @@
-import { batchIds, dailyRemaining, toBilkaCacheRow, validPrejKey } from "./prej.ts";
+import { batchIds, dailyRemaining, isFoodSearchResult, toBilkaCacheRow, validPrejKey } from "./prej.ts";
 
 function eq(actual: unknown, expected: unknown) {
   if (JSON.stringify(actual) !== JSON.stringify(expected)) {
@@ -65,4 +65,15 @@ Deno.test("remaining daily quota header and user key validation", () => {
   eq(validPrejKey("prej_dev_a1b2c3d4e5f6g7h8"), true);
   eq(validPrejKey("prej_dev_short"), false);
   eq(validPrejKey("some-other-token"), false);
+});
+
+Deno.test("category gate removes irrelevant Prej grocery results without rejecting dairy or staples", () => {
+  for (const category of ["Personlig pleje", "Dyremad", "Husholdning", "Øvrigt", "Baby & børn"]) {
+    eq(isFoodSearchResult({ id: 1, name: "Æg", category_name: category }), false);
+  }
+  for (const category of ["Mejeri & køl", "Kolonial", "Frugt & grønt", "Slik & snacks"]) {
+    eq(isFoodSearchResult({ id: 2, name: "Skyr", category_name: category }), true);
+  }
+  eq(isFoodSearchResult({ id: 3, name: "Hvedemel", category_slug: "personlig-pleje" }), false);
+  eq(isFoodSearchResult({ id: 4, name: "Unknown category" }), false);
 });

@@ -104,3 +104,25 @@ Deno.test("ingredient-scoped catalog avoids loading unrelated products", async (
   eq(rejected, true);
   eq(paths.length, 0);
 });
+
+Deno.test("previously selected SKU stays available when suggestions are cleared", async () => {
+  const house = "ce85a721-78a3-40c5-a18d-13b1011ba54b";
+  const requests: string[] = [];
+  const result = await catalog({
+    householdId: house,
+    admin: async (path: string, method: "GET" | "POST"): Promise<unknown> => {
+      if (method !== "GET") throw new Error("Catalog is read-only");
+      requests.push(path);
+      if (path.includes("/ingredient_bilka_candidates?")) return [];
+      if (path.includes("/ingredient_bilka_defaults?"))
+        return [{ ingredient_id: id, product_id: "42" }];
+      if (path.includes("/bilka_products?"))
+        return [{ id: "42", name: "Fixed flour 1kg", price_ore: 1200 }];
+      throw new Error("Unexpected path " + path);
+    },
+  }, [id]);
+  eq(result.candidates, []);
+  eq(result.defaults, [{ ingredient_id: id, product_id: "42" }]);
+  eq(result.products.map((p) => p.id), ["42"]);
+  eq(requests.some((path) => path.includes("id=in.(42)")), true);
+});

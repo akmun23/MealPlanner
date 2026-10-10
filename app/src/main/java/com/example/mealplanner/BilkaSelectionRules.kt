@@ -8,11 +8,13 @@ internal object BilkaSelectionRules {
     fun sortForIngredient(
         products: List<BilkaProduct>,
         rankById: Map<String, Int>,
-        byUnitPrice: Boolean
+        byUnitPrice: Boolean,
+        chosenProductId: String? = null
     ): List<BilkaProduct> {
         val bases = products.mapNotNull { it.unitPriceBasis }.distinct()
         val comparable = byUnitPrice && bases.size == 1
         return products.sortedWith(compareBy<BilkaProduct>(
+            { if (it.id == chosenProductId) 0 else 1 },
             { if (comparable) it.unitPriceOre == null else false },
             {
                 if (comparable) it.unitPriceOre ?: Double.MAX_VALUE

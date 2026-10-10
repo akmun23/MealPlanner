@@ -52,6 +52,24 @@ class BilkaSelectionRulesTest {
     }
 
     @Test
+    fun keepsRememberedSkuFirstEvenWhenAnotherSuggestionIsCheaper() {
+        val products = listOf(
+            item("old", "Valgt mærke", 1500.0, BilkaUnitPriceBasis.KG),
+            item("new", "Billigere alternativ", 900.0, BilkaUnitPriceBasis.KG)
+        )
+        assertEquals(
+            listOf("old", "new"),
+            BilkaSelectionRules.sortForIngredient(
+                products, emptyMap(), true, chosenProductId = "old"
+            ).map { it.id }
+        )
+        assertEquals(
+            listOf("new", "old"),
+            BilkaSelectionRules.sortForIngredient(products, emptyMap(), true).map { it.id }
+        )
+    }
+
+    @Test
     fun onlyNewSuggestedSkuCanBeSaved() {
         assertTrue(BilkaSelectionRules.canConfirm("new", setOf("new"), "old"))
         assertFalse(BilkaSelectionRules.canConfirm("old", setOf("old"), "old"))

@@ -1,5 +1,5 @@
-import { groupSearches, rankCandidates, cleanedExactQuery, type IngredientNeed } from "./discovery.ts";
-import { dailyRemaining, toBilkaCacheRow, type BilkaCacheRow, type PrejProduct } from "./prej.ts";
+import { groupSearchesAtStage, searchQueries, rankCandidates, cleanedExactQuery, type IngredientNeed } from "./discovery.ts";
+import { dailyRemaining, isFoodSearchResult, toBilkaCacheRow, type BilkaCacheRow, type PrejProduct } from "./prej.ts";
 
 type QueryCache = {
   query_key: string;
@@ -103,7 +103,7 @@ export async function discoveryStatus(ctx: DiscoveryServices) {
     noMatch: ingredients.filter((i) => !chosen.has(i.id) && noMatch.has(i.id)).length,
     incomplete: ingredients.filter((i) => !chosen.has(i.id) && incomplete.has(i.id)).length,
     pending: pending.length,
-    remainingQueries: groupSearches(pending).length,
+    remainingQueries: groupSearchesAtStage(pending, 0).length,
     items,
     pendingIngredients: pending,
     jobsById,
@@ -181,7 +181,7 @@ export async function discoverProducts(ctx: DiscoveryServices) {
   }
 
   async function lookup(query: string): Promise<PrejProduct[] | null> {
-    const key = "q:bilka:grocery1:" + query.toLowerCase().trim();
+    const key = "q:bilka:grocery1:food2:" + query.toLowerCase().trim();
     const existing = queryCache.get(key);
     if (existing && Date.parse(existing.expires_at) > Date.now()) {
       fromCache++;
@@ -266,7 +266,10 @@ export async function discoverProducts(ctx: DiscoveryServices) {
       stopReason = "invalid_provider_response";
       return null;
     }
-    const products = payload.products as PrejProduct[];
+    // Prej's grocery flag is not sufficient: reject known non-food categories
+    // before persisting products or showing candidates. New cache namespace
+    // prevents reuse of entries that predate this filtering.
+    const products = (payload.products as PrejProduct[]).filter(isFoodSearchResult);
     const rows = products.map(toBilkaCacheRow)
       .filter((row): row is BilkaCacheRow => row !== null);
     const uniqueRows = [...new Map(rows.map((row) => [row.id, row])).values()];
@@ -287,35 +290,45 @@ export async function discoverProducts(ctx: DiscoveryServices) {
     return products.filter((product) => known.has(String(product.id)));
   }
 
-  // Stage 1: shared/broad terms. One response may suggest products for many ingredients.
-  for (const group of groupSearches([...remaining.values()])) {
-    if (stopped) break;
-    const query = group.query;
-    const products = await lookup(query);
-    if (products === null) break;
-    await upsertSuggestions(group.ingredients, products);
+  // Query only the saved ingredient names: no hardcoded ingredient synonyms
+  // or broadening guesses. Chosen household products are never replaced.
+  const attempted = new Map<string, Set<string>>();
+  const truncated = new Set<string>();
+  const maxStages = Math.max(0, ...initial.pendingIngredients.map((i) =>
+    searchQueries(i.name).length
+  ));
+  for (let stage = 0; stage < maxStages && !stopped; stage++) {
+    const groups = groupSearchesAtStage([...remaining.values()], stage);
+    for (const group of groups) {
+      if (stopped) break;
+      const members = group.ingredients.filter((ingredient) =>
+        !attempted.get(ingredient.id)?.has(group.query)
+      );
+      if (!members.length) continue;
+      const products = await lookup(group.query);
+      if (products === null) break;
+      for (const ingredient of members) {
+        const already = attempted.get(ingredient.id) ?? new Set<string>();
+        already.add(group.query);
+        attempted.set(ingredient.id, already);
+        if (queryCache.get("q:bilka:grocery1:food2:" + group.query)?.truncated) {
+          truncated.add(ingredient.id);
+        }
+      }
+      await upsertSuggestions(members, products);
+    }
   }
 
-  // Stage 2: targeted fallback only for ingredients still without candidates.
-  // A broad 100-result page is never assumed to cover every possible product.
-  for (const ingredient of [...remaining.values()]) {
-    if (stopped) break;
-    const query = cleanedExactQuery(ingredient.name);
-    const groupQuery = groupSearches([ingredient])[0]?.query;
-    if (!query || !groupQuery) continue;
-    const sameAsGroup = query.toLowerCase() === groupQuery.toLowerCase();
-    const products = await lookup(query);
-    if (products === null) break;
-    await upsertSuggestions([ingredient], products);
-    if (remaining.has(ingredient.id)) {
-      const info = queryCache.get("q:" + query.toLowerCase().trim());
-      // With 100 results/page, a truncated list is NOT evidence of no product.
-      // Phase 4 will let the user narrow the search explicitly.
-      jobUpdates.set(ingredient.id, {
-        status: info?.truncated ? "INCOMPLETE" : "NO_MATCH",
-        attempts: (jobs.get(ingredient.id)?.attempts ?? 0) + (sameAsGroup ? 1 : 2),
-      });
-    }
+  // Only mark an ingredient as NO_MATCH after its exact query was tried.
+  // A run cutoff must leave it PENDING so the next request can resume.
+  for (const ingredient of remaining.values()) {
+    const queries = searchQueries(ingredient.name);
+    const done = attempted.get(ingredient.id);
+    if (!queries.length || !queries.every((query) => done?.has(query))) continue;
+    jobUpdates.set(ingredient.id, {
+      status: truncated.has(ingredient.id) ? "INCOMPLETE" : "NO_MATCH",
+      attempts: (jobs.get(ingredient.id)?.attempts ?? 0) + (done?.size ?? 0),
+    });
   }
 
   const updates = [...jobUpdates.entries()].map(([ingredientId, update]) => ({

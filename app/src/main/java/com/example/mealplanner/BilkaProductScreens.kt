@@ -372,7 +372,8 @@ internal fun BilkaProductPickerScreen(
     val options = BilkaSelectionRules.sortForIngredient(
         data?.productsFor(ingredientId).orEmpty(),
         data?.ranks(ingredientId).orEmpty(),
-        cheapest
+        cheapest,
+        chosenProductId = currentId
     ).filter {
         search.isBlank() || it.name.contains(search.trim(), true) ||
             it.brandLabel.contains(search.trim(), true)
