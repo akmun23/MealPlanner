@@ -310,6 +310,7 @@ private data class CachedIngredient(
     val preferredUnit: String,
     val shoppingCategoryId: String?,
     val isProtein: Boolean,
+    val neverBuy: Boolean = false,
     val imageUri: String?,
     val imagePath: String?
 )
@@ -429,6 +430,7 @@ internal object RoomSnapshotCodec {
                 preferredUnit = it.preferredUnit.name,
                 shoppingCategoryId = it.shoppingCategoryId,
                 isProtein = it.isProtein,
+                neverBuy = it.neverBuy,
                 imageUri = it.imageUri,
                 imagePath = it.imagePath
             )
@@ -505,6 +507,7 @@ internal object RoomSnapshotCodec {
                         MeasurementUnit.valueOf(it.preferredUnit),
                     shoppingCategoryId = it.shoppingCategoryId,
                     isProtein = it.isProtein,
+                    neverBuy = it.neverBuy,
                     imageUri = it.imageUri,
                     imagePath = it.imagePath
                 )
