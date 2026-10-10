@@ -11,7 +11,8 @@ import io.ktor.http.ContentType
 import io.ktor.http.contentType
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.buildJsonArrayObject
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
@@ -78,8 +79,8 @@ internal object BilkaPrejClient {
             manualProductName = manualProductName, packageCount = packageCount,
             amountBase = amountBase, paidTotalOre = paidTotalOre)
 
-    suspend fun catalog(householdId: String): Result<JsonObject> =
-        call("catalog", householdId = householdId)
+    suspend fun catalog(householdId: String, ingredientIds: List<String>? = null): Result<JsonObject> =
+        call("catalog", householdId = householdId, ingredientIds = ingredientIds)
 
     suspend fun chooseProduct(
         householdId: String,
@@ -100,6 +101,7 @@ internal object BilkaPrejClient {
         apiKey: String? = null,
         householdId: String? = null,
         ingredientId: String? = null,
+        ingredientIds: List<String>? = null,
         productId: String? = null,
         query: String? = null,
         enabled: Boolean? = null,
@@ -117,6 +119,9 @@ internal object BilkaPrejClient {
                 apiKey?.let { put("apiKey", it) }
                 householdId?.let { put("householdId", it) }
                 ingredientId?.let { put("ingredientId", it) }
+                ingredientIds?.let { ids ->
+                    put("ingredientIds", buildJsonArray { ids.forEach { add(it) } })
+                }
                 productId?.let { put("productId", it) }
                 query?.let { put("query", it) }
                 enabled?.let { put("enabled", it) }
