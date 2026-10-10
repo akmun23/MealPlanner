@@ -26,4 +26,17 @@ jobs:
       - name: Test nightly quotas, DST and fixed product metadata
         run: deno test supabase/functions/bilka-nightly-refresh/nightly_test.ts
       - name: Test Bilka-only mappings and batching
-        run: deno test supabase/functions/bilka-prej/prej_test.ts supabase/functions/bilka-prej/discovery_test.ts supabase/functions/bilka-prej/catalog_test.ts supabase/functions/bilka-prej/manual_search_test.ts
+        run: deno test supabase/functions/bilka-prej/prej_test.ts supabase/functions/bilka-prej/discovery_test.ts supabase/functions/bilka-prej/catalog_test.ts supabase/functions/bilka-prej/manual_search_test.ts supabase/functions/bilka-prej/shopping_test.ts
+      - name: Guard against malformed phase-5 and phase-6 SQL migrations
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          phase5 = Path("supabase/migrations/20261010140000_bilka_nightly_prices.sql").read_text()
+          phase6 = Path("supabase/migrations/20261010150000_bilka_purchase_transaction.sql").read_text()
+          assert phase5.count("select cron.schedule(") == 1, "Nightly job must be scheduled exactly once"
+          assert phase5.count("$price_only$") == 2, "Price RPC requires matching SQL dollar quotes"
+          assert "id ~ '^[0-9]+$'" in phase5, "Price id pattern was corrupted"
+          assert phase6.count("$body$") == 2, "Purchase RPC requires matching SQL dollar quotes"
+          assert "where public.shopping_product_overrides.purchased_amount_base is null" in phase6.lower(), "Repeat purchases must be blocked"
+          print("Migration source integrity passed")
+          PY
