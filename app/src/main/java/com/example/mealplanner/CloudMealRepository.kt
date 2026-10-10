@@ -217,7 +217,8 @@ data class CloudSnapshot(
     val weeklyPlanId: String,
     val weeklySandwichRecipeId: String?,
     val sandwichDay: DayOfWeek?,
-    val history: List<MealHistoryEntry>
+    val history: List<MealHistoryEntry>,
+    val viewWeekStart: LocalDate = LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
 ) {
     companion object {
         val EMPTY = CloudSnapshot(
@@ -437,6 +438,7 @@ class CloudMealRepository(
         LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
 
     suspend fun loadCurrent(
+        weekStart: LocalDate = currentWeekStart()
     ): CloudSnapshot = withContext(Dispatchers.IO) {
         coroutineScope {
             val ingredientsDeferred = async {
@@ -449,7 +451,7 @@ class CloudMealRepository(
                 loadPantrySnapshot()
             }
             val weekDeferred = async {
-                loadWeekSnapshot()
+                loadWeekSnapshot(weekStart)
             }
             val historyDeferred = async {
                 // History maintenance is independent of the other reads;
@@ -489,7 +491,8 @@ class CloudMealRepository(
                 weeklySandwichRecipeId =
                     week.weeklySandwichRecipeId,
                 sandwichDay = week.sandwichDay,
-                history = history
+                history = history,
+                viewWeekStart = weekStart
             )
         }
     }
@@ -682,14 +685,14 @@ class CloudMealRepository(
                 .associate { it.ingredientId to it.amountBase }
         }
 
-    internal suspend fun loadWeekSnapshot(): CloudWeekSnapshot =
+    internal suspend fun loadWeekSnapshot(weekStart: LocalDate = currentWeekStart()): CloudWeekSnapshot =
         withContext(Dispatchers.IO) {
             val settings = supabase.from("household_settings").select {
                 filter { eq("household_id", householdId) }
             }.decodeList<SettingsRow>().firstOrNull()
 
             val weeklyPlan = ensureWeek(
-                weekStart = currentWeekStart(),
+                weekStart = weekStart,
                 sandwichRecipeId = settings?.sandwichRecipeId
             )
 
@@ -1341,12 +1344,18 @@ class CloudMealRepository(
         sandwichRecipeId: String?,
         sandwichDay: DayOfWeek?
     ) {
-        val weekStart = LocalDate.now().with(DayOfWeek.MONDAY)
+        // Never overwrite the actual week_start with today's Monday when
+        // saving a future/past plan. The plan ID is the source of truth.
+        val existing = supabase.from("weekly_plans").select {
+            filter {
+                eq("household_id", householdId)
+                eq("id", weeklyPlanId)
+            }
+        }.decodeList<WeeklyPlanRow>().firstOrNull()
+            ?: error("Weekly plan no longer exists")
+
         supabase.from("weekly_plans").upsert(
-            WeeklyPlanRow(
-                id = weeklyPlanId,
-                householdId = householdId,
-                weekStart = weekStart.toString(),
+            existing.copy(
                 sandwichDay = sandwichDay?.value,
                 sandwichRecipeId = sandwichRecipeId
             )
