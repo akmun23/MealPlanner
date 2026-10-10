@@ -1,5 +1,6 @@
 package com.example.mealplanner
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -198,6 +199,17 @@ fun RecipesScreen(
         if (filteredRecipes.isEmpty()) {
             item {
                 EmptyCard("Ingen opskrifter fundet.")
+                if (searchQuery.isNotBlank() ||
+                    mealFilter != "Alle måltider" ||
+                    categoryFilter != "Alle kategorier" || canMakeOnly
+                ) {
+                    TextButton(onClick = {
+                        searchQuery = ""
+                        mealFilter = "Alle måltider"
+                        categoryFilter = "Alle kategorier"
+                        canMakeOnly = false
+                    }) { Text("Ryd filtre") }
+                }
             }
         } else {
             items(
@@ -256,7 +268,7 @@ private fun RecipeListCard(
                     recipe.name,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis
                 )
 
@@ -944,9 +956,113 @@ internal fun RecipeEditorScreen(
         }
     }
 
+    // Keep a comparable snapshot of editable fields. Avoid silently losing
+    // long recipes when the user navigates back from a partially edited form.
+    fun formSnapshot(): List<Any?> = listOf(
+        name, mealType, autoRotationEnabled, prepMinutesText, categoryId,
+        notes, sourceUrl, imageUri, instructionSteps.toList(),
+        drafts.toList(), prerequisiteDrafts.toList()
+    )
+    val initialForm = remember(recipeId) { formSnapshot() }
+    val hasUnsavedChanges = formSnapshot() != initialForm
+    var showDiscardDialog by remember(recipeId) { mutableStateOf(false) }
+
+    fun requestBack() {
+        if (hasUnsavedChanges) showDiscardDialog = true else onBack()
+    }
+
+    BackHandler(enabled = hasUnsavedChanges) { requestBack() }
+
+    if (showDiscardDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiscardDialog = false },
+            title = { Text("Kassér ændringer?") },
+            text = { Text("Du har ændringer i opskriften, som ikke er gemt.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDiscardDialog = false
+                    onBack()
+                }) { Text("Kassér ændringer", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardDialog = false }) {
+                    Text("Fortsæt redigering")
+                }
+            }
+        )
+    }
+
+    val canSave = name.isNotBlank() &&
+                        recipeNameAvailable &&
+                        prepTimeValid &&
+                        drafts.isNotEmpty() &&
+                        drafts.all { it.amount > 0.0 } &&
+                        prerequisiteDrafts.all { it.amount > 0.0 }
+    val saveRecipe: () -> Unit = {
+                        if (existing == null) {
+                            val savedId = state.addRecipe(
+                                name = name,
+                                mealType = mealType,
+                                autoRotationEnabled = autoRotationEnabled,
+                                prepMinutes = prepMinutes,
+                                categoryId = categoryId,
+                                notes = notes,
+                                instructionSteps = instructionSteps.toList(),
+                                sourceUrl = sourceUrl,
+                                imageUri = imageUri,
+                                pantryPrerequisites =
+                                    if (mealType == MealType.DINNER) {
+                                        prerequisiteDrafts.toList()
+                                    } else {
+                                        emptyList()
+                                    },
+                                requirements = drafts.toList()
+                            )
+
+                            if (savedId != null) {
+                                onSaved(savedId)
+                            }
+                        } else {
+                            val saved = state.updateRecipe(
+                                id = existing.id,
+                                name = name,
+                                mealType = mealType,
+                                autoRotationEnabled = autoRotationEnabled,
+                                prepMinutes = prepMinutes,
+                                categoryId = categoryId,
+                                notes = notes,
+                                instructionSteps = instructionSteps.toList(),
+                                sourceUrl = sourceUrl,
+                                imageUri = imageUri,
+                                pantryPrerequisites =
+                                    if (mealType == MealType.DINNER) {
+                                        prerequisiteDrafts.toList()
+                                    } else {
+                                        emptyList()
+                                    },
+                                requirements = drafts.toList()
+                            )
+                            if (saved) {
+                                onSaved(existing.id)
+                            }
+                        }
+    }
+
     SubpageScaffold(
         title = if (existing == null) "Ny opskrift" else "Rediger opskrift",
-        onBack = onBack
+        onBack = { requestBack() },
+        bottomBar = {
+            Surface(tonalElevation = 3.dp) {
+                Button(
+                    onClick = saveRecipe,
+                    enabled = canSave,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    shape = RoundedCornerShape(14.dp)
+                ) { Text("Gem opskrift") }
+            }
+        }
     ) { padding ->
         LazyColumn(
             modifier = Modifier
@@ -1284,70 +1400,6 @@ internal fun RecipeEditorScreen(
                 )
             }
 
-            item {
-                Button(
-                    onClick = {
-                        if (existing == null) {
-                            val savedId = state.addRecipe(
-                                name = name,
-                                mealType = mealType,
-                                autoRotationEnabled = autoRotationEnabled,
-                                prepMinutes = prepMinutes,
-                                categoryId = categoryId,
-                                notes = notes,
-                                instructionSteps = instructionSteps.toList(),
-                                sourceUrl = sourceUrl,
-                                imageUri = imageUri,
-                                pantryPrerequisites =
-                                    if (mealType == MealType.DINNER) {
-                                        prerequisiteDrafts.toList()
-                                    } else {
-                                        emptyList()
-                                    },
-                                requirements = drafts.toList()
-                            )
-
-                            if (savedId != null) {
-                                onSaved(savedId)
-                            }
-                        } else {
-                            val saved = state.updateRecipe(
-                                id = existing.id,
-                                name = name,
-                                mealType = mealType,
-                                autoRotationEnabled = autoRotationEnabled,
-                                prepMinutes = prepMinutes,
-                                categoryId = categoryId,
-                                notes = notes,
-                                instructionSteps = instructionSteps.toList(),
-                                sourceUrl = sourceUrl,
-                                imageUri = imageUri,
-                                pantryPrerequisites =
-                                    if (mealType == MealType.DINNER) {
-                                        prerequisiteDrafts.toList()
-                                    } else {
-                                        emptyList()
-                                    },
-                                requirements = drafts.toList()
-                            )
-                            if (saved) {
-                                onSaved(existing.id)
-                            }
-                        }
-                    },
-                    enabled = name.isNotBlank() &&
-                        recipeNameAvailable &&
-                        prepTimeValid &&
-                        drafts.isNotEmpty() &&
-                        drafts.all { it.amount > 0.0 } &&
-                        prerequisiteDrafts.all { it.amount > 0.0 },
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Text("Gem")
-                }
-            }
-
             item { Spacer(Modifier.height(12.dp)) }
         }
     }
@@ -1390,11 +1442,11 @@ private fun RequirementEditor(
                         amountText = value
                             .filter { it.isDigit() || it == ',' || it == '.' }
 
-                        parseDanishDecimal(amountText)
-                            ?.takeIf { it > 0.0 }
-                            ?.let { amount ->
-                                onChange(draft.copy(amount = amount))
-                            }
+                        val parsed = parseDanishDecimal(amountText)
+                            ?.takeIf { it.isFinite() && it > 0.0 }
+                        // Never silently persist the last valid amount if
+                        // the visible field is currently empty or invalid.
+                        onChange(draft.copy(amount = parsed ?: 0.0))
                     },
                     label = { Text("Mængde") },
                     modifier = Modifier.weight(1f),
@@ -1407,8 +1459,19 @@ private fun RequirementEditor(
                         ingredient.quantityType
                     ),
                     optionText = { it.selectorLabel() },
-                    onSelected = { unit ->
-                        onChange(draft.copy(unit = unit))
+                    onSelected = { selected ->
+                        val entered = parseDanishDecimal(amountText)
+                            ?.takeIf { it.isFinite() && it > 0.0 }
+                        val converted = entered?.let {
+                            selected.fromBase(draft.unit.toBase(it))
+                        }
+                        if (converted != null) {
+                            amountText = formatDisplayNumber(converted)
+                        }
+                        onChange(draft.copy(
+                            unit = selected,
+                            amount = converted ?: 0.0
+                        ))
                     }
                 )
             }
