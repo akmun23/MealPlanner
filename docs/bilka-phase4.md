@@ -41,3 +41,17 @@ Prej returnerer til tider URL'er til billeder fra tredjepart, men giver ikke i s
 - [ ] Med personlig Prej-nøgle: verificér `/v1/stats` fra appen, og udfør ét manuelt Bilka-søgekald. Dokumentér faktisk svar og API-kvote; test aldrig ved at hardcode eller logge nøglen.
 
 Fase 5 er natlige prisopdateringer og indkøbsintegration hører først til fase 6.
+
+## Lagerbillede og fast billedstørrelse (layoutfejl)
+
+Når en bruger vælger et konkret Bilka-produkt for en ingrediens, vises produktets billed-URL som ingrediensens **60 × 60 dp** miniature i **Lager**, så længe brugeren ikke selv har valgt et billede. Der kopieres ikke tredjeparts billedfiler ind i privat storage uden en afklaret licens; produkt-URL'en er en cachet visningsreference og kan mangle. Fallback er altid den eksisterende bogstavpladsholder.
+
+- `PantryImageRules.displayImage` prioriterer brugervalgte ingrediensbilleder over billeder fra Bilkas produktcache.
+- `CloudMealRepository.loadIngredientsSnapshot` finder kun produktfotos til netop husstandens valgte standardprodukter, og inkluderer dem i den eksisterende ingredienscache; ingen Prej-kald er nødvendige. Supabase-billedfejl må ikke forhindre indlæsning af lager.
+- Efter standardvalg kaldes `state.refreshNow()`, så billedet optræder på lagerlisten uden genstart.
+- `AppThumbnail` bruger nu altid en ydre `Surface` med `Modifier.requiredSize(60.dp)`, uanset om billedet eksisterer, og den indre billedkomponent er begrænset til samme ramme. Stor originalopløsning må aldrig påvirke størrelsen af rækken.
+- `ImagePickerBox` fastholder valgt billedforhåndsvisning til samme bredde/højde som pladsholderen på redigeringsskærmen.
+- Ved upload fra galleri nedskaleres **ingrediensbilleder** til maks. 384 pixels på længste side; opskriftsbilleder beholder hidtidig størrelse, fordi de vises større andre steder.
+- Bilka-produktfotos i vælgeren vises fortsat i en **76 × 76 dp** ramme med billede dekodet til 228 × 228 pixels som højst.
+
+**Regressionstests**: `PantryImageRulesTest` dækker 60 dp mål, forskel på galleri-/Bilka-billeder, og fallback fra ugyldige URL'er. Besigtig manuelt et 4000 × 3000 kamerabillede i Lager og produktsiden med smal telefonbrede; ingen vertikal/horizontal layoutudvidelse er tilladt.
