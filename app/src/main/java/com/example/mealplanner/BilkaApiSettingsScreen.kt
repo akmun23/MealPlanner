@@ -175,6 +175,9 @@ internal fun BilkaApiSettingsScreen(
     val noMatch = importStatus.bilkaNumber("noMatch")
     val incomplete = importStatus.bilkaNumber("incomplete")
     val actionable = pending > 0
+    // Automatic discovery reserves no more than 18 daily requests, even
+    // though the full account budget (including price checks) is 20.
+    val discoveryQuotaExhausted = connected && localUsed >= minOf(localBudget, 18)
 
     SubpageScaffold(title = "Bilka-produkter", onBack = onBack) { padding ->
         LazyColumn(
@@ -300,6 +303,16 @@ internal fun BilkaApiSettingsScreen(
                                 Text("Mangler søgning", style = MaterialTheme.typography.bodySmall)
                             }
                         }
+                        if (discoveryQuotaExhausted && pending > 0) {
+                            Text(
+                                "Søgningen er sat på pause: dagens Prej-kvote til " +
+                                    "produktimport er brugt. $pending ingredienser er " +
+                                    "endnu ikke færdigsøgt – det betyder ikke, at Bilka " +
+                                    "mangler varerne. Du kan fortsætte næste UTC-dag.",
+                                color = MaterialTheme.colorScheme.error,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
                         if (noMatch > 0 || incomplete > 0) {
                             Text(
                                 "$noMatch uden match · $incomplete kræver præcisering.",
@@ -327,7 +340,8 @@ internal fun BilkaApiSettingsScreen(
                                 busy = false
                             }
                         },
-                        enabled = connected && !busy && (importStatus == null || actionable),
+                        enabled = connected && !busy && !discoveryQuotaExhausted &&
+                            (importStatus == null || actionable),
                         modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
@@ -346,8 +360,8 @@ internal fun BilkaApiSettingsScreen(
                             importStatus != null && pending == 0 ->
                                 "Der mangler ingen automatiske søgninger lige nu."
                             else ->
-                                "Vi samler lignende ingredienser i færre søgninger. " +
-                                "Du kan stoppe og fortsætte uden at miste resultater."
+                                "Vi søger efter ingrediensernes faktiske navne. " +
+                                "Resultater gemmes, og du kan fortsætte senere uden at starte forfra."
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant

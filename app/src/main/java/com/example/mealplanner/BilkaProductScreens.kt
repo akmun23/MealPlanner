@@ -239,6 +239,19 @@ internal fun BilkaProductsScreen(
                     fontWeight = FontWeight.SemiBold
                 )
             }
+            if (rows.isNotEmpty() &&
+                rows.none { it.state == "READY" || it.state == "CHOSEN" } &&
+                rows.any { it.state == "PENDING" }) {
+                item {
+                    Text(
+                        "Der er stadig ingredienser, der ikke er søgt færdigt. " +
+                            "En tom forslagsliste betyder ikke, at Bilka ikke sælger varerne. " +
+                            "Kontrollér den resterende Prej-kvote under Bilka-indstillinger.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
             item {
                 Button(onClick = onImport, modifier = Modifier.fillMaxWidth()) {
                     Text("Hent flere varer")

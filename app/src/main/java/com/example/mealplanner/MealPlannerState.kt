@@ -1604,8 +1604,8 @@ class MealPlannerState(
             sourceUrl = sourceUrl?.trim()?.takeIf { it.isNotBlank() },
             imageUri = imageUri,
             imagePath = imagePath,
-            ingredients = converted,
-            pantryPrerequisites = convertedPrerequisites
+            ingredients = RecipeRequirementRules.combineIngredients(converted),
+            pantryPrerequisites = RecipeRequirementRules.combinePrerequisites(convertedPrerequisites)
         )
     }
 

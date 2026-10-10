@@ -1275,11 +1275,13 @@ internal fun RecipeEditorScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
-                                prerequisiteDrafts += DraftRequirement(
-                                    ingredientId = ingredient.id,
-                                    amount = 1.0,
-                                    unit = ingredient.preferredUnit
-                                )
+                                if (prerequisiteDrafts.none { it.ingredientId == ingredient.id }) {
+                                    prerequisiteDrafts += DraftRequirement(
+                                        ingredientId = ingredient.id,
+                                        amount = 1.0,
+                                        unit = ingredient.preferredUnit
+                                    )
+                                }
                                 prerequisiteSearch = ""
                             },
                         shape = RoundedCornerShape(14.dp)
@@ -1343,11 +1345,13 @@ internal fun RecipeEditorScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clickable {
-                            drafts += DraftRequirement(
-                                ingredientId = ingredient.id,
-                                amount = 1.0,
-                                unit = ingredient.preferredUnit
-                            )
+                            if (drafts.none { it.ingredientId == ingredient.id }) {
+                                drafts += DraftRequirement(
+                                    ingredientId = ingredient.id,
+                                    amount = 1.0,
+                                    unit = ingredient.preferredUnit
+                                )
+                            }
                             ingredientSearch = ""
                         },
                     shape = RoundedCornerShape(14.dp)
