@@ -54,6 +54,47 @@ export function groupSearches(ingredients: IngredientNeed[]): SearchGroup[] {
   );
 }
 
+/** Search the saved ingredient name first. Synonyms precede the broad
+ * grouped term; neither changes the ingredient's name or chosen SKU.
+ * For each ingredient, duplicate search phrases are removed.
+ */
+export function searchQueries(ingredientName: string): string[] {
+  const exact = cleanedExactQuery(ingredientName).toLowerCase();
+  const alternatives: Record<string, string[]> = {
+    pizzamel: ["tipo 00"],
+    risottoris: ["risotto ris"],
+    groedris: ["grødris"],
+    championer: ["champignon"],
+    kyllingebryst: ["kyllingefilet"],
+    "tomat pure": ["tomatpuré"],
+    "jasmin basmatiris": ["basmatiris"],
+  };
+  const synonyms = alternatives[normalizeIngredient(ingredientName)] ?? [];
+  const terms = [exact, ...synonyms, searchTerm(ingredientName)];
+  const seen = new Set<string>();
+  return terms.map((t) => t.toLowerCase().trim()).filter((t) => {
+    if (t.length < 2 || seen.has(t)) return false;
+    seen.add(t);
+    return true;
+  });
+}
+
+/** Deduplicate queries at a given precision level across household ingredients. */
+export function groupSearchesAtStage(ingredients: IngredientNeed[], stage: number): SearchGroup[] {
+  const grouped = new Map<string, IngredientNeed[]>();
+  for (const ingredient of ingredients) {
+    const query = searchQueries(ingredient.name)[stage];
+    if (!query) continue;
+    grouped.set(query, [...(grouped.get(query) ?? []), ingredient]);
+  }
+  return [...grouped.entries()].map(([query, members]) => ({
+    query, ingredients: members,
+  })).sort((a, b) =>
+    b.ingredients.length - a.ingredients.length ||
+    a.query.localeCompare(b.query, "da")
+  );
+}
+
 function matchesToken(haystack: string, needle: string): boolean {
   if (haystack.split(" ").includes(needle)) return true;
   // A long ingredient token may occur in a compound: "pizzamel" / "hvedemel".
