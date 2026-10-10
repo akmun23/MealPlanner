@@ -76,14 +76,17 @@ export async function discoveryStatus(ctx: DiscoveryServices) {
     .map((c) => c.ingredient_id));
   const noMatch = new Set(jobs.filter((j) => j.status === "NO_MATCH")
     .map((j) => j.ingredient_id));
+  const incomplete = new Set(jobs.filter((j) => j.status === "INCOMPLETE")
+    .map((j) => j.ingredient_id));
   const pending = ingredients.filter((i) =>
-    !chosen.has(i.id) && !ready.has(i.id) && !noMatch.has(i.id));
+    !chosen.has(i.id) && !ready.has(i.id) && !noMatch.has(i.id) && !incomplete.has(i.id));
   const jobsById = new Map(jobs.map((j) => [j.ingredient_id, j]));
   return {
     total: ingredients.length,
     chosen: chosen.size,
     ready: ingredients.filter((i) => !chosen.has(i.id) && ready.has(i.id)).length,
     noMatch: ingredients.filter((i) => !chosen.has(i.id) && noMatch.has(i.id)).length,
+    incomplete: ingredients.filter((i) => !chosen.has(i.id) && incomplete.has(i.id)).length,
     pending: pending.length,
     remainingQueries: groupSearches(pending).length,
     pendingIngredients: pending,
@@ -287,8 +290,11 @@ export async function discoverProducts(ctx: DiscoveryServices) {
     if (products === null) break;
     await upsertSuggestions([ingredient], products);
     if (remaining.has(ingredient.id)) {
+      const info = queryCache.get("q:" + query.toLowerCase().trim());
+      // With 100 results/page, a truncated list is NOT evidence of no product.
+      // Phase 4 will let the user narrow the search explicitly.
       jobUpdates.set(ingredient.id, {
-        status: "NO_MATCH",
+        status: info?.truncated ? "INCOMPLETE" : "NO_MATCH",
         attempts: (jobs.get(ingredient.id)?.attempts ?? 0) + (sameAsGroup ? 1 : 2),
       });
     }
@@ -320,6 +326,6 @@ export async function discoverProducts(ctx: DiscoveryServices) {
 }
 
 function stripInternal(value: Awaited<ReturnType<typeof discoveryStatus>>) {
-  const { total, chosen, ready, noMatch, pending, remainingQueries } = value;
-  return { total, chosen, ready, noMatch, pending, remainingQueries };
+  const { total, chosen, ready, noMatch, incomplete, pending, remainingQueries } = value;
+  return { total, chosen, ready, noMatch, incomplete, pending, remainingQueries };
 }
