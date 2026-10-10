@@ -30,6 +30,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -206,6 +207,8 @@ private sealed interface AppPage {
     data object Settings : AppPage
     data object PlannerSettings : AppPage
     data object BilkaApiSettings : AppPage
+    data object BilkaProducts : AppPage
+    data class BilkaProductPicker(val ingredientId: String, val ingredientName: String) : AppPage
     data object SyncStatus : AppPage
     data object DataBackup : AppPage
     data object IngredientCategories : AppPage
@@ -278,7 +281,9 @@ fun MealPlannerApp(
             AppPage.Settings -> null
             AppPage.MealHistory -> null
             AppPage.PlannerSettings -> AppPage.Settings
-            AppPage.BilkaApiSettings -> AppPage.Settings
+            AppPage.BilkaApiSettings -> AppPage.BilkaProducts
+            AppPage.BilkaProducts -> AppPage.Settings
+            is AppPage.BilkaProductPicker -> AppPage.BilkaProducts
             AppPage.SyncStatus -> AppPage.Settings
             AppPage.DataBackup -> AppPage.Settings
             AppPage.IngredientCategories -> AppPage.Settings
@@ -365,7 +370,7 @@ fun MealPlannerApp(
             onIngredientCategories = { page = AppPage.IngredientCategories },
             onRecipeCategories = { page = AppPage.RecipeCategories },
             onPlannerSettings = { page = AppPage.PlannerSettings },
-            onBilkaApiSettings = { page = AppPage.BilkaApiSettings },
+            onBilkaApiSettings = { page = AppPage.BilkaProducts },
             onSyncStatus = { page = AppPage.SyncStatus },
             onDataBackup = { page = AppPage.DataBackup },
             themeMode = themeMode,
@@ -373,9 +378,31 @@ fun MealPlannerApp(
             onLogout = onLogout
         )
 
+        AppPage.BilkaProducts -> BilkaProductsScreen(
+            householdId = household.id,
+            onBack = { navigateBack() },
+            onImport = { page = AppPage.BilkaApiSettings },
+            onPick = { ingredientId, ingredientName ->
+                page = AppPage.BilkaProductPicker(ingredientId, ingredientName)
+            }
+        )
+
+        is AppPage.BilkaProductPicker -> BilkaProductPickerScreen(
+            householdId = household.id,
+            ingredientId = current.ingredientId,
+            ingredientName = current.ingredientName,
+            onBack = { navigateBack() },
+            onSaved = {
+                state.refreshNow()
+                page = AppPage.BilkaProducts
+            },
+            onImport = { page = AppPage.BilkaApiSettings }
+        )
+
         AppPage.BilkaApiSettings -> BilkaApiSettingsScreen(
             householdId = household.id,
-            onBack = { navigateBack() }
+            onBack = { navigateBack() },
+            onViewProducts = { page = AppPage.BilkaProducts }
         )
 
         AppPage.PlannerSettings -> PlannerSettingsScreen(
@@ -1426,6 +1453,7 @@ internal fun ImagePickerBox(
 
     Box(
         modifier = modifier
+            .fillMaxWidth()
             .height(height)
             .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
@@ -1505,24 +1533,27 @@ internal fun AppThumbnail(
     fallback: String,
     modifier: Modifier = Modifier
 ) {
-    val boxSize = 60.dp
-    val actualModifier = if (modifier == Modifier) Modifier.size(boxSize) else modifier
-
-    if (!imageUri.isNullOrBlank()) {
-        MealImage(
-            imageUri = imageUri,
-            modifier = actualModifier.clip(RoundedCornerShape(16.dp)),
-            thumbnail = true,
-            fallback = fallback
-        )
-    } else {
-        Surface(
-            modifier = actualModifier,
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.primaryContainer,
-            tonalElevation = 2.dp
+    // Layout dimensions are owned by the placeholder, never the source image.
+    // An image selected from a 4000px camera file or Prej must not resize rows.
+    val boxSize = PantryImageRules.THUMBNAIL_SIZE_DP.dp
+    Surface(
+        modifier = modifier.requiredSize(boxSize),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.primaryContainer,
+        tonalElevation = 2.dp
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
         ) {
-            Box(contentAlignment = Alignment.Center) {
+            if (!imageUri.isNullOrBlank()) {
+                MealImage(
+                    imageUri = imageUri,
+                    modifier = Modifier.fillMaxSize(),
+                    thumbnail = true,
+                    fallback = fallback
+                )
+            } else {
                 Text(
                     fallback,
                     style = MaterialTheme.typography.headlineMedium,

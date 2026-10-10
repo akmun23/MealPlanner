@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -15,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
+import coil.compose.SubcomposeAsyncImage
 import coil.imageLoader
 import coil.request.ImageRequest
 import io.github.jan.supabase.storage.storage
@@ -189,7 +191,34 @@ internal fun MealImage(
         }
     }
 
-    if (request != null) {
+    if (request != null && thumbnail && !fallback.isNullOrBlank()) {
+        // Broken/revoked remote product URLs must show the same-sized
+        // placeholder instead of leaving a visually empty pantry tile.
+        SubcomposeAsyncImage(
+            model = request,
+            contentDescription = null,
+            modifier = modifier,
+            contentScale = contentScale,
+            loading = {
+                Box(
+                    modifier = Modifier.fillMaxSize()
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(fallback, style = MaterialTheme.typography.titleLarge)
+                }
+            },
+            error = {
+                Box(
+                    modifier = Modifier.fillMaxSize()
+                        .background(MaterialTheme.colorScheme.primaryContainer),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(fallback, style = MaterialTheme.typography.titleLarge)
+                }
+            }
+        )
+    } else if (request != null) {
         AsyncImage(
             model = request,
             contentDescription = null,

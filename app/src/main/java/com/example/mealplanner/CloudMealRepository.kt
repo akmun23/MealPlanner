@@ -53,6 +53,18 @@ private data class IngredientRow(
 )
 
 @Serializable
+private data class BilkaDefaultImageRow(
+    @SerialName("ingredient_id") val ingredientId: String,
+    @SerialName("product_id") val productId: String
+)
+
+@Serializable
+private data class BilkaProductImageRow(
+    val id: String,
+    @SerialName("image_url") val imageUrl: String? = null
+)
+
+@Serializable
 private data class IngredientCategoryRow(
     val id: String,
     @SerialName("household_id") val householdId: String,
@@ -519,9 +531,43 @@ class CloudMealRepository(
                     }.decodeList<IngredientProteinRow>()
                 }
 
+                // The chosen Bilka product supplies the pantry thumbnail only
+                // when no photo was explicitly selected for this ingredient.
+                // Never download original-size pictures during snapshot loading.
+                val bilkaImagesDeferred = async {
+                    try {
+                        val defaults = supabase.from("ingredient_bilka_defaults")
+                            .select(columns = Columns.list("ingredient_id", "product_id")) {
+                                filter { eq("household_id", householdId) }
+                            }.decodeList<BilkaDefaultImageRow>()
+                        val productIds = defaults.map { it.productId }.distinct()
+                        if (productIds.isEmpty()) {
+                            emptyMap()
+                        } else {
+                            val photos = productIds.chunked(100).flatMap { ids ->
+                                supabase.from("bilka_products")
+                                    .select(columns = Columns.list("id", "image_url")) {
+                                        filter { isIn("id", ids) }
+                                    }.decodeList<BilkaProductImageRow>()
+                            }.associateBy { it.id }
+                            defaults.mapNotNull { row ->
+                                val url = photos[row.productId]?.imageUrl
+                                    ?.takeIf { it.startsWith("https://") || it.startsWith("http://") }
+                                url?.let { row.ingredientId to it }
+                            }.toMap()
+                        }
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        // An unreachable optional catalog must not block pantry loading.
+                        emptyMap<String, String>()
+                    }
+                }
+
                 val ingredientRows = ingredientsDeferred.await()
                 val categoryRows = categoriesDeferred.await()
                 val proteinRows = proteinFlagsDeferred.await()
+                val bilkaImages = bilkaImagesDeferred.await()
                 val proteinByIngredient =
                     proteinRows.associateBy { it.ingredientId }
 
@@ -543,7 +589,10 @@ class CloudMealRepository(
                             isProtein =
                                 proteinByIngredient[row.id]?.isProtein == true,
                             neverBuy = row.neverBuy,
-                            imageUri = row.imagePath?.let(MealImageReference::forPath),
+                            imageUri = PantryImageRules.displayImage(
+                                manualImageUri = row.imagePath?.let(MealImageReference::forPath),
+                                bilkaImageUrl = bilkaImages[row.id]
+                            ),
                             imagePath = row.imagePath
                         )
                     },
@@ -1388,7 +1437,12 @@ class CloudMealRepository(
             return existingPath to imageUri
         }
 
-        val bytes = prepareImage(imageUri.toUri())
+        // Ingredient images are only used as 60dp pantry thumbnails.
+        // Resize them at upload, not just at display, to avoid huge originals.
+        val bytes = prepareImage(
+            imageUri.toUri(),
+            maxDimension = if (kind == "ingredients") PantryImageRules.INGREDIENT_UPLOAD_MAX_PIXELS else 1600
+        )
         val path = $$"$$householdId/$$kind/$$objectId-${UUID.randomUUID()}.jpg"
         supabase.storage["meal-images"].upload(path, bytes) {
             upsert = false
@@ -1409,7 +1463,7 @@ class CloudMealRepository(
         imageUrls.invalidate(path)
     }
 
-    private fun prepareImage(uri: Uri): ByteArray {
+    private fun prepareImage(uri: Uri, maxDimension: Int): ByteArray {
         val resolver = context.contentResolver
 
         val bounds = BitmapFactory.Options().apply {
@@ -1421,7 +1475,7 @@ class CloudMealRepository(
 
         var sample = 1
         val largest = maxOf(bounds.outWidth, bounds.outHeight)
-        while (largest / sample > 1600) {
+        while (largest / sample > maxDimension) {
             sample *= 2
         }
 

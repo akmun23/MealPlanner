@@ -1,4 +1,6 @@
 import { discoverProducts, discoveryStatus, DiscoveryError } from "./discovery_server.ts";
+import { catalog, saveHouseholdDefault } from "./catalog_server.ts";
+import { manualProductSearch } from "./manual_search_server.ts";
 import {
   batchIds,
   dailyRemaining,
@@ -13,9 +15,12 @@ const PREJ_BASE = "https://api.prej.app";
 const DAILY_BUDGET = 20; // 25 free calls; keep 5 in reserve (including key checks).
 
 type Payload = {
-  action?: "status" | "set-key" | "verify-key" | "remove-key" | "refresh" | "discover" | "discovery-status";
+  action?: "status" | "set-key" | "verify-key" | "remove-key" | "refresh" | "discover" | "discovery-status" | "catalog" | "choose-product" | "manual-search";
   apiKey?: unknown;
   householdId?: unknown;
+  ingredientId?: unknown;
+  productId?: unknown;
+  query?: unknown;
 };
 
 class ClientError extends Error {
@@ -293,6 +298,40 @@ Deno.serve(async (req) => {
       case "refresh": return await refresh(userId, input.householdId);
       case "discover": return await discoveryAction(userId, input.householdId, true);
       case "discovery-status": return await discoveryAction(userId, input.householdId, false);
+      case "catalog": {
+        const householdId = await verifiedHousehold(userId, input.householdId);
+        return json(await catalog({ admin: adminRequest, householdId }));
+      }
+      case "manual-search": {
+        const householdId = await verifiedHousehold(userId, input.householdId);
+        const ingredientId = typeof input.ingredientId === "string" ? input.ingredientId : "";
+        const query = typeof input.query === "string" ? input.query : "";
+        try {
+          return json(await manualProductSearch(
+            { admin: adminRequest, rpc, request: fetch, userId, householdId },
+            ingredientId, query
+          ));
+        } catch (error) {
+          const code = error instanceof Error ? error.message : "prej_unavailable";
+          const known: Record<string, number> = {
+            invalid_search: 400, prej_key_not_configured: 409,
+            daily_budget_exhausted: 429, prej_key_invalid: 409,
+            prej_unavailable: 503
+          };
+          if (code in known) return json({ error: code }, known[code]);
+          throw error;
+        }
+      }
+      case "choose-product": {
+        const householdId = await verifiedHousehold(userId, input.householdId);
+        const result = await saveHouseholdDefault(
+          { admin: adminRequest, householdId },
+          typeof input.ingredientId === "string" ? input.ingredientId : "",
+          typeof input.productId === "string" ? input.productId : "",
+        );
+        if (result.error) return json({ error: result.error }, result.status ?? 400);
+        return json(result);
+      }
       default: return json({ error: "unknown_action" }, 400);
     }
   } catch (err) {
