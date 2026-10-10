@@ -108,6 +108,14 @@ data class RecipeIngredient(
     val amountBase: Double
 )
 
+/** An ordered recipe instruction: level 0 is a numbered main step, level 1 a lettered substep. */
+@Serializable
+data class RecipeInstructionStep(
+    val id: String = UUID.randomUUID().toString(),
+    val text: String,
+    val level: Int = 0
+)
+
 @Serializable
 data class RecipePantryPrerequisite(
     val ingredientId: String,
@@ -136,7 +144,9 @@ data class Recipe(
     val imageUri: String? = null,
     val imagePath: String? = null,
     val ingredients: List<RecipeIngredient>,
-    val pantryPrerequisites: List<RecipePantryPrerequisite> = emptyList()
+    val pantryPrerequisites: List<RecipePantryPrerequisite> = emptyList(),
+    val instructionSteps: List<RecipeInstructionStep> = emptyList(),
+    val sourceUrl: String? = null
 )
 
 enum class DayMode {

@@ -346,7 +346,9 @@ private data class CachedRecipe(
     val imageUri: String?,
     val imagePath: String?,
     val ingredients: List<CachedRecipeIngredient>,
-    val pantryPrerequisites: List<CachedPantryPrerequisite>
+    val pantryPrerequisites: List<CachedPantryPrerequisite>,
+    val instructionSteps: List<RecipeInstructionStep> = emptyList(),
+    val sourceUrl: String? = null
 )
 
 @Serializable
@@ -461,6 +463,8 @@ internal object RoomSnapshotCodec {
                 notes = recipe.notes,
                 imageUri = recipe.imageUri,
                 imagePath = recipe.imagePath,
+                instructionSteps = recipe.instructionSteps,
+                sourceUrl = recipe.sourceUrl,
                 ingredients = recipe.ingredients.map {
                     CachedRecipeIngredient(
                         ingredientId = it.ingredientId,
@@ -539,6 +543,8 @@ internal object RoomSnapshotCodec {
                     notes = recipe.notes,
                     imageUri = recipe.imageUri,
                     imagePath = recipe.imagePath,
+                    instructionSteps = recipe.instructionSteps,
+                    sourceUrl = recipe.sourceUrl,
                     ingredients = recipe.ingredients.map {
                         RecipeIngredient(
                             ingredientId = it.ingredientId,

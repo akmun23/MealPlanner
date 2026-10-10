@@ -1353,7 +1353,9 @@ class MealPlannerState(
         notes: String = "",
         imageUri: String? = null,
         pantryPrerequisites: List<DraftRequirement> = emptyList(),
-        requirements: List<DraftRequirement>
+        requirements: List<DraftRequirement>,
+        instructionSteps: List<RecipeInstructionStep> = emptyList(),
+        sourceUrl: String? = null
     ): String? {
         if (!isRecipeNameAvailable(name)) {
             lastError = "Opskriften findes allerede."
@@ -1371,7 +1373,9 @@ class MealPlannerState(
             imageUri = imageUri,
             imagePath = null,
             pantryPrerequisites = pantryPrerequisites,
-            requirements = requirements
+            requirements = requirements,
+            instructionSteps = instructionSteps,
+            sourceUrl = sourceUrl
         ) ?: return null
 
         recipes += recipe
@@ -1391,7 +1395,9 @@ class MealPlannerState(
         notes: String = "",
         imageUri: String? = null,
         pantryPrerequisites: List<DraftRequirement> = emptyList(),
-        requirements: List<DraftRequirement>
+        requirements: List<DraftRequirement>,
+        instructionSteps: List<RecipeInstructionStep> = emptyList(),
+        sourceUrl: String? = null
     ): Boolean {
         val index = recipes.indexOfFirst { it.id == id }
         if (index < 0) return false
@@ -1413,7 +1419,9 @@ class MealPlannerState(
             imageUri = imageUri,
             imagePath = existing.imagePath,
             pantryPrerequisites = pantryPrerequisites,
-            requirements = requirements
+            requirements = requirements,
+            instructionSteps = instructionSteps,
+            sourceUrl = sourceUrl
         ) ?: return false
 
         recipes[index] = updated
@@ -1484,7 +1492,9 @@ class MealPlannerState(
         imageUri: String?,
         imagePath: String?,
         pantryPrerequisites: List<DraftRequirement>,
-        requirements: List<DraftRequirement>
+        requirements: List<DraftRequirement>,
+        instructionSteps: List<RecipeInstructionStep>,
+        sourceUrl: String?
     ): Recipe? {
         val clean = name.normalizedDisplayName()
         val cleanPrepMinutes = prepMinutes?.takeIf { it in 1..1440 }
@@ -1547,6 +1557,9 @@ class MealPlannerState(
             prepMinutes = cleanPrepMinutes,
             categoryId = categoryId,
             notes = notes.trim(),
+            instructionSteps = instructionSteps.filter { it.text.isNotBlank() }
+                .map { it.copy(text = it.text.trim(), level = it.level.coerceIn(0, 1)) },
+            sourceUrl = sourceUrl?.trim()?.takeIf { it.isNotBlank() },
             imageUri = imageUri,
             imagePath = imagePath,
             ingredients = converted,

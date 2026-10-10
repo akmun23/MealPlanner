@@ -89,6 +89,8 @@ internal data class RecipeRow(
     val name: String,
     @SerialName("meal_type") val mealType: String = "DINNER",
     val notes: String,
+    @SerialName("instruction_steps") val instructionSteps: List<RecipeInstructionStep> = emptyList(),
+    @SerialName("source_url") val sourceUrl: String? = null,
     @SerialName("image_path") val imagePath: String? = null
 )
 
@@ -657,6 +659,8 @@ class CloudMealRepository(
                             categoryId =
                                 categoryByRecipe[row.id]?.categoryId,
                             notes = row.notes,
+                            instructionSteps = row.instructionSteps,
+                            sourceUrl = row.sourceUrl,
                             imageUri = row.imagePath?.let(MealImageReference::forPath),
                             imagePath = row.imagePath,
                             ingredients =
@@ -935,6 +939,8 @@ class CloudMealRepository(
                 name = recipe.name,
                 mealType = recipe.mealType.name,
                 notes = recipe.notes,
+                instructionSteps = recipe.instructionSteps,
+                sourceUrl = recipe.sourceUrl,
                 imagePath = finalImage.first
             )
         ) {
