@@ -487,6 +487,47 @@ fun DayCard(
     var showRecipePicker by remember { mutableStateOf(false) }
     var recipeSearch by remember { mutableStateOf("") }
     var showTimePicker by remember { mutableStateOf(false) }
+    var pendingRecipeId by remember { mutableStateOf<String?>(null) }
+    var showChangeConfirmation by remember { mutableStateOf(false) }
+
+    fun chooseRecipe(id: String?) {
+        showRecipePicker = false
+        recipeSearch = ""
+        if (recipe?.id == id && !away) return
+        val hasShoppingSelections = state.shoppingChecked.any { it.value } ||
+            state.shoppingIncluded.any { !it.value }
+        if (hasShoppingSelections || isLocked) {
+            pendingRecipeId = id
+            showChangeConfirmation = true
+        } else {
+            state.setRecipeForDay(day, id)
+        }
+    }
+
+    if (showChangeConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showChangeConfirmation = false },
+            title = { Text("Skift ret for ${day.danishName()}?") },
+            text = {
+                Text(
+                    "Manuelle ændringer er også mulige på låste dage. " +
+                        "Købsmarkeringer bevares for ingredienser med uændret behov, " +
+                        "mens berørte mængder skal kontrolleres igen."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showChangeConfirmation = false
+                    state.setRecipeForDay(day, pendingRecipeId)
+                }) { Text("Skift ret") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showChangeConfirmation = false }) {
+                    Text("Annuller")
+                }
+            }
+        )
+    }
 
     if (showRecipePicker) {
         val choices = state.recipes
@@ -502,6 +543,13 @@ fun DayCard(
             title = { Text("Vælg ret til ${day.danishName()}") },
             text = {
                 Column {
+                    if (isLocked) {
+                        Text(
+                            "Låsen beskytter mod automatisk genplanlægning. Du kan stadig vælge en ret manuelt.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Spacer(Modifier.height(8.dp))
+                    }
                     SearchField(
                         value = recipeSearch,
                         onValueChange = { recipeSearch = it },
@@ -511,9 +559,7 @@ fun DayCard(
                     LazyColumn(modifier = Modifier.heightIn(max = 400.dp)) {
                         item {
                             TextButton(onClick = {
-                                state.setRecipeForDay(day, null)
-                                showRecipePicker = false
-                                recipeSearch = ""
+                                chooseRecipe(null)
                             }) { Text("Ingen ret") }
                         }
                         items(choices, key = { it.id }) { candidate ->
@@ -521,9 +567,7 @@ fun DayCard(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .clickable {
-                                        state.setRecipeForDay(day, candidate.id)
-                                        showRecipePicker = false
-                                        recipeSearch = ""
+                                        chooseRecipe(candidate.id)
                                     }
                                     .padding(vertical = 12.dp)
                             ) {

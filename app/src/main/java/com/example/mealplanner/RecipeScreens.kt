@@ -46,6 +46,8 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.listSaver
+import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.Modifier
@@ -58,6 +60,32 @@ private data class RecipeListUi(
     val recipe: Recipe,
     val categoryName: String,
     val proteinNames: List<String>
+)
+
+// Flat, Bundle-compatible savers preserve unsaved long recipes on rotation.
+private val recipeStepSaver = listSaver<SnapshotStateList<RecipeInstructionStep>, String>(
+    save = { steps -> steps.flatMap { listOf(it.id, it.text, it.level.toString()) } },
+    restore = { stored ->
+        mutableStateListOf<RecipeInstructionStep>().apply {
+            stored.chunked(3).filter { it.size == 3 }.forEach { parts ->
+                add(RecipeInstructionStep(parts[0], parts[1], parts[2].toIntOrNull() ?: 0))
+            }
+        }
+    }
+)
+private val recipeDraftSaver = listSaver<SnapshotStateList<DraftRequirement>, String>(
+    save = { drafts ->
+        drafts.flatMap { listOf(it.ingredientId, it.amount.toString(), it.unit.name) }
+    },
+    restore = { stored ->
+        mutableStateListOf<DraftRequirement>().apply {
+            stored.chunked(3).filter { it.size == 3 }.forEach { parts ->
+                val amount = parts[1].toDoubleOrNull()
+                val unit = MeasurementUnit.entries.find { it.name == parts[2] }
+                if (amount != null && unit != null) add(DraftRequirement(parts[0], amount, unit))
+            }
+        }
+    }
 )
 
 @Composable
@@ -804,14 +832,14 @@ internal fun RecipeEditorScreen(
         state.recipes.find { it.id == id }
     }
 
-    var name by remember(recipeId) { mutableStateOf(existing?.name ?: "") }
-    var mealType by remember(recipeId) {
+    var name by rememberSaveable(recipeId) { mutableStateOf(existing?.name ?: "") }
+    var mealType by rememberSaveable(recipeId) {
         mutableStateOf(existing?.mealType ?: initialMealType)
     }
-    var autoRotationEnabled by remember(recipeId) {
+    var autoRotationEnabled by rememberSaveable(recipeId) {
         mutableStateOf(existing?.autoRotationEnabled ?: true)
     }
-    var prepMinutesText by remember(recipeId) {
+    var prepMinutesText by rememberSaveable(recipeId) {
         mutableStateOf(existing?.prepMinutes?.toString() ?: "")
     }
     val prepMinutes = prepMinutesText
@@ -821,7 +849,7 @@ internal fun RecipeEditorScreen(
         ?.takeIf { it in 1..1440 }
     val prepTimeValid =
         prepMinutesText.isBlank() || prepMinutes != null
-    var categoryId by remember(recipeId) {
+    var categoryId by rememberSaveable(recipeId) {
         mutableStateOf(
             existing?.categoryId
                 ?: state.recipeCategories
@@ -830,16 +858,16 @@ internal fun RecipeEditorScreen(
                 ?: state.recipeCategories.firstOrNull()?.id
         )
     }
-    var notes by remember(recipeId) { mutableStateOf(existing?.notes ?: "") }
-    var sourceUrl by remember(recipeId) { mutableStateOf(existing?.sourceUrl.orEmpty()) }
-    val instructionSteps = remember(recipeId) {
+    var notes by rememberSaveable(recipeId) { mutableStateOf(existing?.notes ?: "") }
+    var sourceUrl by rememberSaveable(recipeId) { mutableStateOf(existing?.sourceUrl.orEmpty()) }
+    val instructionSteps = rememberSaveable(recipeId, saver = recipeStepSaver) {
         mutableStateListOf<RecipeInstructionStep>().apply {
             addAll(existing?.instructionSteps.orEmpty())
         }
     }
-    var imageUri by remember(recipeId) { mutableStateOf(existing?.imageUri) }
-    var ingredientSearch by remember { mutableStateOf("") }
-    var prerequisiteSearch by remember { mutableStateOf("") }
+    var imageUri by rememberSaveable(recipeId) { mutableStateOf(existing?.imageUri) }
+    var ingredientSearch by rememberSaveable(recipeId) { mutableStateOf("") }
+    var prerequisiteSearch by rememberSaveable(recipeId) { mutableStateOf("") }
     val recipeNameAvailable =
         name.isBlank() ||
             state.isRecipeNameAvailable(
@@ -847,7 +875,7 @@ internal fun RecipeEditorScreen(
                 excludingId = existing?.id
             )
 
-    val drafts = remember(recipeId) {
+    val drafts = rememberSaveable(recipeId, saver = recipeDraftSaver) {
         mutableStateListOf<DraftRequirement>().apply {
             existing?.ingredients?.forEach { requirement ->
                 val ingredient = state.ingredients.find {
@@ -869,7 +897,7 @@ internal fun RecipeEditorScreen(
         }
     }
 
-    val prerequisiteDrafts = remember(recipeId) {
+    val prerequisiteDrafts = rememberSaveable(recipeId, saver = recipeDraftSaver) {
         mutableStateListOf<DraftRequirement>().apply {
             existing?.pantryPrerequisites?.forEach { prerequisite ->
                 val ingredient = state.ingredients.find {
@@ -964,8 +992,12 @@ internal fun RecipeEditorScreen(
         drafts.toList(), prerequisiteDrafts.toList()
     )
     val initialForm = remember(recipeId) { formSnapshot() }
-    val hasUnsavedChanges = formSnapshot() != initialForm
-    var showDiscardDialog by remember(recipeId) { mutableStateOf(false) }
+    var changesSeen by rememberSaveable(recipeId) { mutableStateOf(false) }
+    val hasUnsavedChanges = changesSeen || formSnapshot() != initialForm
+    androidx.compose.runtime.LaunchedEffect(hasUnsavedChanges) {
+        if (hasUnsavedChanges) changesSeen = true
+    }
+    var showDiscardDialog by rememberSaveable(recipeId) { mutableStateOf(false) }
 
     fun requestBack() {
         if (hasUnsavedChanges) showDiscardDialog = true else onBack()
@@ -1510,27 +1542,27 @@ internal fun IngredientEditorScreen(
         state.ingredients.find { it.id == id }
     }
 
-    var name by remember(ingredientId) {
+    var name by rememberSaveable(ingredientId) {
         mutableStateOf(existing?.name ?: "")
     }
 
-    var type by remember(ingredientId) {
+    var type by rememberSaveable(ingredientId) {
         mutableStateOf(existing?.quantityType ?: QuantityType.MASS)
     }
 
-    var preferredUnit by remember(ingredientId) {
+    var preferredUnit by rememberSaveable(ingredientId) {
         mutableStateOf(existing?.preferredUnit ?: MeasurementUnit.GRAM)
     }
 
-    var isProtein by remember(ingredientId) {
+    var isProtein by rememberSaveable(ingredientId) {
         mutableStateOf(existing?.isProtein ?: false)
     }
 
-    var neverBuy by remember(ingredientId) {
+    var neverBuy by rememberSaveable(ingredientId) {
         mutableStateOf(existing?.neverBuy ?: false)
     }
 
-    var shoppingCategoryId by remember(ingredientId) {
+    var shoppingCategoryId by rememberSaveable(ingredientId) {
         mutableStateOf(
             existing?.shoppingCategoryId
                 ?: state.ingredientCategories
@@ -1540,7 +1572,7 @@ internal fun IngredientEditorScreen(
         )
     }
 
-    var imageUri by remember(ingredientId) {
+    var imageUri by rememberSaveable(ingredientId) {
         mutableStateOf(existing?.imageUri)
     }
 
@@ -1550,8 +1582,43 @@ internal fun IngredientEditorScreen(
                 name,
                 excludingId = existing?.id
             )
-    var showDeleteConfirm by remember(ingredientId) {
+    var showDeleteConfirm by rememberSaveable(ingredientId) {
         mutableStateOf(false)
+    }
+
+    val typeChangeAllowed = existing == null ||
+        state.canChangeIngredientQuantityType(existing.id, type)
+    val originalForm = remember(ingredientId) {
+        listOf(name, type, preferredUnit, isProtein, neverBuy, shoppingCategoryId, imageUri)
+    }
+    var changesSeen by rememberSaveable(ingredientId) { mutableStateOf(false) }
+    val hasUnsavedChanges = changesSeen ||
+        listOf(name, type, preferredUnit, isProtein, neverBuy, shoppingCategoryId, imageUri) != originalForm
+    androidx.compose.runtime.LaunchedEffect(hasUnsavedChanges) {
+        if (hasUnsavedChanges) changesSeen = true
+    }
+    var showDiscardDialog by rememberSaveable(ingredientId) { mutableStateOf(false) }
+    fun requestBack() {
+        if (hasUnsavedChanges) showDiscardDialog = true else onBack()
+    }
+    BackHandler(enabled = hasUnsavedChanges) { requestBack() }
+    if (showDiscardDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiscardDialog = false },
+            title = { Text("Kassér ændringer?") },
+            text = { Text("Dine ændringer til ingrediensen er ikke gemt.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDiscardDialog = false
+                    onBack()
+                }) { Text("Kassér ændringer", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardDialog = false }) {
+                    Text("Fortsæt redigering")
+                }
+            }
+        )
     }
 
     if (showDeleteConfirm && existing != null) {
@@ -1600,7 +1667,56 @@ internal fun IngredientEditorScreen(
 
     SubpageScaffold(
         title = if (existing == null) "Ny ingrediens" else "Rediger ingrediens",
-        onBack = onBack
+        onBack = { requestBack() },
+        bottomBar = {
+            Surface(tonalElevation = 3.dp) {
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    if (!typeChangeAllowed) {
+                        Text(
+                            "Typen kan ikke ændres, mens ingrediensen er på lager eller bruges i opskrifter.",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                Button(
+                    onClick = {
+                        val saved = if (existing == null) {
+                            state.addIngredient(
+                                name = name,
+                                type = type,
+                                shoppingCategoryId = shoppingCategoryId,
+                                isProtein = isProtein,
+                                neverBuy = neverBuy,
+                                imageUri = imageUri,
+                                preferredUnit = preferredUnit
+                            )
+                        } else {
+                            state.updateIngredient(
+                                id = existing.id,
+                                name = name,
+                                type = type,
+                                shoppingCategoryId = shoppingCategoryId,
+                                isProtein = isProtein,
+                                neverBuy = neverBuy,
+                                preferredUnit = preferredUnit,
+                                imageUri = imageUri
+                            )
+                        }
+
+                        if (saved) {
+                            onSaved()
+                        }
+                    },
+                    enabled = name.isNotBlank() && ingredientNameAvailable && typeChangeAllowed,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("Gem")
+                }
+
+                }
+            }
+        }
     ) { padding ->
         LazyColumn(
             modifier = Modifier
@@ -1650,6 +1766,13 @@ internal fun IngredientEditorScreen(
                         preferredUnit = MeasurementUnit.defaultFor(it)
                     }
                 )
+                if (!typeChangeAllowed) {
+                    Text(
+                        "Fjern beholdningen og opskriftsreferencerne før typen ændres.",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
             }
 
             item {
@@ -1725,44 +1848,6 @@ internal fun IngredientEditorScreen(
                         optionText = { it.name },
                         onSelected = { shoppingCategoryId = it.id }
                     )
-                }
-            }
-
-            item {
-                Button(
-                    onClick = {
-                        val saved = if (existing == null) {
-                            state.addIngredient(
-                                name = name,
-                                type = type,
-                                shoppingCategoryId = shoppingCategoryId,
-                                isProtein = isProtein,
-                                neverBuy = neverBuy,
-                                imageUri = imageUri,
-                                preferredUnit = preferredUnit
-                            )
-                        } else {
-                            state.updateIngredient(
-                                id = existing.id,
-                                name = name,
-                                type = type,
-                                shoppingCategoryId = shoppingCategoryId,
-                                isProtein = isProtein,
-                                neverBuy = neverBuy,
-                                preferredUnit = preferredUnit,
-                                imageUri = imageUri
-                            )
-                        }
-
-                        if (saved) {
-                            onSaved()
-                        }
-                    },
-                    enabled = name.isNotBlank() && ingredientNameAvailable,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Text("Gem")
                 }
             }
 

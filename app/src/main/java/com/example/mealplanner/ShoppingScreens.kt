@@ -42,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
@@ -240,6 +241,8 @@ fun ShoppingScreen(state: MealPlannerState) {
     val bought = sections.bought
     val excluded = sections.excluded
     val checkedCount = sections.checkedCount
+    var showBought by rememberSaveable { mutableStateOf(false) }
+    var showExcluded by rememberSaveable { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -389,14 +392,15 @@ fun ShoppingScreen(state: MealPlannerState) {
             if (bought.isNotEmpty()) {
                 item {
                     Spacer(Modifier.height(8.dp))
-                    Text(
-                        "Købt",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
+                    TextButton(
+                        onClick = { showBought = !showBought },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text((if (showBought) "Skjul" else "Vis") + " købte varer (${bought.size})")
+                    }
                 }
 
-                items(bought.sortedBy { it.ingredient.name.lowercase() }, key = { it.ingredient.id }) { item ->
+                if (showBought) items(bought.sortedBy { it.ingredient.name.lowercase() }, key = { it.ingredient.id }) { item ->
                     ShoppingItemCard(
                         item = item,
                         state = state,
@@ -418,14 +422,15 @@ fun ShoppingScreen(state: MealPlannerState) {
             if (excluded.isNotEmpty()) {
                 item {
                     Spacer(Modifier.height(8.dp))
-                    Text(
-                        "Købes ikke",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
+                    TextButton(
+                        onClick = { showExcluded = !showExcluded },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text((if (showExcluded) "Skjul" else "Vis") + " varer, der ikke købes (${excluded.size})")
+                    }
                 }
 
-                items(
+                if (showExcluded) items(
                     items = excluded.sortedBy { it.ingredient.name.lowercase() },
                     key = { "excluded-${it.ingredient.id}" }
                 ) { item ->

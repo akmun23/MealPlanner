@@ -17,6 +17,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -1580,17 +1581,16 @@ internal fun <T> SelectorChips(
     label: (T) -> String,
     onSelected: (T) -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        items.chunked(3).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                row.forEach { item ->
-                    FilterChip(
-                        selected = item == selected,
-                        onClick = { onSelected(item) },
-                        label = { Text(label(item)) }
-                    )
-                }
-            }
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        items.forEach { item ->
+            FilterChip(
+                selected = item == selected,
+                onClick = { onSelected(item) },
+                label = { Text(label(item)) }
+            )
         }
     }
 }
@@ -1629,14 +1629,11 @@ internal fun <T> SimpleSelector(
     }
 }
 
+/** Lossless for finite Double values: never round a small quantity to zero. */
 internal fun formatDisplayNumber(value: Double): String {
-    if (kotlin.math.abs(value - value.toInt()) < 0.00001) {
-        return value.toInt().toString()
-    }
-
-    return String.format(
-        Locale.forLanguageTag("da-DK"),
-        "%.2f",
-        value
-    ).trimEnd('0').trimEnd(',')
+    if (!value.isFinite()) return value.toString()
+    return java.math.BigDecimal.valueOf(value)
+        .stripTrailingZeros()
+        .toPlainString()
+        .replace('.', ',')
 }

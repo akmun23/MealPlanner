@@ -38,6 +38,9 @@ jobs:
       - name: Build debug APK
         run: bash ./gradlew :app:assembleDebug --stacktrace
 
+      - name: Compile Compose UI instrumentation tests (device execution is separate)
+        run: bash ./gradlew :app:assembleDebugAndroidTest --stacktrace
+
       - name: Build unoptimized release APK and release bundle
         # bundleRelease produces an AAB, not an APK. The shrinkage comparison
         # requires an assembleRelease baseline with the same app sources.

@@ -20,11 +20,14 @@ import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -47,6 +50,7 @@ internal fun PlannerSettingsScreen(
     onBack: () -> Unit
 ) {
     val w = state.plannerWeights
+    var showAdvanced by rememberSaveable { mutableStateOf(false) }
     val options = listOf(
         PlannerOption("pantry", "Brug varer fra lager", "Foretræk opskrifter, der passer til det, du har.", w.pantryCoverage, 100f) { w.copy(pantryCoverage = it) },
         PlannerOption("reuse", "Genbrug ingredienser", "Foretræk ingredienser, der også bruges andre dage.", w.ingredientReuse, 100f) { w.copy(ingredientReuse = it) },
@@ -95,9 +99,37 @@ internal fun PlannerSettingsScreen(
                     )
                 }
             }
-            items(options, key = PlannerOption::id) { option ->
-                PlannerOptionSlider(option) { value ->
-                    state.updatePlannerWeights(option.updatedWeights(value))
+            item {
+                Text(
+                    "Hurtige valg",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    PlannerPreset.entries.forEach { preset ->
+                        OutlinedButton(
+                            onClick = { state.updatePlannerWeights(preset.weights()) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(
+                                (if (w == preset.weights()) "✓ " else "") + preset.title +
+                                    " · " + preset.description
+                            )
+                        }
+                    }
+                }
+                TextButton(
+                    onClick = { showAdvanced = !showAdvanced },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(if (showAdvanced) "Skjul avancerede indstillinger" else "Vis avancerede indstillinger")
+                }
+            }
+            if (showAdvanced) {
+                items(options, key = PlannerOption::id) { option ->
+                    PlannerOptionSlider(option) { value ->
+                        state.updatePlannerWeights(option.updatedWeights(value))
+                    }
                 }
             }
             item {

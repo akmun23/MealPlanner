@@ -469,10 +469,10 @@ internal fun BilkaProductPickerScreen(
                 }
                 items(options, key = { it.id }) { product ->
                     val chosen = selected == product.id
+                    val selectable = product.id in suggestions || product.id == currentId
                     Card(
-                        onClick = {
-                            if (product.id in suggestions) selected = product.id
-                        },
+                        onClick = { selected = product.id },
+                        enabled = selectable,
                         modifier = Modifier.fillMaxWidth(),
                         colors = CardDefaults.cardColors(
                             containerColor = if (chosen)
@@ -490,7 +490,7 @@ internal fun BilkaProductPickerScreen(
                                 Text(
                                     product.name,
                                     fontWeight = FontWeight.SemiBold,
-                                    maxLines = 1,
+                                    maxLines = 2,
                                     overflow = TextOverflow.Ellipsis
                                 )
                                 Text(
@@ -513,6 +513,13 @@ internal fun BilkaProductPickerScreen(
                             }
                             if (chosen) {
                                 Icon(Icons.Filled.CheckCircle, contentDescription = "Valgt")
+                            }
+                            if (!selectable) {
+                                Text(
+                                    "Ikke valgbart",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
                             }
                         }
                         if (chosen && product.id != currentId && product.id in suggestions) {

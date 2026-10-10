@@ -988,14 +988,40 @@ class MealPlannerState(
     fun setRecipeForDay(day: DayOfWeek, recipeId: String?) {
         if (!canEditWeek()) return
         if (day == sandwichDay) return
+        if (plan[day] == recipeId &&
+            (recipeId == null || dayModes[day] != DayMode.AWAY)
+        ) return // Re-selecting the same meal must not reset shopping progress.
+
+        val previousItems = shoppingItems()
+        val previousChecked = shoppingChecked.toMap()
+        val previousIncluded = shoppingIncluded.toMap()
 
         plan[day] = recipeId
-        if (recipeId != null) {
-            dayModes[day] = DayMode.AUTO
-        }
+        if (recipeId != null) dayModes[day] = DayMode.AUTO
+
+        val retainedIds = ShoppingRetentionRules.unchangedIngredientIds(
+            previousItems, shoppingItems()
+        )
         shoppingChecked.clear()
         shoppingIncluded.clear()
-        persistWeek(clearChecks = true)
+        retainedIds.forEach { ingredientId ->
+            previousIncluded[ingredientId]?.let { shoppingIncluded[ingredientId] = it }
+            previousChecked[ingredientId]?.let { shoppingChecked[ingredientId] = it }
+        }
+
+        // Clear and restore retained choices in the same durable outbox
+        // transaction so offline/cloud clients see the same shopping state.
+        val id = weeklyPlanId ?: return
+        enqueueMutations(buildList {
+            add(weekStateMutation(id))
+            add(QueuedMutation.ClearShopping(id))
+            shoppingIncluded.forEach { (ingredientId, included) ->
+                add(QueuedMutation.SetShoppingIncluded(id, ingredientId, included))
+            }
+            shoppingChecked.forEach { (ingredientId, checked) ->
+                add(QueuedMutation.SetShoppingChecked(id, ingredientId, checked))
+            }
+        })
     }
 
     fun isIngredientNameAvailable(
@@ -1043,6 +1069,16 @@ class MealPlannerState(
         return true
     }
 
+    fun canChangeIngredientQuantityType(id: String, newType: QuantityType): Boolean {
+        val ingredient = ingredients.find { it.id == id } ?: return false
+        return canChangeIngredientQuantityType(
+            ingredient = ingredient,
+            newType = newType,
+            pantryBase = pantry[id] ?: 0.0,
+            recipes = recipes.toList()
+        )
+    }
+
     fun updateIngredient(
         id: String,
         name: String,
@@ -1059,6 +1095,11 @@ class MealPlannerState(
             name.isBlank() ||
             preferredUnit.quantityType != type
         ) return false
+
+        if (!canChangeIngredientQuantityType(id, type)) {
+            lastError = "Typen kan ikke ændres, mens ingrediensen er på lager eller bruges i en opskrift."
+            return false
+        }
 
         if (!isIngredientNameAvailable(name, excludingId = id)) {
             lastError = "Ingrediensen findes allerede."
@@ -1696,7 +1737,9 @@ class MealPlannerState(
         val ingredient = ingredients.find { it.id == ingredientId } ?: return
         if (unit.quantityType != ingredient.quantityType) return
 
-        val base = unit.toBase(amount.coerceAtLeast(0.0))
+        if (!amount.isFinite() || amount < 0.0) return
+        val base = unit.toBase(amount)
+        if (!base.isFinite()) return
         pantry[ingredientId] = base
 
         enqueueMutation(
@@ -1713,10 +1756,13 @@ class MealPlannerState(
         unit: MeasurementUnit
     ) {
         val ingredient = ingredients.find { it.id == ingredientId } ?: return
-        if (unit.quantityType != ingredient.quantityType || amount <= 0.0) return
+        if (unit.quantityType != ingredient.quantityType ||
+            !amount.isFinite() || amount <= 0.0
+        ) return
 
         val addedBase = unit.toBase(amount)
         val next = (pantry[ingredientId] ?: 0.0) + addedBase
+        if (!next.isFinite()) return
         pantry[ingredientId] = next
 
         enqueueMutation(
