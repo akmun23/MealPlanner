@@ -11,8 +11,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -43,6 +45,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.SubcomposeAsyncImage
+import coil.request.ImageRequest
 import java.text.NumberFormat
 import java.util.Locale
 import kotlinx.coroutines.launch
@@ -133,26 +136,37 @@ private fun statusLabel(row: BilkaListIngredient): String = when (row.state) {
 
 @Composable
 private fun BilkaProductPhoto(p: BilkaProduct) {
-    val modifier = Modifier.size(76.dp).clip(RoundedCornerShape(12.dp))
-    val fallback: @Composable () -> Unit = {
-        Box(
-            modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
-            contentAlignment = Alignment.Center
-        ) {
-            Icon(Icons.Filled.ImageNotSupported, contentDescription = "Intet billede")
-        }
+    val boxModifier = Modifier.requiredSize(76.dp)
+        .clip(RoundedCornerShape(12.dp))
+    val context = LocalContext.current
+    // A remote product photo may be thousands of pixels. Only decode a thumbnail.
+    val model = remember(context, p.imageUrl) {
+        ImageRequest.Builder(context)
+            .data(p.imageUrl)
+            .size(228, 228)
+            .crossfade(false)
+            .build()
     }
-    if (p.imageUrl.isNullOrBlank()) {
-        Box(modifier = modifier) { fallback() }
-    } else {
-        SubcomposeAsyncImage(
-            model = p.imageUrl,
-            contentDescription = "Produktbillede af " + p.name,
-            modifier = modifier,
-            contentScale = ContentScale.Fit,
-            loading = { fallback() },
-            error = { fallback() }
-        )
+    Box(
+        modifier = boxModifier.background(MaterialTheme.colorScheme.surfaceVariant),
+        contentAlignment = Alignment.Center
+    ) {
+        if (p.imageUrl.isNullOrBlank()) {
+            Icon(Icons.Filled.ImageNotSupported, contentDescription = "Intet billede")
+        } else {
+            SubcomposeAsyncImage(
+                model = model,
+                contentDescription = "Produktbillede af " + p.name,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Fit,
+                loading = {
+                    Icon(Icons.Filled.ImageNotSupported, contentDescription = null)
+                },
+                error = {
+                    Icon(Icons.Filled.ImageNotSupported, contentDescription = null)
+                }
+            )
+        }
     }
 }
 
