@@ -24,6 +24,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -79,6 +80,7 @@ internal fun bilkaShoppingLine(
  */
 @Composable
 internal fun BilkaPurchaseDialog(
+    weekId: String,
     item: ShoppingItem,
     state: MealPlannerState,
     catalog: BilkaProductCatalog,
@@ -86,6 +88,8 @@ internal fun BilkaPurchaseDialog(
     onDismiss: () -> Unit,
     onSaved: () -> Unit
 ) {
+    val maxDialogHeight = (LocalConfiguration.current.screenHeightDp.dp - 220.dp)
+        .coerceIn(180.dp, 460.dp)
     val ingredient = item.ingredient
     val defaultRow = shopping.default(ingredient.id)
     val previous = shopping.purchase(ingredient.id)
@@ -161,13 +165,15 @@ internal fun BilkaPurchaseDialog(
         title = { Text("Hvad købte du?") },
         text = {
             Column(
-                modifier = Modifier.heightIn(max = 460.dp)
+                modifier = Modifier.heightIn(max = maxDialogHeight)
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text(
                     ingredient.name,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
                 )
                 Text(
                     "Vælg kun hvad du købte; standardvaren ændres ikke.",
@@ -301,7 +307,6 @@ internal fun BilkaPurchaseDialog(
                 enabled = valid && !saving,
                 onClick = {
                     val amount = baseAmount ?: return@Button
-                    val weekId = state.weeklyPlanId ?: return@Button
                     saving = true
                     scope.launch {
                         BilkaPrejClient.recordPurchase(
