@@ -80,7 +80,7 @@ select cron.schedule(
         body := '{}'::jsonb,
         timeout_milliseconds := 20000
     )
-    where extract(hour from timezone('Europe/Copenhagen', now())) = 5
+    where extract(hour from timezone('Europe/Copenhagen', now())) in (5, 6, 7)
       and exists (
           select 1 from vault.decrypted_secrets
            where name = 'bilka_nightly_cron_token'
