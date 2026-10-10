@@ -24,3 +24,21 @@ grant execute on function public.bilka_nightly_scheduler_ready()
 
 comment on function public.bilka_nightly_scheduler_ready() is
   'Server-side readiness check only, never exposes Vault secret or cron SQL.';
+
+-- Secondary indexes for frequent household ingredient/weekly shopping joins.
+-- Primary keys start with household_id; these indexes cover foreign-key
+-- operations that start with ingredient_id / weekly_plan_id instead.
+create index if not exists idx_bilka_candidates_ingredient_household
+  on public.ingredient_bilka_candidates(ingredient_id, household_id);
+create index if not exists idx_bilka_defaults_ingredient_household
+  on public.ingredient_bilka_defaults(ingredient_id, household_id);
+create index if not exists idx_bilka_jobs_ingredient_household
+  on public.bilka_discovery_jobs(ingredient_id, household_id);
+create index if not exists idx_bilka_shopping_ingredient_household
+  on public.shopping_product_overrides(ingredient_id, household_id);
+create index if not exists idx_bilka_shopping_week_household
+  on public.shopping_product_overrides(weekly_plan_id, household_id);
+create index if not exists idx_bilka_nightly_attempted_by
+  on public.bilka_nightly_runs(attempted_by);
+create index if not exists idx_bilka_nightly_prefs_user
+  on public.prej_nightly_preferences(user_id);
