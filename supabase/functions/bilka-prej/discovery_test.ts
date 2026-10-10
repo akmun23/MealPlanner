@@ -37,7 +37,7 @@ Deno.test("Mel and Pizzamel share a search, but are still independently matched"
 Deno.test("Danish terms remain valid Danish text for Prej searches", () => {
   eq(searchTerm("Rødløg"), "løg");
   eq(searchTerm("Kidneybønner"), "bønner");
-  eq(searchTerm("Bacontern (pakke)"), "Bacontern");
+  eq(searchTerm("Bacontern (pakke)"), "bacontern");
   eq(searchTerm("Pizzamel"), "mel");
 });
 
@@ -100,7 +100,7 @@ Deno.test("one Prej request can produce suggestions for multiple ingredients and
   eq(first.pending, 0);
   eq(apiCalls.length, 1);
   eq(apiCalls[0].includes("chain=bilka"), true);
-  eq(candidates.length, 3); // Generic mel may see both, specific pizzamel sees one.
+  eq(candidates.length, 2); // One validated SKU candidate per ingredient.
   eq(caches.length, 1);
   if (!rpcCalls.includes("prej_reserve_call")) throw new Error("Quota reservation missing");
 
