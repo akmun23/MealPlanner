@@ -85,7 +85,11 @@ fun ShoppingScreen(state: MealPlannerState) {
             runCatching {
                 bilkaCatalog = parseBilkaCatalog(catalog.getOrThrow())
                 bilkaContext = decodeBilkaShoppingContext(weekly.getOrThrow())
-            }.onFailure { bilkaLoadError = true }
+            }.onFailure {
+                bilkaCatalog = null
+                bilkaContext = null
+                bilkaLoadError = true
+            }
         } else {
             bilkaCatalog = null
             bilkaContext = null
