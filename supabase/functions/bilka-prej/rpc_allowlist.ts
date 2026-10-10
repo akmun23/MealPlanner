@@ -1,6 +1,8 @@
 /** Privileged RPCs allowed from the authenticated Bilka Edge Function. */
 export const ALLOWED_BILKA_RPCS: ReadonlySet<string> = new Set([
   "prej_store_key",
+  "prej_stage_key",
+  "prej_read_pending_key",
   "prej_read_key",
   "prej_forget_key",
   "prej_record_key_check",
