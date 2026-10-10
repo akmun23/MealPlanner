@@ -1542,27 +1542,27 @@ internal fun IngredientEditorScreen(
         state.ingredients.find { it.id == id }
     }
 
-    var name by remember(ingredientId) {
+    var name by rememberSaveable(ingredientId) {
         mutableStateOf(existing?.name ?: "")
     }
 
-    var type by remember(ingredientId) {
+    var type by rememberSaveable(ingredientId) {
         mutableStateOf(existing?.quantityType ?: QuantityType.MASS)
     }
 
-    var preferredUnit by remember(ingredientId) {
+    var preferredUnit by rememberSaveable(ingredientId) {
         mutableStateOf(existing?.preferredUnit ?: MeasurementUnit.GRAM)
     }
 
-    var isProtein by remember(ingredientId) {
+    var isProtein by rememberSaveable(ingredientId) {
         mutableStateOf(existing?.isProtein ?: false)
     }
 
-    var neverBuy by remember(ingredientId) {
+    var neverBuy by rememberSaveable(ingredientId) {
         mutableStateOf(existing?.neverBuy ?: false)
     }
 
-    var shoppingCategoryId by remember(ingredientId) {
+    var shoppingCategoryId by rememberSaveable(ingredientId) {
         mutableStateOf(
             existing?.shoppingCategoryId
                 ?: state.ingredientCategories
@@ -1572,7 +1572,7 @@ internal fun IngredientEditorScreen(
         )
     }
 
-    var imageUri by remember(ingredientId) {
+    var imageUri by rememberSaveable(ingredientId) {
         mutableStateOf(existing?.imageUri)
     }
 
@@ -1582,8 +1582,43 @@ internal fun IngredientEditorScreen(
                 name,
                 excludingId = existing?.id
             )
-    var showDeleteConfirm by remember(ingredientId) {
+    var showDeleteConfirm by rememberSaveable(ingredientId) {
         mutableStateOf(false)
+    }
+
+    val typeChangeAllowed = existing == null ||
+        state.canChangeIngredientQuantityType(existing.id, type)
+    val originalForm = remember(ingredientId) {
+        listOf(name, type, preferredUnit, isProtein, neverBuy, shoppingCategoryId, imageUri)
+    }
+    var changesSeen by rememberSaveable(ingredientId) { mutableStateOf(false) }
+    val hasUnsavedChanges = changesSeen ||
+        listOf(name, type, preferredUnit, isProtein, neverBuy, shoppingCategoryId, imageUri) != originalForm
+    androidx.compose.runtime.LaunchedEffect(hasUnsavedChanges) {
+        if (hasUnsavedChanges) changesSeen = true
+    }
+    var showDiscardDialog by rememberSaveable(ingredientId) { mutableStateOf(false) }
+    fun requestBack() {
+        if (hasUnsavedChanges) showDiscardDialog = true else onBack()
+    }
+    BackHandler(enabled = hasUnsavedChanges) { requestBack() }
+    if (showDiscardDialog) {
+        AlertDialog(
+            onDismissRequest = { showDiscardDialog = false },
+            title = { Text("Kassér ændringer?") },
+            text = { Text("Dine ændringer til ingrediensen er ikke gemt.") },
+            confirmButton = {
+                TextButton(onClick = {
+                    showDiscardDialog = false
+                    onBack()
+                }) { Text("Kassér ændringer", color = MaterialTheme.colorScheme.error) }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDiscardDialog = false }) {
+                    Text("Fortsæt redigering")
+                }
+            }
+        )
     }
 
     if (showDeleteConfirm && existing != null) {
@@ -1632,7 +1667,56 @@ internal fun IngredientEditorScreen(
 
     SubpageScaffold(
         title = if (existing == null) "Ny ingrediens" else "Rediger ingrediens",
-        onBack = onBack
+        onBack = { requestBack() },
+        bottomBar = {
+            Surface(tonalElevation = 3.dp) {
+                Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                    if (!typeChangeAllowed) {
+                        Text(
+                            "Typen kan ikke ændres, mens ingrediensen er på lager eller bruges i opskrifter.",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                Button(
+                    onClick = {
+                        val saved = if (existing == null) {
+                            state.addIngredient(
+                                name = name,
+                                type = type,
+                                shoppingCategoryId = shoppingCategoryId,
+                                isProtein = isProtein,
+                                neverBuy = neverBuy,
+                                imageUri = imageUri,
+                                preferredUnit = preferredUnit
+                            )
+                        } else {
+                            state.updateIngredient(
+                                id = existing.id,
+                                name = name,
+                                type = type,
+                                shoppingCategoryId = shoppingCategoryId,
+                                isProtein = isProtein,
+                                neverBuy = neverBuy,
+                                preferredUnit = preferredUnit,
+                                imageUri = imageUri
+                            )
+                        }
+
+                        if (saved) {
+                            onSaved()
+                        }
+                    },
+                    enabled = name.isNotBlank() && ingredientNameAvailable && typeChangeAllowed,
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Text("Gem")
+                }
+
+                }
+            }
+        }
     ) { padding ->
         LazyColumn(
             modifier = Modifier
@@ -1682,6 +1766,13 @@ internal fun IngredientEditorScreen(
                         preferredUnit = MeasurementUnit.defaultFor(it)
                     }
                 )
+                if (!typeChangeAllowed) {
+                    Text(
+                        "Fjern beholdningen og opskriftsreferencerne før typen ændres.",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
             }
 
             item {
@@ -1757,44 +1848,6 @@ internal fun IngredientEditorScreen(
                         optionText = { it.name },
                         onSelected = { shoppingCategoryId = it.id }
                     )
-                }
-            }
-
-            item {
-                Button(
-                    onClick = {
-                        val saved = if (existing == null) {
-                            state.addIngredient(
-                                name = name,
-                                type = type,
-                                shoppingCategoryId = shoppingCategoryId,
-                                isProtein = isProtein,
-                                neverBuy = neverBuy,
-                                imageUri = imageUri,
-                                preferredUnit = preferredUnit
-                            )
-                        } else {
-                            state.updateIngredient(
-                                id = existing.id,
-                                name = name,
-                                type = type,
-                                shoppingCategoryId = shoppingCategoryId,
-                                isProtein = isProtein,
-                                neverBuy = neverBuy,
-                                preferredUnit = preferredUnit,
-                                imageUri = imageUri
-                            )
-                        }
-
-                        if (saved) {
-                            onSaved()
-                        }
-                    },
-                    enabled = name.isNotBlank() && ingredientNameAvailable,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Text("Gem")
                 }
             }
 
