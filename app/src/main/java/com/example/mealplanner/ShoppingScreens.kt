@@ -62,6 +62,11 @@ private data class ShoppingSections(
 fun ShoppingScreen(state: MealPlannerState) {
     val scope = rememberCoroutineScope()
     val weekId = state.weeklyPlanId
+    val requestedIngredientIds by remember(state) {
+        derivedStateOf {
+            state.shoppingItems().map { it.ingredient.id }.distinct().sorted()
+        }
+    }
     var bilkaCatalog by remember(weekId) { mutableStateOf<BilkaProductCatalog?>(null) }
     var bilkaContext by remember(weekId) { mutableStateOf<BilkaShoppingContext?>(null) }
     var bilkaLoading by remember(weekId) { mutableStateOf(!state.isLocalMode) }
@@ -78,7 +83,7 @@ fun ShoppingScreen(state: MealPlannerState) {
             val catalogJob = async {
                 BilkaPrejClient.catalog(
                     state.householdIdentifier,
-                    state.shoppingItems().map { it.ingredient.id }.distinct()
+                    requestedIngredientIds
                 )
             }
             val weeklyJob = async {
@@ -103,7 +108,9 @@ fun ShoppingScreen(state: MealPlannerState) {
         bilkaLoading = false
     }
 
-    LaunchedEffect(weekId, state.householdIdentifier) { refreshBilkaChoices() }
+    LaunchedEffect(weekId, state.householdIdentifier, requestedIngredientIds) {
+        refreshBilkaChoices()
+    }
 
     var addToPantryItem by remember {
         mutableStateOf<ShoppingItem?>(null)
