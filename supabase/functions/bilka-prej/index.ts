@@ -15,12 +15,13 @@ const PREJ_BASE = "https://api.prej.app";
 const DAILY_BUDGET = 20; // 25 free calls; keep 5 in reserve (including key checks).
 
 type Payload = {
-  action?: "status" | "set-key" | "verify-key" | "remove-key" | "refresh" | "discover" | "discovery-status" | "catalog" | "choose-product" | "manual-search";
+  action?: "status" | "set-key" | "verify-key" | "remove-key" | "refresh" | "discover" | "discovery-status" | "catalog" | "choose-product" | "manual-search" | "nightly-status" | "set-nightly";
   apiKey?: unknown;
   householdId?: unknown;
   ingredientId?: unknown;
   productId?: unknown;
   query?: unknown;
+  enabled?: unknown;
 };
 
 class ClientError extends Error {
@@ -199,6 +200,45 @@ async function discoveryAction(userId: string, householdId: unknown, run: boolea
   ));
 }
 
+async function nightlyStatus(userId: string, householdId: unknown): Promise<Response> {
+  const id = await verifiedHousehold(userId, householdId);
+  const rows = await adminRequest(
+    "/rest/v1/prej_nightly_preferences?select=enabled&user_id=eq." +
+      encodeURIComponent(userId) + "&household_id=eq." + encodeURIComponent(id), "GET",
+  ) as Array<{ enabled: boolean }>;
+  const runs = await adminRequest(
+    "/rest/v1/bilka_nightly_runs?select=status,finished_at,products_updated" +
+      "&household_id=eq." + encodeURIComponent(id) +
+      "&order=local_date.desc&limit=1", "GET",
+  ) as Array<{ status: string; finished_at: string | null; products_updated: number }>;
+  return json({
+    enabled: rows[0]?.enabled === true,
+    lastRunStatus: runs[0]?.status ?? null,
+    lastUpdatedAt: runs[0]?.finished_at ?? null,
+    productsUpdated: runs[0]?.products_updated ?? 0,
+  });
+}
+
+async function setNightly(userId: string, householdId: unknown, enabled: unknown): Promise<Response> {
+  const id = await verifiedHousehold(userId, householdId);
+  if (typeof enabled !== "boolean") throw new ClientError("invalid_setting", 400);
+  if (enabled) {
+    const rows = await adminRequest(
+      "/rest/v1/prej_user_credentials?select=verified_at,enabled&user_id=eq." +
+        encodeURIComponent(userId) + "&limit=1", "GET",
+    ) as Array<{ verified_at: string | null; enabled: boolean }>;
+    if (!rows[0]?.enabled || !rows[0]?.verified_at) {
+      throw new ClientError("prej_key_not_verified", 409);
+    }
+  }
+  await adminRequest(
+    "/rest/v1/prej_nightly_preferences?on_conflict=household_id,user_id",
+    "POST",
+    [{ household_id: id, user_id: userId, enabled, updated_at: new Date().toISOString() }],
+  );
+  return json({ enabled });
+}
+
 async function refresh(userId: string, householdId: unknown): Promise<Response> {
   if (!uuid(householdId)) throw new ClientError("invalid_household_id", 400);
   const memberships = await adminRequest(
@@ -296,6 +336,8 @@ Deno.serve(async (req) => {
       case "verify-key": return await verifyStoredKey(userId);
       case "remove-key": return await removeKey(userId);
       case "refresh": return await refresh(userId, input.householdId);
+      case "nightly-status": return await nightlyStatus(userId, input.householdId);
+      case "set-nightly": return await setNightly(userId, input.householdId, input.enabled);
       case "discover": return await discoveryAction(userId, input.householdId, true);
       case "discovery-status": return await discoveryAction(userId, input.householdId, false);
       case "catalog": {
