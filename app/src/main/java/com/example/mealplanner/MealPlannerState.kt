@@ -196,21 +196,9 @@ class MealPlannerState(
         val initialLoad = scope.launch {
             initialize()
         }
-        scope.launch {
-            initialLoad.join()
-            // Cache images for the other tabs without composing those screens
-            // and without blocking the first household frame.
-            delay(2_500L.milliseconds)
-            val recipesById = recipes.associateBy { it.id }
-            val imageReferences = buildList {
-                orderedWeekDays.mapNotNull { plan[it] }.forEach { id ->
-                    recipesById[id]?.imageUri?.let(::add)
-                }
-                recipes.forEach { it.imageUri?.let(::add) }
-                ingredients.forEach { it.imageUri?.let(::add) }
-            }
-            MealImagePrefetcher.warm(context.applicationContext, imageReferences)
-        }
+        // Do not prefetch 150 full household thumbnails after startup.
+        // Background network/bitmap work competes with user flings; the
+        // LazyColumn's visible images are fetched on demand by Coil.
         if (!isLocalOnly) scope.launch {
             // During initial load, initialize() already attempts a refresh.
             // Start listening once it has finished, then react to later

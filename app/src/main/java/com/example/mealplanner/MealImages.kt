@@ -16,12 +16,10 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
-import coil.imageLoader
 import coil.request.ImageRequest
 import io.github.jan.supabase.storage.storage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withLock
@@ -30,7 +28,6 @@ import kotlinx.coroutines.withContext
 import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Duration.Companion.hours
 import androidx.core.content.edit
-import kotlin.time.Duration.Companion.milliseconds
 
 /**
  * An image reference is a cheap, stable value carried in Room snapshots.
@@ -111,42 +108,6 @@ internal class SignedMealImageUrls private constructor(context: Context) {
     }
 }
 
-/**
- * Warm image thumbnails after startup, one at a time so foreground scrolling
- * and cloud data reads are not crowded out by photo downloads. Coil holds
- * the compressed bytes in the shared 256 MB disk cache for later tabs.
- */
-internal object MealImagePrefetcher {
-    suspend fun warm(context: Context, references: List<String>) {
-        val loader = context.imageLoader
-        val resolver = SignedMealImageUrls.get(context)
-        withContext(Dispatchers.IO) {
-            references.asSequence()
-                .filter { it.isNotBlank() }
-                .distinct()
-                .take(150)
-                .forEach { reference ->
-                    try {
-                        val url = resolver.resolve(reference)
-                        val request = ImageRequest.Builder(context)
-                            .data(url)
-                            .diskCacheKey(reference)
-                            .memoryCacheKey("thumbnail:$reference")
-                            .size(192, 192)
-                            .crossfade(false)
-                            .build()
-                        loader.execute(request)
-                    } catch (cancelled: CancellationException) {
-                        throw cancelled
-                    } catch (_: Exception) {
-                        // Preview failure must not affect meal data or scrolling.
-                    }
-                    delay(100L.milliseconds)
-                }
-        }
-    }
-}
-
 @Composable
 internal fun MealImage(
     imageUri: String,
@@ -168,7 +129,9 @@ internal fun MealImage(
         key1 = imageUri
     ) {
         value = try {
-            resolver.resolve(imageUri)
+            // Preferences and URL signing stay off the UI dispatcher even
+            // when dozens of new rows become visible during a fast fling.
+            withContext(Dispatchers.IO) { resolver.resolve(imageUri) }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {

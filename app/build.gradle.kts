@@ -62,22 +62,28 @@ android {
 
     buildTypes {
         release {
-            // Stability hotfix: re-enable release shrinking only after a
-            // physical-device startup test with a captured crash trace.
+            // AGP 9.4: optimize code (R8) and resources for the actual
+            // production APK/AAB. The benchmark variant inherits this.
             optimization {
-                enable = false
+                enable = true
             }
         }
         create("benchmark") {
             initWith(getByName("release"))
-            // Evaluate R8's optimized DEX and resource shrinking before
-            // restoring it to production. The existing release build stays
-            // non-minified until a real-device launch + local/cloud flow test.
+            // The benchmark must match release's R8 settings but use a test
+            // signature. Never install over a Play-signed production app.
+            signingConfig = signingConfigs.getByName("debug")
+            isDebuggable = false
+            matchingFallbacks += listOf("release")
+        }
+        create("unoptimized") {
+            initWith(getByName("release"))
+            // Comparison artifact only: identical release source/dependencies
+            // without shrinking, used to quantify R8's DEX reduction.
+            // This variant must never be uploaded to Play Console.
             optimization {
-                enable = true
+                enable = false
             }
-            // Non-debuggable for realistic startup/frame tracing; do NOT
-            // install over a release-signed app (different signing keys).
             signingConfig = signingConfigs.getByName("debug")
             isDebuggable = false
             matchingFallbacks += listOf("release")

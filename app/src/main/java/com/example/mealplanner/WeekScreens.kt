@@ -904,15 +904,11 @@ fun DayCard(
 
                 Spacer(Modifier.height(8.dp))
 
-                // Metadata stays on the left; the time control, when applicable,
-                // remains fixed to the right of the first row on small screens.
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.Top
-                ) {
+                // Category tags have variable widths/heights. Keep them in
+                // their own row so they can never displace the time selector.
+                if (recipe != null) {
                     FlowRow(
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
@@ -920,30 +916,46 @@ fun DayCard(
                         if (recipeCategory.isNotBlank() &&
                             !(isSandwich && recipeCategory.equals("Sandwich", ignoreCase = true))
                         ) StatusPill(recipeCategory, false)
-                        recipe?.prepMinutes?.let { StatusPill("$it min", false) }
+                        recipe.prepMinutes?.let { StatusPill("$it min", false) }
                     }
+                }
 
-                    if (!completedLocked) Box {
-                        FilterChip(
-                            modifier = Modifier.heightIn(min = 32.dp),
-                            selected = maxPrepMinutes != null,
-                            onClick = { showTimePicker = true },
-                            label = {
-                                Text(prepLimitLabel(maxPrepMinutes), maxLines = 1)
-                            }
+                if (!completedLocked) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            "Tidsgrænse",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
                         )
-                        DropdownMenu(
-                            expanded = showTimePicker,
-                            onDismissRequest = { showTimePicker = false }
-                        ) {
-                            listOf(null, 30, 60).forEach { minutes ->
-                                DropdownMenuItem(
-                                    text = { Text(prepLimitOptionLabel(minutes)) },
-                                    onClick = {
-                                        state.setDayMaxPrepMinutes(day, minutes)
-                                        showTimePicker = false
-                                    }
-                                )
+                        Spacer(Modifier.width(8.dp))
+                        Box {
+                            FilterChip(
+                                selected = maxPrepMinutes != null,
+                                onClick = { showTimePicker = true },
+                                label = {
+                                    Text(prepLimitLabel(maxPrepMinutes), maxLines = 1)
+                                }
+                            )
+                            DropdownMenu(
+                                expanded = showTimePicker,
+                                onDismissRequest = { showTimePicker = false }
+                            ) {
+                                listOf(null, 30, 60).forEach { minutes ->
+                                    DropdownMenuItem(
+                                        text = { Text(prepLimitOptionLabel(minutes)) },
+                                        onClick = {
+                                            state.setDayMaxPrepMinutes(day, minutes)
+                                            showTimePicker = false
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
