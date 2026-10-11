@@ -1,5 +1,5 @@
 import {
-  barcodeProductSearch, exactBilkaToGoBarcode, parseScannedProduct, validGtin,
+  barcodeProductSearch, eanCacheRowsForProducts, exactBilkaToGoBarcode, parseScannedProduct, validGtin,
 } from "./barcode_server.ts";
 
 const householdId = "ce85a721-78a3-40c5-a18d-13b1011ba54b";
@@ -45,6 +45,23 @@ Deno.test("only retailer-owned barcode variants match BilkaToGo prices", () => {
     "Envelope product parsing failed");
   assert(parseScannedProduct(example())?.id === 12345,
     "Plain product parsing failed");
+});
+
+Deno.test("normal name search pre-seeds many EANs from exact retailer GTINs without an API request", () => {
+  const rows = eanCacheRowsForProducts([
+    example(), example([{ chain_slug:"bilka", price: 150, chain_gtins: ["96385074"] }]),
+    {...example(), id: 54321, prices: [{
+      chain_slug: "bilkatogo", price: 995, chain_gtins: ["96385074"]
+    }]},
+    {...example(), id: 22222, prices: [{
+      chain_slug: "bilkatogo", price: 995, chain_gtins: ["96385074"]
+    }]},
+  ], 0);
+  assert(rows.length === 2, "Only unique priced ToGo EANs should be seeded");
+  assert(rows.some((r) => r.query_key.endsWith("04006381333931") &&
+    r.product_ids[0] === "bilkatogo:12345"), "EAN-13 must be canonicalized to GTIN-14");
+  assert(rows.some((r) => r.query_key.endsWith("00000096385074") &&
+    r.product_ids[0] === "bilkatogo:54321"), "Matching must use retailer price GTIN");
 });
 
 Deno.test("first GTIN scan spends one Prej call, reuse across ingredients costs zero", async () => {
