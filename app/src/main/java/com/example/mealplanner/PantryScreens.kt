@@ -133,7 +133,8 @@ fun PantryScreen(
                     options = listOf<IngredientCategory?>(null) +
                         state.ingredientCategories.sortedBy { it.name.lowercase() },
                     optionText = { it?.name ?: "Alle kategorier" },
-                    onSelected = { selectedCategoryId = it?.id }
+                    onSelected = { selectedCategoryId = it?.id },
+                    fillWidth = true
                 )
             }
         }
@@ -146,13 +147,15 @@ fun PantryScreen(
                     label = "Status: ${stockFilter.label}",
                     options = PantryStockFilter.entries.toList(),
                     optionText = { it.label },
-                    onSelected = { stockFilterKey = it.name }
+                    onSelected = { stockFilterKey = it.name },
+                    fillWidth = true
                 )
                 SimpleSelector(
                     label = "Sorter: ${sortOrder.label}",
                     options = PantrySortOrder.entries.toList(),
                     optionText = { it.label },
-                    onSelected = { sortOrderKey = it.name }
+                    onSelected = { sortOrderKey = it.name },
+                    fillWidth = true
                 )
             }
             Text(
@@ -191,7 +194,7 @@ fun PantryScreen(
             }
         }
 
-        items(filtered, key = { it.id }) { ingredient ->
+        items(filtered, key = { it.id }, contentType = { "pantry-row" }) { ingredient ->
             val amount = state.pantry[ingredient.id] ?: 0.0
 
             OutlinedCard(
