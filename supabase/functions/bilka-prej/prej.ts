@@ -1,6 +1,8 @@
 /** Pure, dependency-free Prej normalization. Keep Bilka separate from BilkaToGo. */
 export interface PrejPrice {
   chain_slug?: string;
+  /** Barcode(s) supplied by this price's retailer, not aggregated product GTINs. */
+  chain_gtins?: string[] | null;
   price?: number | null;
   unit_price?: number | null;
   unit_price_label?: string | null;

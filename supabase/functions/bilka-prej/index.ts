@@ -1,6 +1,7 @@
 import { discoverProducts, discoveryStatus, DiscoveryError } from "./discovery_server.ts";
 import { catalog, saveHouseholdDefault } from "./catalog_server.ts";
 import { manualProductSearch } from "./manual_search_server.ts";
+import { barcodeProductSearch } from "./barcode_server.ts";
 import { shoppingContext, recordPurchase, CheckoutError } from "./shopping_server.ts";
 import { ALLOWED_BILKA_RPCS } from "./rpc_allowlist.ts";
 import { replacePrejCredential } from "./key_management.ts";
@@ -20,13 +21,14 @@ const PREJ_BASE = "https://api.prej.app";
 const DAILY_BUDGET = 20; // 25 free calls; keep 5 in reserve (including key checks).
 
 type Payload = {
-  action?: "status" | "set-key" | "verify-key" | "remove-key" | "refresh" | "discover" | "discovery-status" | "catalog" | "choose-product" | "manual-search" | "bulk-search" | "nightly-status" | "set-nightly" | "shopping-context" | "record-purchase";
+  action?: "status" | "set-key" | "verify-key" | "remove-key" | "refresh" | "discover" | "discovery-status" | "catalog" | "choose-product" | "manual-search" | "ean-lookup" | "bulk-search" | "nightly-status" | "set-nightly" | "shopping-context" | "record-purchase";
   apiKey?: unknown;
   householdId?: unknown;
   ingredientId?: unknown;
   ingredientIds?: unknown;
   productId?: unknown;
   query?: unknown;
+  gtin?: unknown;
   page?: unknown;
   enabled?: unknown;
   weekId?: unknown;
@@ -487,6 +489,26 @@ Deno.serve(async (req) => {
             invalid_search: 400, prej_key_not_configured: 409,
             daily_budget_exhausted: 429, prej_key_invalid: 409,
             prej_unavailable: 503
+          };
+          if (code in known) return json({ error: code }, known[code]);
+          throw error;
+        }
+      }
+      case "ean-lookup": {
+        const householdId = await verifiedHousehold(userId, input.householdId);
+        const ingredientId = typeof input.ingredientId === "string" ? input.ingredientId : "";
+        const gtin = typeof input.gtin === "string" ? input.gtin : "";
+        try {
+          return json(await barcodeProductSearch(
+            { admin: adminRequest, rpc, request: fetch, userId, householdId },
+            ingredientId, gtin,
+          ));
+        } catch (error) {
+          const code = error instanceof Error ? error.message : "prej_unavailable";
+          const known: Record<string, number> = {
+            invalid_gtin: 400, invalid_search: 400,
+            prej_key_not_configured: 409, daily_budget_exhausted: 429,
+            prej_key_invalid: 409, prej_unavailable: 503,
           };
           if (code in known) return json({ error: code }, known[code]);
           throw error;

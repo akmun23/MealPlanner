@@ -67,6 +67,12 @@ internal object BilkaPrejClient {
         call("manual-search", householdId = householdId,
             ingredientId = ingredientId, query = query, page = page)
 
+    suspend fun lookupEan(
+        householdId: String, ingredientId: String, gtin: String
+    ): Result<JsonObject> =
+        call("ean-lookup", householdId = householdId,
+            ingredientId = ingredientId, gtin = gtin)
+
     suspend fun bulkSearch(
         householdId: String, ingredientIds: List<String>
     ): Result<JsonObject> =
@@ -118,6 +124,7 @@ internal object BilkaPrejClient {
         ingredientIds: List<String>? = null,
         productId: String? = null,
         query: String? = null,
+        gtin: String? = null,
         page: Int? = null,
         enabled: Boolean? = null,
         weekId: String? = null,
@@ -139,6 +146,7 @@ internal object BilkaPrejClient {
                 }
                 productId?.let { put("productId", it) }
                 query?.let { put("query", it) }
+                gtin?.let { put("gtin", it) }
                 page?.let { put("page", it) }
                 enabled?.let { put("enabled", it) }
                 weekId?.let { put("weekId", it) }
@@ -171,6 +179,8 @@ internal object BilkaPrejClient {
                     "prej_key_invalid" -> "Nøglen er blevet ugyldig. Tilføj den igen"
                     "not_authenticated" -> "Log ind igen"
                     "invalid_search" -> "Skriv et konkret varenavn på mindst to tegn."
+                    "invalid_gtin" ->
+                        "EAN skal være 8, 12, 13 eller 14 cifre med gyldigt kontrolciffer."
                     "invalid_bulk_selection" -> "Vælg mellem 1 og 5 forskellige ingredienser."
                     "purchase_not_saved_or_already_recorded" ->
                         "Købet kunne ikke gemmes – muligvis er det allerede lagt på Lager."
