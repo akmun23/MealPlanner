@@ -972,7 +972,7 @@ class MealPlannerState(
     }
 
     private fun canEditWeek(): Boolean {
-        if (isWeekChanging) return false
+        if (isWeekChanging || isPlanning) return false
         if (weeklyPlanId != null) return true
         lastError = "Ugeplanen kan opdateres, når forbindelsen er tilbage. Lager og opskrifter virker offline."
         return false
@@ -980,9 +980,6 @@ class MealPlannerState(
 
     private fun dateFor(day: DayOfWeek): LocalDate =
         displayedWeekStart.plusDays((day.value - 1).toLong())
-
-    fun hasCompletedDinner(day: DayOfWeek): Boolean =
-        WeekRules.completedOn(dateFor(day), history)
 
     fun isCompletedDayLocked(day: DayOfWeek): Boolean =
         WeekRules.completedDayLocked(dateFor(day), history, editableCompletedDates)
@@ -1002,7 +999,7 @@ class MealPlannerState(
     }
 
     fun unlockRegisteredMeal(date: LocalDate) {
-        if (!WeekRules.completedOn(date, history)) return
+        if (isWeekChanging || isPlanning || !WeekRules.completedOn(date, history)) return
         editableCompletedDates.add(date)
         if (date in displayedWeekStart..displayedWeekStart.plusDays(6)) {
             lockedDays.remove(date.dayOfWeek)
@@ -1911,6 +1908,11 @@ class MealPlannerState(
             return false
         }
         val recipe = recipes.find { it.id == recipeId && it.mealType == MealType.DINNER }
+        if (date in displayedWeekStart..displayedWeekStart.plusDays(6) &&
+            recipeFor(date.dayOfWeek)?.id != recipeId) {
+            lastError = "Dagens planlagte ret er ændret. Luk vinduet og prøv igen."
+            return false
+        }
         if (recipe == null) {
             lastError = "Opskriften findes ikke længere."
             return false
@@ -2009,9 +2011,10 @@ class MealPlannerState(
             .toSet()
         val sandwichRecipe = weeklySandwichRecipeId
         val currentSandwichDay = sandwichDay
+        val weekStartSnapshot = displayedWeekStart
 
+        isPlanning = true
         scope.launch {
-            isPlanning = true
             try {
                 val result = withContext(Dispatchers.Default) {
                     WeeklyPlanner.generate(
@@ -2025,7 +2028,7 @@ class MealPlannerState(
                         lockedDays = lockSnapshot,
                         history = historySnapshot,
                         proteinIngredientIds = proteinIngredientIds,
-                        weekStart = displayedWeekStart,
+                        weekStart = weekStartSnapshot,
                         weights = weightsSnapshot
                     )
                 }
@@ -2064,6 +2067,7 @@ class MealPlannerState(
         val planSnapshot = plan.toMap()
         val historySnapshot = history.toList()
         val weightsSnapshot = plannerWeights
+        val weekStartSnapshot = displayedWeekStart
         val proteinIngredientIds = ingredients
             .asSequence()
             .filter { it.isProtein }
@@ -2085,7 +2089,7 @@ class MealPlannerState(
                         currentPlan = planSnapshot,
                         history = historySnapshot,
                         proteinIngredientIds = proteinIngredientIds,
-                        weekStart = displayedWeekStart,
+                        weekStart = weekStartSnapshot,
                         weights = weightsSnapshot
                     )
                 }
