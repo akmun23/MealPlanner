@@ -10,7 +10,7 @@ type Backend = CatalogServices & {
 };
 
 const uuid = (value: string) =>
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 
 /** GTIN-8, UPC-A (12), EAN-13 or GTIN-14, including valid GS1 check digit. */
 export function validGtin(input: string): boolean {
@@ -88,7 +88,8 @@ export async function barcodeProductSearch(
   ctx: Backend, ingredientId: string, rawGtin: string,
 ): Promise<BarcodeLookupResult> {
   const gtin = rawGtin.replace(/[\s-]/g, "");
-  if (!uuid(ingredientId) || !validGtin(gtin)) throw new Error("invalid_gtin");
+  if (!validGtin(gtin)) throw new Error("invalid_gtin");
+  if (!uuid(ingredientId)) throw new Error("invalid_search");
 
   const ingredients = await ctx.admin(
     "/rest/v1/ingredients?select=id,never_buy&household_id=eq." +
