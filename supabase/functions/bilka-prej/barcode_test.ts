@@ -1,6 +1,7 @@
 import {
   barcodeProductSearch, eanCacheRowsForProducts, exactBilkaToGoBarcode, parseScannedProduct, validGtin,
 } from "./barcode_server.ts";
+import type { PrejPrice, PrejProduct } from "./prej.ts";
 
 const householdId = "ce85a721-78a3-40c5-a18d-13b1011ba54b";
 const ingredientId = "0a132cc4-7633-40d3-b317-47b2a99192fe";
@@ -8,7 +9,7 @@ const ean = "4006381333931";
 function assert(v: boolean, reason: string) {
   if (!v) throw new Error(reason);
 }
-function example(prices?: unknown) {
+function example(prices?: PrejPrice[]): PrejProduct {
   return {
     id: 12345, name: "Økologisk paprika 40 g", brand: "Testmærke",
     prices: prices ?? [{
