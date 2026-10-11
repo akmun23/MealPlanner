@@ -62,22 +62,22 @@ Deno.test("manual product search reserves one user call and never changes defaul
     }
   };
   const first = await manualProductSearch(ctx, ingredient, "hvedemel");
-  assert(first.count === 1, "Exclude Bilka-only and non-food products");
+  assert(first.count === 3, "Show all ToGo-priced products, even non-food");
   assert(!first.fromCache, "First call is fresh");
   assert(realRequests === 1, "Exactly one Prej call");
-  assert(candidateRows.length === 1, "Only valid product suggested");
+  assert(candidateRows.length === 3, "No result hidden by relevance or category filters");
   assert(seen.includes("prej_reserve_call"), "Must reserve quota");
   assert(seen.every((p) => !p.includes("/ingredient_bilka_defaults")),
     "Never auto-write defaults");
 
   const second = await manualProductSearch(ctx, ingredient, "hvedemel");
   assert(second.fromCache, "Second call from cache");
-  assert(second.count === 1, "Cached results must be relevance-checked too");
+  assert(second.count === 3, "Cached results also show all raw items");
   assert(realRequests === 1, "Second search must use zero Prej calls");
-  assert((cache[0] as {query_key:string}).query_key.startsWith("q:bilkatogo:food3:"), "Keep ToGo distinct from Bilka cache");
+  assert((cache[0] as {query_key:string}).query_key.startsWith("q:bilkatogo:raw4:"), "Raw queries have their own source-scoped cache");
 });
 
-Deno.test("manual search refuses Flødebolle and flødelikør as Fløde", async () => {
+Deno.test("raw manual search includes even Flødebolle and flødelikør for user review", async () => {
   const savedProducts: unknown[] = [];
   const candidates: Array<Record<string, unknown>> = [];
   const caches: Array<Record<string, unknown>> = [];
@@ -117,13 +117,61 @@ Deno.test("manual search refuses Flødebolle and flødelikør as Fløde", async 
     },
   };
   const first = await manualProductSearch(ctx, ingredient, "fløde");
-  assert(first.count === 1, "Only actual whipping cream is relevant");
-  assert(candidates.length === 1, "No non-cream candidates");
-  assert(candidates[0].product_id === "bilkatogo:100101", "Expected ToGo piskefløde");
-  assert(candidates[0].match_score !== null, "Ranked by ingredient match");
+  assert(first.count === 3, "User can inspect all results, including poor ones");
+  assert(candidates.length === 3, "All ToGo products shown without hidden filtering");
+  assert(candidates.some((c) => c.product_id === "bilkatogo:100101"), "Actual cream visible");
+  assert(candidates.every((c) => c.match_score === null), "No unsupported relevance claims");
   const second = await manualProductSearch(ctx, ingredient, "fløde");
-  assert(second.count === 1 && second.fromCache, "Cache path must be relevance-filtered");
+  assert(second.count === 3 && second.fromCache, "Cache retains all raw results");
   assert(providerCalls === 1, "No extra Prej call for cached search");
-  assert(candidates.every((c) => c.product_id === "bilkatogo:100101"),
-    "Cache cannot reintroduce invalid suggestions");
+  assert(candidates.some((c) => c.product_id === "bilkatogo:87649"),
+    "Cache keeps even irrelevant results for explicit user review");
+});
+
+Deno.test("manual pagination retains every result in page-specific cache", async () => {
+  const products: Array<Record<string, unknown>> = [];
+  const candidates: Array<Record<string, unknown>> = [];
+  const cached: Array<Record<string, unknown>> = [];
+  let called = 0;
+  const ctx = {
+    householdId: house,
+    userId: "owner",
+    admin: async (path: string, method: "GET" | "POST", body?: unknown): Promise<unknown> => {
+      if (method === "GET") {
+        if (path.includes("/ingredients?"))
+          return [{ id: ingredient, name: "Agurk", never_buy: false }];
+        if (path.includes("/bilka_search_cache?"))
+          return cached.filter((x) => String(x.query_key) ===
+            decodeURIComponent(path.split("&query_key=eq.")[1].split("&")[0]));
+        if (path.includes("/bilka_products?")) return products;
+        throw new Error("Unexpected read " + path);
+      }
+      const rows = body as Array<Record<string, unknown>>;
+      if (path.includes("/bilka_products?")) products.push(...rows);
+      if (path.includes("/bilka_search_cache?")) cached.push(...rows);
+      if (path.includes("/ingredient_bilka_candidates?")) candidates.push(...rows);
+      return rows;
+    },
+    rpc: async (name: string): Promise<unknown> =>
+      name === "prej_read_key" ? "fake-key" : true,
+    request: async (url: string | URL | Request): Promise<Response> => {
+      called++;
+      const page = Number(new URL(String(url)).searchParams.get("page"));
+      const items = Array.from({ length: page === 1 ? 100 : 1 }, (_, i) => ({
+        id: (page - 1) * 100 + i + 1,
+        name: "Tilfældig vare " + i,
+        prices: [{ chain_slug: "bilkatogo", price: 500 }],
+      }));
+      return Response.json({ total: 101, products: items });
+    },
+  };
+  const first = await manualProductSearch(ctx, ingredient, "agurk", 1);
+  assert(first.count === 100 && first.hasMore, "First page is all 100 results");
+  const second = await manualProductSearch(ctx, ingredient, "agurk", 2);
+  assert(second.count === 1 && !second.hasMore, "Second page contains last result");
+  assert(called === 2, "Each uncached page costs one call");
+  assert(candidates.length === 101, "All 101 results are visible candidates");
+  const again = await manualProductSearch(ctx, ingredient, "agurk", 1);
+  assert(again.fromCache && again.count === 100 && called === 2,
+    "Repeated page uses free application cache");
 });
