@@ -67,6 +67,13 @@ android {
             optimization {
                 enable = true
             }
+            // Include available native .so debug metadata in the Play AAB.
+            // FULL gives native function names and source lines where the
+            // dependency ships unstripped symbols; stripped libraries may
+            // not provide enough information for AGP to extract symbols.
+            ndk {
+                debugSymbolLevel = "FULL"
+            }
         }
         create("benchmark") {
             initWith(getByName("release"))
