@@ -41,9 +41,32 @@ internal fun MealHistoryScreen(
 ) {
     var editingDate by remember { mutableStateOf<LocalDate?>(null) }
     var search by remember { mutableStateOf("") }
+    var unlockingDate by remember { mutableStateOf<LocalDate?>(null) }
     val today = LocalDate.now()
     val dates = remember(today) {
         (0 until 35).map { today.minusDays(it.toLong()) }
+    }
+
+    unlockingDate?.let { date ->
+        AlertDialog(
+            onDismissRequest = { unlockingDate = null },
+            title = { Text("Lås spist måltid op?") },
+            text = {
+                Text(
+                    "Et færdigregistreret måltid er låst. En rettelse i historikken " +
+                        "justerer ikke lagerforbruget. Lås kun op, hvis registreringen er forkert."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.unlockRegisteredMeal(date)
+                    unlockingDate = null
+                }) { Text("Lås op") }
+            },
+            dismissButton = {
+                TextButton(onClick = { unlockingDate = null }) { Text("Annuller") }
+            }
+        )
     }
 
     editingDate?.let { date ->
@@ -167,9 +190,19 @@ internal fun MealHistoryScreen(
                         }
                         TextButton(onClick = {
                             search = ""
-                            editingDate = date
+                            if (logged != null && !state.isRegisteredMealEditable(date)) {
+                                unlockingDate = date
+                            } else {
+                                editingDate = date
+                            }
                         }) {
-                            Text(if (logged == null) "Registrér" else "Ret")
+                            Text(
+                                when {
+                                    logged == null -> "Registrér"
+                                    state.isRegisteredMealEditable(date) -> "Ret"
+                                    else -> "Lås op"
+                                }
+                            )
                         }
                     }
                 }
