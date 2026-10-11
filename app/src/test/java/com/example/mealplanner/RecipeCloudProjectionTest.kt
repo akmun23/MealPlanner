@@ -19,6 +19,14 @@ class RecipeCloudProjectionTest {
             ),
             recipeCloudReadColumns
         )
+        val serializedColumnNames = RecipeRow.serializer().descriptor.let { descriptor ->
+            (0 until descriptor.elementsCount).map(descriptor::getElementName)
+        }
+        assertEquals(
+            "Every serializable recipe field must be included in remote SELECT",
+            serializedColumnNames,
+            recipeCloudReadColumns
+        )
     }
 
     @Test
