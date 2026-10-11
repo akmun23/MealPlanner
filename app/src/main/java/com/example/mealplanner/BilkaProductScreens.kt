@@ -435,6 +435,9 @@ internal fun BilkaProductPickerScreen(
     var searchOtherBrand by remember(ingredientId) { mutableStateOf(false) }
     var searchingMore by remember(ingredientId) { mutableStateOf(false) }
     var moreMessage by remember(ingredientId) { mutableStateOf<String?>(null) }
+    var lastQuery by remember(ingredientId) { mutableStateOf(ingredientName) }
+    var nextPage by remember(ingredientId) { mutableStateOf<Int?>(null) }
+    var totalRawFound by remember(ingredientId) { mutableStateOf<Int?>(null) }
 
     suspend fun reload() {
         busy = true
@@ -503,8 +506,11 @@ internal fun BilkaProductPickerScreen(
                                 moreMessage = null
                                 scope.launch {
                                     BilkaPrejClient.manualSearch(
-                                        householdId, ingredientId, moreQuery
+                                        householdId, ingredientId, moreQuery, 1
                                     ).onSuccess { info ->
+                                        lastQuery = moreQuery
+                                        nextPage = if (info["hasMore"]?.toString() == "true") 2 else null
+                                        totalRawFound = info["providerTotal"]?.toString()?.toIntOrNull()
                                         val count = info["count"]?.toString()?.trim('"') ?: "0"
                                         val received = info["receivedCount"]?.toString()?.toIntOrNull()
                                         val afterCategory = info["afterCategory"]?.toString()?.toIntOrNull()
@@ -530,6 +536,29 @@ internal fun BilkaProductPickerScreen(
                             modifier = Modifier.fillMaxWidth()
                         ) { Text(if (searchingMore) "Søger …" else "Søg i BilkaToGo") }
                         moreMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                        nextPage?.let { page ->
+                            OutlinedButton(
+                                enabled = !searchingMore,
+                                onClick = {
+                                    searchingMore = true
+                                    scope.launch {
+                                        BilkaPrejClient.manualSearch(
+                                            householdId, ingredientId, lastQuery, page
+                                        ).onSuccess { info ->
+                                            val added = info["count"]?.toString() ?: "0"
+                                            moreMessage = "Side $page: $added varer tilføjet til listen. " +
+                                                "I alt: ${totalRawFound ?: "ukendt"}. " +
+                                                "Et nyt sideopslag kan koste ét kald."
+                                            nextPage = if (info["hasMore"]?.toString() == "true")
+                                                page + 1 else null
+                                            reload()
+                                        }.onFailure { moreMessage = it.message }
+                                        searchingMore = false
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("Hent næste 100 varer – op til 1 kald") }
+                        }
                     }
                 }
             }
