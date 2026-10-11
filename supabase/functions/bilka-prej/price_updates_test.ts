@@ -33,6 +33,22 @@ Deno.test("refresh preserves exact selected product even if Prej changes brand, 
   equal(ALLOWED_BILKA_RPCS.has("bilka_update_prices_only"), true);
 });
 
+Deno.test("price refresh never swaps Bilka and BilkaToGo prices", () => {
+  const product = {
+    id: 42, name: "Testvare",
+    prices: [
+      { chain_slug: "bilka", price: 2000 },
+      { chain_slug: "bilkatogo", price: 1700 },
+    ],
+  };
+  equal(priceOnlyUpdates([product], ["42", "bilkatogo:42"]).map(
+    (p) => [p.id, p.price_ore],
+  ), [["42", 2000], ["bilkatogo:42", 1700]]);
+  equal(priceOnlyUpdates([product], ["bilkatogo:42"]).map(
+    (p) => [p.id, p.price_ore],
+  ), [["bilkatogo:42", 1700]]);
+});
+
 Deno.test("manual refresh does not import unrelated products or BilkaToGo prices", () => {
   const rows = priceOnlyUpdates([
     { id: 43, name: "Another product", prices: [{ chain_slug: "bilka", price: 3200 }] },
