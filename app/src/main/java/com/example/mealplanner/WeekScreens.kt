@@ -841,38 +841,42 @@ fun DayCard(
 
                 Spacer(Modifier.height(8.dp))
 
-                // Let long categories and the time filter wrap on small screens.
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier.fillMaxWidth()
+                // Keep the preparation-time control anchored to the first row.
+                // A single FlowRow used to push "Tid" onto a visually detached
+                // second row when category labels were long.
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.Top
                 ) {
                     if (recipe != null) {
-                        if (isSandwich) StatusPill("Ugens sandwich", true)
-                        if (recipeCategory.isNotBlank()) StatusPill(recipeCategory, false)
-                        recipe.prepMinutes?.let {
-                            StatusPill("$it min", false)
+                        FlowRow(
+                            modifier = Modifier.weight(1f),
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            verticalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            if (isSandwich) StatusPill("Ugens sandwich", true)
+                            if (recipeCategory.isNotBlank()) StatusPill(recipeCategory, false)
+                            recipe.prepMinutes?.let { StatusPill("$it min", false) }
                         }
                     }
 
                     Box {
                         FilterChip(
+                            modifier = Modifier.heightIn(min = 32.dp),
                             selected = maxPrepMinutes != null,
                             onClick = { showTimePicker = true },
                             label = {
-                                Text(prepLimitLabel(maxPrepMinutes))
+                                Text(prepLimitLabel(maxPrepMinutes), maxLines = 1)
                             }
                         )
-
                         DropdownMenu(
                             expanded = showTimePicker,
                             onDismissRequest = { showTimePicker = false }
                         ) {
                             listOf(null, 30, 60).forEach { minutes ->
                                 DropdownMenuItem(
-                                    text = {
-                                        Text(prepLimitOptionLabel(minutes))
-                                    },
+                                    text = { Text(prepLimitOptionLabel(minutes)) },
                                     onClick = {
                                         state.setDayMaxPrepMinutes(day, minutes)
                                         showTimePicker = false
