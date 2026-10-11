@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -1739,14 +1740,16 @@ internal fun <T> SimpleSelector(
     options: List<T>,
     optionText: (T) -> String,
     onSelected: (T) -> Unit,
-    fillWidth: Boolean = false
+    fillWidth: Boolean = false,
+    minHeight: Dp = 0.dp
 ) {
     var expanded by remember { mutableStateOf(false) }
 
     Box(modifier = if (fillWidth) Modifier.fillMaxWidth() else Modifier) {
         OutlinedButton(
             onClick = { expanded = true },
-            modifier = if (fillWidth) Modifier.fillMaxWidth() else Modifier,
+            modifier = (if (fillWidth) Modifier.fillMaxWidth() else Modifier)
+                .heightIn(min = minHeight),
             shape = RoundedCornerShape(12.dp)
         ) {
             Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
