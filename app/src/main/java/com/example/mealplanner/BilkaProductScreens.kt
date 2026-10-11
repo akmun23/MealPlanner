@@ -602,7 +602,10 @@ internal fun BilkaProductPickerScreen(
                 }
                 items(options, key = { it.id }) { product ->
                     val chosen = selected == product.id
-                    val selectable = product.id in suggestions || product.id == currentId
+                    // Raw results without a ToGo price remain visible but
+                    // cannot be chosen as a priced shopping SKU.
+                    val selectable = (product.id in suggestions && product.priceOre != null) ||
+                        product.id == currentId
                     Card(
                         onClick = { selected = product.id },
                         enabled = selectable,
