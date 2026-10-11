@@ -964,6 +964,7 @@ private fun StatusPill(
     highlighted: Boolean
 ) {
     Surface(
+        modifier = Modifier.heightIn(min = 32.dp),
         shape = CircleShape,
         color = if (highlighted) {
             MaterialTheme.colorScheme.primary
@@ -971,19 +972,21 @@ private fun StatusPill(
             MaterialTheme.colorScheme.surfaceVariant
         }
     ) {
-        Text(
-            text,
-            modifier = Modifier
-                .padding(horizontal = 8.dp, vertical = 3.dp)
-                .widthIn(max = 210.dp),
-            style = MaterialTheme.typography.labelSmall,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            color = if (highlighted) {
-                MaterialTheme.colorScheme.onPrimary
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            }
-        )
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text,
+                modifier = Modifier
+                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                    .widthIn(max = 210.dp),
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                color = if (highlighted) {
+                    MaterialTheme.colorScheme.onPrimary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
+            )
+        }
     }
 }
