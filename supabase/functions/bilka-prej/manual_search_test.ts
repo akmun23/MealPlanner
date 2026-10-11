@@ -42,27 +42,27 @@ Deno.test("manual product search reserves one user call and never changes defaul
     },
     request: async (url: string | URL | Request): Promise<Response> => {
       realRequests++;
-      assert(String(url).includes("chain=bilka"), "Only Bilka search");
-      assert(String(url).includes("grocery=1"), "Search must exclude non-grocery categories");
+      assert(new URL(String(url)).searchParams.get("chain") === "bilkatogo", "Use ToGo grocery source");
+      assert(!new URL(String(url)).searchParams.has("grocery"), "Do not drop uncategorised ToGo products");
       return Response.json({
         products: [
           { id: 333, name: "Hvedemel 2 kg", brand: "Eksempelmærke", category_name: "Kolonial",
-            prices: [{ chain_slug: "bilka", price: 2000, unit_price: 1000 }] },
+            prices: [{ chain_slug: "bilkatogo", price: 2000, unit_price: 1000 }] },
           { id: 335, name: "Hvedemel 1 kg", category_name: "Kolonial",
-            prices: [{ chain_slug: "bilkatogo", price: 800 }] },
+            prices: [{ chain_slug: "bilka", price: 800 }] },
           { id: 336, name: "Hvedemel kropsskrub",
             category_name: "Personlig pleje",
-            prices: [{ chain_slug: "bilka", price: 1400 }] },
+            prices: [{ chain_slug: "bilkatogo", price: 1400 }] },
           { id: 337, name: "Hvedemel hundefoder",
             category_name: "Dyremad",
-            prices: [{ chain_slug: "bilka", price: 1200 }] }
+            prices: [{ chain_slug: "bilkatogo", price: 1200 }] }
         ],
         total: 4
       });
     }
   };
   const first = await manualProductSearch(ctx, ingredient, "hvedemel");
-  assert(first.count === 1, "Exclude BilkaToGo and non-food products");
+  assert(first.count === 1, "Exclude Bilka-only and non-food products");
   assert(!first.fromCache, "First call is fresh");
   assert(realRequests === 1, "Exactly one Prej call");
   assert(candidateRows.length === 1, "Only valid product suggested");
@@ -74,7 +74,7 @@ Deno.test("manual product search reserves one user call and never changes defaul
   assert(second.fromCache, "Second call from cache");
   assert(second.count === 1, "Cached results must be relevance-checked too");
   assert(realRequests === 1, "Second search must use zero Prej calls");
-  assert((cache[0] as {query_key:string}).query_key.startsWith("q:bilka:grocery1:food2:"), "No reuse of unfiltered search cache");
+  assert((cache[0] as {query_key:string}).query_key.startsWith("q:bilkatogo:food3:"), "Keep ToGo distinct from Bilka cache");
 });
 
 Deno.test("manual search refuses Flødebolle and flødelikør as Fløde", async () => {
@@ -107,11 +107,11 @@ Deno.test("manual search refuses Flødebolle and flødelikør as Fløde", async 
       return Response.json({
         total: 3, products: [
           { id: 87649, name: "Holiday Flødelikør 17%", category_name: "Drikkevarer",
-            prices: [{ chain_slug: "bilka", price: 6495 }] },
+            prices: [{ chain_slug: "bilkatogo", price: 6495 }] },
           { id: 135282, name: "SNCK Proteinbar Flødebolle", category_name: "Slik & snacks",
-            prices: [{ chain_slug: "bilka", price: 2200 }] },
+            prices: [{ chain_slug: "bilkatogo", price: 2200 }] },
           { id: 100101, name: "Arla Piskefløde 38%", category_name: "Mejeri & køl",
-            prices: [{ chain_slug: "bilka", price: 1895 }] },
+            prices: [{ chain_slug: "bilkatogo", price: 1895 }] },
         ],
       });
     },
@@ -119,11 +119,11 @@ Deno.test("manual search refuses Flødebolle and flødelikør as Fløde", async 
   const first = await manualProductSearch(ctx, ingredient, "fløde");
   assert(first.count === 1, "Only actual whipping cream is relevant");
   assert(candidates.length === 1, "No non-cream candidates");
-  assert(candidates[0].product_id === "100101", "Expected piskefløde");
+  assert(candidates[0].product_id === "bilkatogo:100101", "Expected ToGo piskefløde");
   assert(candidates[0].match_score !== null, "Ranked by ingredient match");
   const second = await manualProductSearch(ctx, ingredient, "fløde");
   assert(second.count === 1 && second.fromCache, "Cache path must be relevance-filtered");
   assert(providerCalls === 1, "No extra Prej call for cached search");
-  assert(candidates.every((c) => c.product_id === "100101"),
+  assert(candidates.every((c) => c.product_id === "bilkatogo:100101"),
     "Cache cannot reintroduce invalid suggestions");
 });
