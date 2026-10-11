@@ -434,6 +434,7 @@ internal fun BilkaProductPickerScreen(
     var cheapest by remember(ingredientId) { mutableStateOf(false) }
     var visibleCount by remember(ingredientId) { mutableStateOf(12) }
     var moreQuery by remember(ingredientId) { mutableStateOf(ingredientName) }
+    var eanText by remember(ingredientId) { mutableStateOf("") }
     var searchOtherBrand by remember(ingredientId) { mutableStateOf(false) }
     var searchingMore by remember(ingredientId) { mutableStateOf(false) }
     var moreMessage by remember(ingredientId) { mutableStateOf<String?>(null) }
@@ -538,6 +539,58 @@ internal fun BilkaProductPickerScreen(
                             enabled = !searchingMore && moreQuery.trim().length >= 2,
                             modifier = Modifier.fillMaxWidth()
                         ) { Text(if (searchingMore) "Søger …" else "Søg i BilkaToGo") }
+                        Text(
+                            "Har du EAN-nummeret fra BilkaToGo? Et nyt nummer bruger " +
+                                "1 Prej-kald, mens et allerede gemt EAN koster 0.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        androidx.compose.material3.OutlinedTextField(
+                            value = eanText,
+                            onValueChange = { eanText = it.filter(Char::isDigit).take(14) },
+                            label = { Text("EAN / stregkode") },
+                            supportingText = {
+                                Text("8, 12, 13 eller 14 cifre. Søgningen kræver et præcist BilkaToGo-stregkodematch.")
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                        OutlinedButton(
+                            onClick = {
+                                searchingMore = true
+                                moreMessage = null
+                                scope.launch {
+                                    BilkaPrejClient.lookupEan(
+                                        householdId, ingredientId, eanText
+                                    ).onSuccess { info ->
+                                        val found = info["found"]?.toString() == "true"
+                                        val cached = info["fromCache"]?.toString() == "true"
+                                        val name = info["productName"]?.toString()?.trim('"')
+                                        moreMessage = when {
+                                            found ->
+                                                "EAN fundet hos BilkaToGo – " +
+                                                    (if (cached) "0 API-kald." else "1 API-kald.") +
+                                                    " Kontrollér varen og vælg den selv."
+                                            else ->
+                                                "Intet sikkert BilkaToGo-match til denne stregkode. " +
+                                                    (if (cached) "0 API-kald." else "1 API-kald.") +
+                                                    " Prøv eventuelt at søge efter varenavn."
+                                        }
+                                        if (found) {
+                                            reload()
+                                            // Narrow the existing suggestions to the exact product;
+                                            // do not select or save a product automatically.
+                                            if (!name.isNullOrBlank()) search = name
+                                        }
+                                    }.onFailure { moreMessage = it.message }
+                                    searchingMore = false
+                                }
+                            },
+                            enabled = !searchingMore &&
+                                eanText.length in listOf(8, 12, 13, 14),
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if (searchingMore) "Slår op …" else "Find vare via EAN")
+                        }
                         moreMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                         nextPage?.let { page ->
                             OutlinedButton(
