@@ -8,6 +8,7 @@ import { priceOnlyUpdates } from "./price_updates.ts";
 import {
   batchIds,
   dailyRemaining,
+  providerProductId,
   toBilkaCacheRow,
   validPrejKey,
   type PrejProduct,
@@ -289,8 +290,9 @@ async function refresh(userId: string, householdId: unknown): Promise<Response> 
   if (!distinct.length) return json({ updated: 0, requested: 0, message: "no_selected_products" });
 
   // Phase 2 refreshes up to one batch. Discovery/queue is phase 3.
-  const batches = batchIds(distinct, 500);
-  const ids = batches[0] ?? [];
+  const batches = batchIds(distinct.map(providerProductId), 500);
+  const providerIds = batches[0] ?? [];
+  const ids = distinct.filter((id) => providerIds.includes(providerProductId(id)));
   const existing = await adminRequest(
     "/rest/v1/bilka_products?select=id,price_updated_at&id=in.(" + ids.join(",") + ")",
     "GET",
@@ -317,7 +319,8 @@ async function refresh(userId: string, householdId: unknown): Promise<Response> 
   let response: Response;
   try {
     response = await fetch(
-      PREJ_BASE + "/v1/products/batch?ids=" + encodeURIComponent(stale.join(",")),
+      PREJ_BASE + "/v1/products/batch?ids=" +
+        encodeURIComponent([...new Set(stale.map(providerProductId))].join(",")),
       {
         headers: { Authorization: "Bearer " + key },
         signal: AbortSignal.timeout(20_000),
