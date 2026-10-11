@@ -226,31 +226,33 @@ fun WeekScreen(
         )
     }
 
+    // Keep date-dependent values outside lazy item lambdas so each overview
+    // section can be measured and recycled independently when scrolling.
+    val start = state.displayedWeekStart
+    val end = start.plusDays(6)
+    val dateFormat = DateTimeFormatter.ofPattern("d. MMM", Locale.forLanguageTag("da-DK"))
+    val weekNumber = start.get(WeekFields.ISO.weekOfWeekBasedYear())
+    val today = LocalDate.now()
+    val todayRecipe = if (today in start..end &&
+        state.dayModes[today.dayOfWeek] != DayMode.AWAY
+    ) state.recipeFor(today.dayOfWeek) else null
+    val todayEaten = state.history.find { it.eatenOn == today }
+
     // Day cards are expensive to measure (photos, menus, status chips).
-    // Compose only the visible days instead of laying out the whole week
-    // for every scroll frame.
+    // Compose only visible overview sections and day cards, not a single
+    // enormous summary item on every scroll frame.
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        item(key = "week-summary") {
+        item(key = "week-navigation", contentType = "week-section") {
             Column {
                 Text(
             "Madplan",
             style = MaterialTheme.typography.headlineMedium,
             fontWeight = FontWeight.Bold
         )
-
-        val start = state.displayedWeekStart
-        val end = start.plusDays(6)
-        val dateFormat = DateTimeFormatter.ofPattern("d. MMM", Locale.forLanguageTag("da-DK"))
-        val weekNumber = start.get(WeekFields.ISO.weekOfWeekBasedYear())
-        val today = LocalDate.now()
-        val todayRecipe = if (today in start..end &&
-            state.dayModes[today.dayOfWeek] != DayMode.AWAY
-        ) state.recipeFor(today.dayOfWeek) else null
-        val todayEaten = state.history.find { it.eatenOn == today }
 
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -321,9 +323,12 @@ fun WeekScreen(
                 }
             }
         }
+            }
+        }
 
+        item(key = "week-today", contentType = "week-section") {
+            Column {
         if (today in start..end) {
-            Spacer(Modifier.height(10.dp))
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
@@ -393,9 +398,11 @@ fun WeekScreen(
                 }
             }
         }
+            }
+        }
 
-        Spacer(Modifier.height(12.dp))
-
+        item(key = "week-generate", contentType = "week-section") {
+            Column {
         Button(
             onClick = {
                 if (WeekRules.needsRegenerationConfirmation(
@@ -447,9 +454,11 @@ fun WeekScreen(
                 modifier = Modifier.size(24.dp)
             )
         }
+            }
+        }
 
-        Spacer(Modifier.height(12.dp))
-
+        item(key = "week-stats", contentType = "week-section") {
+            Column {
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             SummaryCard("Hjemme", "$homeCount dage", Modifier.weight(1f))
             SummaryCard(
@@ -459,9 +468,11 @@ fun WeekScreen(
                 highlighted = true
             )
         }
+            }
+        }
 
-        Spacer(Modifier.height(12.dp))
-
+        item(key = "week-sandwich", contentType = "week-section") {
+            Column {
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.End
@@ -480,7 +491,11 @@ fun WeekScreen(
                 }
             }
         }
+            }
+        }
 
+        item(key = "week-lunch", contentType = "week-section") {
+            Column {
         SectionCard("Frokost") {
             selectedLunch.forEach { recipe ->
                 Row(
@@ -525,9 +540,6 @@ fun WeekScreen(
                 }
             }
         }
-
-        Spacer(Modifier.height(14.dp))
-
             }
         }
 
@@ -732,7 +744,7 @@ fun DayCard(
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = if (away) 0.dp else 1.dp)
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
+        Column(modifier = Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     modifier = Modifier.size(44.dp),
@@ -886,13 +898,22 @@ fun DayCard(
                     } else {
                         val eatenName = state.recipes.find { it.id == eatenId }?.name
                             ?: "Ukendt opskrift"
-                        Text(
-                            "Spist og registreret: $eatenName",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        TextButton(onClick = onMealHistory) {
-                            Text("Ret spist ret")
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                "Spist og registreret: $eatenName",
+                                modifier = Modifier.weight(1f),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.primary,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            TextButton(onClick = onMealHistory) {
+                                Text("Ret spist ret")
+                            }
                         }
                     }
                 }
