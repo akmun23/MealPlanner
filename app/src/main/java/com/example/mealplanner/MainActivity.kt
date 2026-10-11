@@ -1738,16 +1738,18 @@ internal fun <T> SimpleSelector(
     label: String,
     options: List<T>,
     optionText: (T) -> String,
-    onSelected: (T) -> Unit
+    onSelected: (T) -> Unit,
+    fillWidth: Boolean = false
 ) {
     var expanded by remember { mutableStateOf(false) }
 
-    Box {
+    Box(modifier = if (fillWidth) Modifier.fillMaxWidth() else Modifier) {
         OutlinedButton(
             onClick = { expanded = true },
+            modifier = if (fillWidth) Modifier.fillMaxWidth() else Modifier,
             shape = RoundedCornerShape(12.dp)
         ) {
-            Text(label)
+            Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
 
         DropdownMenu(
