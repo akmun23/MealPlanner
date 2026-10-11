@@ -1189,6 +1189,28 @@ private fun SettingsScreen(
             }
 
             item {
+                SectionCard("BilkaToGo") {
+                    Text(
+                        "Administrér din personlige Prej API-nøgle, søgekald og automatisk prisopdatering.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Button(
+                        onClick = onBilkaApiSettings,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Prej API-nøgle og søgeindstillinger")
+                    }
+                    OutlinedButton(
+                        onClick = onBilkaProducts,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Mine BilkaToGo-produkter")
+                    }
+                }
+            }
+
+            item {
                 OutlinedButton(
                     onClick = onIngredientCategories,
                     modifier = Modifier.fillMaxWidth(),
@@ -1235,28 +1257,6 @@ private fun SettingsScreen(
                     shape = RoundedCornerShape(14.dp)
                 ) {
                     Text("Sikkerhedskopi og mine data")
-                }
-            }
-
-            item {
-                SectionCard("BilkaToGo") {
-                    Text(
-                        "Administrér din personlige Prej API-nøgle, søgekald og automatisk prisopdatering.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Button(
-                        onClick = onBilkaApiSettings,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Prej API-nøgle og søgeindstillinger")
-                    }
-                    OutlinedButton(
-                        onClick = onBilkaProducts,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Text("Mine BilkaToGo-produkter")
-                    }
                 }
             }
 
