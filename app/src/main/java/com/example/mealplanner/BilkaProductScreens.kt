@@ -253,9 +253,14 @@ internal fun BilkaProductsScreen(
                 }
             }
             item {
-                Button(onClick = onImport, modifier = Modifier.fillMaxWidth()) {
-                    Text("Hent flere varer")
-                }
+                Text(
+                    "Automatisk import er sat på pause, fordi søgeresultaterne " +
+                        "var upålidelige. Vælg en ingrediens nedenfor, og brug " +
+                        "'Søg i Bilka' på varesiden. Kun en ny, manuel søgning " +
+                        "kan bruge et Prej-kald; tidligere gemte søgninger er gratis.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
             item {
                 SearchField(search, { search = it }, "Søg efter ingrediens")
@@ -414,7 +419,9 @@ internal fun BilkaProductPickerScreen(
                 if (searchOtherBrand) item {
                     SectionCard("Find en anden vare") {
                         Text(
-"Søg på mærke eller varenavn. Gemte søgninger bruger ingen API-kald.",
+"Indtast et konkret produktnavn. En ny søgning bruger 1 Prej-kald, " +
+                                "men et identisk gemt opslag bruger 0. " +
+                                "Kun du vælger den endelige vare.",
                             style = MaterialTheme.typography.bodySmall
                         )
                         androidx.compose.material3.OutlinedTextField(
@@ -455,8 +462,11 @@ internal fun BilkaProductPickerScreen(
             } else if (options.isEmpty() && data?.productsFor(ingredientId).isNullOrEmpty()) {
                 item {
                     EmptyCard("Ingen produktforslag til " + ingredientName + " endnu.")
-                    Button(onClick = onImport, modifier = Modifier.fillMaxWidth()) {
-                        Text("Hent flere produktforslag")
+                    Button(
+                        onClick = { searchOtherBrand = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Søg selv efter Bilka-varer")
                     }
                 }
             } else {
