@@ -94,6 +94,18 @@ private data class RecipeCategoryAssignmentRow(
     @SerialName("category_id") val categoryId: String
 )
 
+/** Every persisted RecipeRow field must be requested during remote refresh. */
+internal val recipeCloudReadColumns = listOf(
+    "id",
+    "household_id",
+    "name",
+    "meal_type",
+    "notes",
+    "instruction_steps",
+    "source_url",
+    "image_path",
+)
+
 @Serializable
 internal data class RecipeRow(
     val id: String,
@@ -626,15 +638,12 @@ class CloudMealRepository(
                     }.decodeList<RecipeCategoryAssignmentRow>()
                 }
                 val recipesDeferred = async {
+                    // Explicit projection MUST include every persisted RecipeRow
+                    // field. Omitting steps/URL silently applies their Kotlin
+                    // defaults during decoding and then wipes the user's edits
+                    // when realtime refresh replaces the optimistic recipe.
                     supabase.from("recipes").select(
-                        columns = Columns.list(
-                            "id",
-                            "household_id",
-                            "name",
-                            "meal_type",
-                            "notes",
-                            "image_path"
-                        )
+                        columns = Columns.list(*recipeCloudReadColumns.toTypedArray())
                     ) {
                         filter { eq("household_id", householdId) }
                     }.decodeList<RecipeRow>()
