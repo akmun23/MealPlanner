@@ -69,6 +69,10 @@ Connect the test phone over USB with developer mode enabled.
 bash ./gradlew :macrobenchmark:connectedBenchmarkAndroidTest
 ```
 
+The frame benchmarks now cover **Madplan**, **Opskrifter**, **Lager** and **Indkøb**. Use the same populated household and scroll the same items for before/after runs; otherwise a mostly empty list gives misleading numbers. On a 60 Hz display, frames above ~16.7 ms can appear janky (for 90/120 Hz, the budget is lower). Examine the P90/P95/P99 frame-time results and Perfetto traces rather than the average alone. Do not compare Android Studio debug builds with release-like builds: Compose debuggability, compiler optimizations and R8 settings differ.
+
+**Photo loading trade-off:** broad background prefetch of up to 150 images was removed to prevent concurrent signing/network/decoding load during flings. The first visit may show fallbacks until visible photos load. Repeat the benchmark once with a cold image cache and once warm; compare each condition separately.
+
 `coldStartup` works at the login gate as well as inside a household. `tabNavigationFrameTiming` requires a previously signed-in and prepared household on the test installation; if you are on the login screen it reports a clear failure rather than fake zero-jank metrics.
 
 Record baseline median startup time and frame-time P90/P95 in Android Studio, and keep the generated JSON/Perfetto traces under your own results archive. Repeat each benchmark on the same device / OS / dataset at a consistent temperature and compare PRs only under the same conditions. Emulators are useful for testing benchmark plumbing but **not** trustworthy performance measurements.
