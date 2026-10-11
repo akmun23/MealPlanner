@@ -7,7 +7,7 @@ package com.example.mealplanner
  */
 internal object BilkaSelectionRules {
     private val nonCooking = Regex(
-        """\b(?:likoer|tequila|vodka|whisky|whiskey|spiritus|vin|rom|snaps|frø|froe|frøpose|pottejord|plante|planter|plantejord|krukke|potte|duftlys|shampoo|hundemad|hundefoder|kattemad|legetoej)\b"""
+        """(?:^| )\S*(?:likoer|tequila|vodka|whisky|whiskey|spiritus|snaps|froe|pottejord|plante|planter|plantejord|duftlys|shampoo|hundefoder|kattemad|legetoej)(?: |$)"""
     )
 
     private fun normalized(value: String): String = value.lowercase()
