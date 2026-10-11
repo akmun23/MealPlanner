@@ -62,17 +62,24 @@ Deno.test("manual product search reserves one user call and never changes defaul
     }
   };
   const first = await manualProductSearch(ctx, ingredient, "hvedemel");
-  assert(first.count === 3, "Show all ToGo-priced products, even non-food");
+  assert(first.count === 4, "Show all provider items, even ones without a ToGo price");
   assert(!first.fromCache, "First call is fresh");
   assert(realRequests === 1, "Exactly one Prej call");
-  assert(candidateRows.length === 3, "No result hidden by relevance or category filters");
+  assert(candidateRows.length === 4, "No provider result hidden by relevance or missing price");
   assert(seen.includes("prej_reserve_call"), "Must reserve quota");
+  assert(candidateRows.some((x) =>
+    (x as {product_id: string}).product_id === "bilkatogo:335"),
+    "Bilka-only returned products must remain visible as unpriced placeholders");
+  assert(productRows.some((x) => {
+    const p = x as {id:string,price_ore:number|null,is_available:boolean};
+    return p.id === "bilkatogo:335" && p.price_ore === null && p.is_available === false;
+  }), "Never invent ToGo prices for missing-price items");
   assert(seen.every((p) => !p.includes("/ingredient_bilka_defaults")),
     "Never auto-write defaults");
 
   const second = await manualProductSearch(ctx, ingredient, "hvedemel");
   assert(second.fromCache, "Second call from cache");
-  assert(second.count === 3, "Cached results also show all raw items");
+  assert(second.count === 4, "Cached results also show all raw items");
   assert(realRequests === 1, "Second search must use zero Prej calls");
   assert((cache[0] as {query_key:string}).query_key.startsWith("q:bilkatogo:raw4:"), "Raw queries have their own source-scoped cache");
 });
