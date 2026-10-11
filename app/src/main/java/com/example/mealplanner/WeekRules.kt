@@ -1,6 +1,7 @@
 package com.example.mealplanner
 
 import java.time.DayOfWeek
+import java.time.LocalDate
 
 data class DayToggleResult(
     val modes: Map<DayOfWeek, DayMode>,
@@ -8,6 +9,31 @@ data class DayToggleResult(
 )
 
 object WeekRules {
+
+    /** A meal is completed on its actual date, independent of the day card's recipe. */
+    fun completedOn(date: LocalDate, history: List<MealHistoryEntry>): Boolean =
+        history.any { it.eatenOn == date }
+
+    fun completedDaysForWeek(
+        weekStart: LocalDate,
+        history: List<MealHistoryEntry>
+    ): Set<DayOfWeek> = history.asSequence()
+        .filter { !it.eatenOn.isBefore(weekStart) && it.eatenOn.isBefore(weekStart.plusWeeks(1)) }
+        .map { it.eatenOn.dayOfWeek }
+        .toSet()
+
+    /** Every week is independently editable until one of its dinners is completed. */
+    fun requiresRegenerationUnlock(
+        weekStart: LocalDate,
+        history: List<MealHistoryEntry>,
+        unlockedWeeks: Set<LocalDate>
+    ): Boolean = weekStart !in unlockedWeeks && completedDaysForWeek(weekStart, history).isNotEmpty()
+
+    fun completedDayLocked(
+        date: LocalDate,
+        history: List<MealHistoryEntry>,
+        unlockedDates: Set<LocalDate>
+    ): Boolean = date !in unlockedDates && completedOn(date, history)
 
     /** Only ask for destructive regeneration confirmation when there is a plan to replace. */
     fun needsRegenerationConfirmation(

@@ -5,6 +5,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -135,6 +139,18 @@ fun RecipesScreen(
         }
     }
 
+    // Keep pantry availability calculations independent of text search.
+    // Typing a query should only filter cached IDs, not rescan stock per recipe.
+    val makeableRecipeIds by remember(state) {
+        derivedStateOf {
+            if (!canMakeOnly) emptySet()
+            else state.recipes.asSequence()
+                .filter { state.canMake(it) }
+                .map { it.id }
+                .toSet()
+        }
+    }
+
     val filteredRecipes by remember {
         derivedStateOf {
             val query = searchQuery.trim()
@@ -155,7 +171,7 @@ fun RecipesScreen(
                         recipe.mealType.danishName() == mealFilter) &&
                     (categoryFilter == "Alle kategorier" ||
                         item.categoryName == categoryFilter) &&
-                    (!canMakeOnly || state.canMake(recipe))
+                    (!canMakeOnly || recipe.id in makeableRecipeIds)
             }
         }
     }
@@ -193,37 +209,37 @@ fun RecipesScreen(
             )
         }
 
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Box(modifier = Modifier.weight(1f)) {
-                    SimpleSelector(
-                        label = mealFilter,
-                        options = mealOptions,
-                        optionText = { it },
-                        onSelected = { mealFilter = it }
-                    )
+        item(key = "recipe-filters") {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        SimpleSelector(
+                            label = mealFilter,
+                            options = mealOptions,
+                            optionText = { it },
+                            onSelected = { mealFilter = it },
+                            fillWidth = true
+                        )
+                    }
+                    Box(modifier = Modifier.weight(1f)) {
+                        SimpleSelector(
+                            label = categoryFilter,
+                            options = categoryOptions,
+                            optionText = { it },
+                            onSelected = { categoryFilter = it },
+                            fillWidth = true
+                        )
+                    }
                 }
-
-                Box(modifier = Modifier.weight(1f)) {
-                    SimpleSelector(
-                        label = categoryFilter,
-                        options = categoryOptions,
-                        optionText = { it },
-                        onSelected = { categoryFilter = it }
-                    )
-                }
+                FilterChip(
+                    selected = canMakeOnly,
+                    onClick = { canMakeOnly = !canMakeOnly },
+                    label = { Text("Kan laves") }
+                )
             }
-        }
-
-        item {
-            FilterChip(
-                selected = canMakeOnly,
-                onClick = { canMakeOnly = !canMakeOnly },
-                label = { Text("Kan laves") }
-            )
         }
 
         if (filteredRecipes.isEmpty()) {
@@ -256,7 +272,8 @@ fun RecipesScreen(
         } else {
             items(
                 items = filteredRecipes,
-                key = { it.recipe.id }
+                key = { it.recipe.id },
+                contentType = { "recipe-card" }
             ) { item ->
                 RecipeListCard(
                     recipe = item.recipe,
@@ -768,21 +785,30 @@ internal fun RecipeDetailScreen(
             }
 
             if (recipe.instructionSteps.isNotEmpty()) {
-                item {
-                    SectionCard("Fremgangsmåde") {
-                        RecipeInstructionRules.numbered(recipe.instructionSteps).forEach { (label, step) ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                                verticalAlignment = Alignment.Top
-                            ) {
-                                Text(
-                                    label,
-                                    modifier = Modifier.width(48.dp),
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(step.text, modifier = Modifier.weight(1f))
-                            }
-                        }
+                item(key = "recipe-instructions-header") {
+                    Text(
+                        "Fremgangsmåde",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                items(
+                    items = RecipeInstructionRules.numbered(recipe.instructionSteps),
+                    key = { (_, step) -> "recipe-instruction-${step.id}" },
+                    contentType = { "recipe-instruction" }
+                ) { (label, step) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Text(
+                            label,
+                            modifier = Modifier.width(44.dp),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(step.text, modifier = Modifier.weight(1f))
                     }
                 }
             }
@@ -834,6 +860,7 @@ internal fun RecipeDetailScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun RecipeEditorScreen(
     state: MealPlannerState,
@@ -842,6 +869,10 @@ internal fun RecipeEditorScreen(
     onBack: () -> Unit,
     onSaved: (String?) -> Unit
 ) {
+    val ingredientById by remember(state) {
+        derivedStateOf { state.ingredients.associateBy { it.id } }
+    }
+
     val existing = recipeId?.let { id ->
         state.recipes.find { it.id == id }
     }
@@ -879,6 +910,10 @@ internal fun RecipeEditorScreen(
             addAll(existing?.instructionSteps.orEmpty())
         }
     }
+    // Only visible steps are measured; typing never remeasures an entire steps card.
+    val numberedSteps by remember {
+        derivedStateOf { RecipeInstructionRules.numbered(instructionSteps.toList()) }
+    }
     var newMainStep by rememberSaveable(recipeId) { mutableStateOf("") }
     var newSubStep by rememberSaveable(recipeId) { mutableStateOf("") }
     var imageUri by rememberSaveable(recipeId) { mutableStateOf(existing?.imageUri) }
@@ -894,9 +929,7 @@ internal fun RecipeEditorScreen(
     val drafts = rememberSaveable(recipeId, saver = recipeDraftSaver) {
         mutableStateListOf<DraftRequirement>().apply {
             existing?.ingredients?.forEach { requirement ->
-                val ingredient = state.ingredients.find {
-                    it.id == requirement.ingredientId
-                }
+                val ingredient = ingredientById[requirement.ingredientId]
 
                 if (ingredient != null) {
                     add(
@@ -916,9 +949,7 @@ internal fun RecipeEditorScreen(
     val prerequisiteDrafts = rememberSaveable(recipeId, saver = recipeDraftSaver) {
         mutableStateListOf<DraftRequirement>().apply {
             existing?.pantryPrerequisites?.forEach { prerequisite ->
-                val ingredient = state.ingredients.find {
-                    it.id == prerequisite.ingredientId
-                }
+                val ingredient = ingredientById[prerequisite.ingredientId]
 
                 if (ingredient != null) {
                     add(
@@ -1115,7 +1146,7 @@ internal fun RecipeEditorScreen(
         title = if (existing == null) "Ny opskrift" else "Rediger opskrift",
         onBack = { requestBack() },
         bottomBar = {
-            Surface(tonalElevation = 3.dp) {
+            if (!WindowInsets.isImeVisible) Surface(tonalElevation = 3.dp) {
                 Column {
                     saveHint?.let { hint ->
                         Text(
@@ -1185,7 +1216,8 @@ internal fun RecipeEditorScreen(
                             label = mealType.danishName(),
                             options = MealType.entries,
                             optionText = { it.danishName() },
-                            onSelected = { mealType = it }
+                            onSelected = { mealType = it },
+                            fillWidth = true
                         )
                     }
 
@@ -1208,7 +1240,8 @@ internal fun RecipeEditorScreen(
                                     ?: "Andet",
                                 options = state.recipeCategories.sortedBy { it.name.lowercase() },
                                 optionText = { it.name },
-                                onSelected = { categoryId = it.id }
+                                onSelected = { categoryId = it.id },
+                                fillWidth = true
                             )
                         }
                     }
@@ -1246,56 +1279,84 @@ internal fun RecipeEditorScreen(
                 )
             }
 
-            item {
-                SectionCard("Fremgangsmåde · ${instructionSteps.size} trin") {
-                    RecipeInstructionRules.numbered(instructionSteps.toList())
-                        .forEachIndexed { index, entry ->
-                            val (label, step) = entry
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.Top
-                            ) {
-                                Text(
-                                    label,
-                                    modifier = Modifier.width(42.dp).padding(top = 12.dp),
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                OutlinedTextField(
-                                    value = step.text,
-                                    onValueChange = { value ->
-                                        instructionSteps[index] = step.copy(text = value)
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                    label = {
-                                        Text(if (step.level == 1) "Undertrin" else "Trin")
-                                    },
-                                    minLines = 2
-                                )
-                            }
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                TextButton(onClick = {
+            item(key = "instruction-heading") {
+                Text(
+                    "Fremgangsmåde · ${instructionSteps.size} trin",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            itemsIndexed(
+                items = numberedSteps,
+                key = { _, entry -> "instruction-${entry.second.id}" },
+                contentType = { _, _ -> "instruction-step" }
+            ) { index, entry ->
+                val (label, step) = entry
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Text(
+                                label,
+                                modifier = Modifier.width(38.dp).padding(top = 12.dp),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            OutlinedTextField(
+                                value = step.text,
+                                onValueChange = { value ->
+                                    instructionSteps[index] = step.copy(text = value)
+                                },
+                                modifier = Modifier.weight(1f),
+                                label = { Text(if (step.level == 1) "Undertrin" else "Trin") },
+                                minLines = 2,
+                                maxLines = 5
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.padding(start = 38.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            TextButton(
+                                enabled = index > 0,
+                                onClick = {
                                     val changed = RecipeInstructionRules.move(
                                         instructionSteps.toList(), index, -1
                                     )
                                     instructionSteps.clear()
                                     instructionSteps.addAll(changed)
-                                }) { Text("Op") }
-                                TextButton(onClick = {
+                                }
+                            ) { Text("Op") }
+                            TextButton(
+                                enabled = index < numberedSteps.lastIndex,
+                                onClick = {
                                     val changed = RecipeInstructionRules.move(
                                         instructionSteps.toList(), index, 1
                                     )
                                     instructionSteps.clear()
                                     instructionSteps.addAll(changed)
-                                }) { Text("Ned") }
-                                TextButton(onClick = {
-                                    val changed = RecipeInstructionRules.remove(
-                                        instructionSteps.toList(), index
-                                    )
-                                    instructionSteps.clear()
-                                    instructionSteps.addAll(changed)
-                                }) { Text("Fjern") }
-                            }
+                                }
+                            ) { Text("Ned") }
+                            TextButton(onClick = {
+                                val changed = RecipeInstructionRules.remove(
+                                    instructionSteps.toList(), index
+                                )
+                                instructionSteps.clear()
+                                instructionSteps.addAll(changed)
+                            }) { Text("Fjern") }
                         }
+                    }
+                }
+            }
+            item(key = "instruction-add") {
+                SectionCard("Tilføj trin") {
                     OutlinedTextField(
                         value = newMainStep,
                         onValueChange = { newMainStep = it.take(2000) },
@@ -1334,7 +1395,6 @@ internal fun RecipeEditorScreen(
                 }
             }
 
-
             if (mealType == MealType.DINNER) {
                 item {
                     Text(
@@ -1351,9 +1411,7 @@ internal fun RecipeEditorScreen(
                     }
                 ) { indexed ->
                     val draft = indexed.value
-                    val ingredient = state.ingredients.find {
-                        it.id == draft.ingredientId
-                    }
+                    val ingredient = ingredientById[draft.ingredientId]
 
                     if (ingredient != null) {
                         RequirementEditor(
@@ -1424,9 +1482,7 @@ internal fun RecipeEditorScreen(
                 key = { it.value.ingredientId }
             ) { indexed ->
                 val draft = indexed.value
-                val ingredient = state.ingredients.find {
-                    it.id == draft.ingredientId
-                }
+                val ingredient = ingredientById[draft.ingredientId]
 
                 if (ingredient != null) {
                     RequirementEditor(
@@ -1560,6 +1616,7 @@ private fun RequirementEditor(
                         ingredient.quantityType
                     ),
                     optionText = { it.selectorLabel() },
+                    minHeight = 56.dp,
                     onSelected = { selected ->
                         val entered = parseDanishDecimal(amountText)
                             ?.takeIf { it.isFinite() && it > 0.0 }

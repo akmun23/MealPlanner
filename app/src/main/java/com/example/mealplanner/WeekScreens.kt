@@ -80,6 +80,7 @@ fun WeekScreen(
     var showLunchPicker by remember { mutableStateOf(false) }
     var showSandwichPicker by remember { mutableStateOf(false) }
     var showGenerateConfirmation by remember { mutableStateOf(false) }
+    var showWeekUnlockConfirmation by remember { mutableStateOf(false) }
     var finishingDinner by remember { mutableStateOf<Pair<LocalDate, String>?>(null) }
     finishingDinner?.let { (date, recipeId) ->
         state.recipes.find { it.id == recipeId }?.let { meal ->
@@ -92,6 +93,31 @@ fun WeekScreen(
         }
     }
 
+
+    if (showWeekUnlockConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showWeekUnlockConfirmation = false },
+            title = { Text("Lås ugens genplanlægning op?") },
+            text = {
+                Text(
+                    "Denne uge indeholder allerede spiste måltider. " +
+                        "Genplanlægning kan ændre øvrige dage, men færdigregistrerede dage " +
+                        "forbliver låst. Næste uge kan planlægges normalt."
+                )
+            },
+            dismissButton = {
+                TextButton(onClick = { showWeekUnlockConfirmation = false }) {
+                    Text("Annuller")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showWeekUnlockConfirmation = false
+                    state.unlockWeekRegeneration()
+                }) { Text("Lås op") }
+            }
+        )
+    }
 
     if (showGenerateConfirmation) {
         AlertDialog(
@@ -226,31 +252,33 @@ fun WeekScreen(
         )
     }
 
+    // Keep date-dependent values outside lazy item lambdas so each overview
+    // section can be measured and recycled independently when scrolling.
+    val start = state.displayedWeekStart
+    val end = start.plusDays(6)
+    val dateFormat = DateTimeFormatter.ofPattern("d. MMM", Locale.forLanguageTag("da-DK"))
+    val weekNumber = start.get(WeekFields.ISO.weekOfWeekBasedYear())
+    val today = LocalDate.now()
+    val todayRecipe = if (today in start..end &&
+        state.dayModes[today.dayOfWeek] != DayMode.AWAY
+    ) state.recipeFor(today.dayOfWeek) else null
+    val todayEaten = state.history.find { it.eatenOn == today }
+
     // Day cards are expensive to measure (photos, menus, status chips).
-    // Compose only the visible days instead of laying out the whole week
-    // for every scroll frame.
+    // Compose only visible overview sections and day cards, not a single
+    // enormous summary item on every scroll frame.
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-        item(key = "week-summary") {
+        item(key = "week-navigation", contentType = "week-section") {
             Column {
                 Text(
-            "Madplan",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
-        )
-
-        val start = state.displayedWeekStart
-        val end = start.plusDays(6)
-        val dateFormat = DateTimeFormatter.ofPattern("d. MMM", Locale.forLanguageTag("da-DK"))
-        val weekNumber = start.get(WeekFields.ISO.weekOfWeekBasedYear())
-        val today = LocalDate.now()
-        val todayRecipe = if (today in start..end &&
-            state.dayModes[today.dayOfWeek] != DayMode.AWAY
-        ) state.recipeFor(today.dayOfWeek) else null
-        val todayEaten = state.history.find { it.eatenOn == today }
+                    "Madplan",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold
+                )
 
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -263,7 +291,7 @@ fun WeekScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(14.dp),
+                    .padding(12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Row(
@@ -321,9 +349,11 @@ fun WeekScreen(
                 }
             }
         }
+            }
+        }
 
         if (today in start..end) {
-            Spacer(Modifier.height(10.dp))
+            item(key = "week-today", contentType = "week-section") {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
@@ -332,7 +362,7 @@ fun WeekScreen(
                 ),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
-                Column(Modifier.padding(16.dp)) {
+                Column(Modifier.padding(12.dp)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -368,16 +398,8 @@ fun WeekScreen(
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
-                    Spacer(Modifier.height(10.dp))
-                    if (todayEaten != null) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                "✓ Spist og registreret",
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    } else if (todayRecipe != null) {
+                    if (todayEaten == null) Spacer(Modifier.height(10.dp))
+                    if (todayEaten == null && todayRecipe != null) {
                         Button(
                             onClick = { finishingDinner = today to todayRecipe.id },
                             modifier = Modifier.fillMaxWidth(),
@@ -385,7 +407,7 @@ fun WeekScreen(
                         ) {
                             Text("Færdig – registrér dagens ret")
                         }
-                    } else {
+                    } else if (todayEaten == null) {
                         TextButton(onClick = onMealHistory) {
                             Text("Registrér en anden ret")
                         }
@@ -393,9 +415,10 @@ fun WeekScreen(
                 }
             }
         }
+        }
 
-        Spacer(Modifier.height(12.dp))
-
+        item(key = "week-generate", contentType = "week-section") {
+            Column {
         Button(
             onClick = {
                 if (WeekRules.needsRegenerationConfirmation(
@@ -411,11 +434,12 @@ fun WeekScreen(
             enabled = state.recipes.any { it.mealType == MealType.DINNER } &&
                 homeCount > 0 &&
                 !state.isPlanning &&
-                !state.isWeekChanging,
+                !state.isWeekChanging &&
+                !state.isWeekRegenerationLocked(),
             modifier = Modifier
                 .fillMaxWidth()
-                .height(52.dp),
-            shape = RoundedCornerShape(16.dp)
+                .height(48.dp),
+            shape = RoundedCornerShape(14.dp)
         ) {
             if (state.isPlanning) {
                 CircularProgressIndicator(
@@ -427,6 +451,20 @@ fun WeekScreen(
             }
             Spacer(Modifier.width(8.dp))
             Text("Ny madplan", fontWeight = FontWeight.Bold)
+        }
+        if (state.isWeekRegenerationLocked()) {
+            Text(
+                "Ugen er låst efter registrering af spiste måltider. " +
+                    "Brug pilen til næste uge for at planlægge videre.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            OutlinedButton(
+                onClick = { showWeekUnlockConfirmation = true },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Lås ugens genplanlægning op")
+            }
         }
         if (state.recipes.none { it.mealType == MealType.DINNER }) {
             Text(
@@ -447,40 +485,45 @@ fun WeekScreen(
                 modifier = Modifier.size(24.dp)
             )
         }
-
-        Spacer(Modifier.height(12.dp))
-
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            SummaryCard("Hjemme", "$homeCount dage", Modifier.weight(1f))
-            SummaryCard(
-                "Sandwich",
-                sandwichDay?.shortDanishName() ?: "–",
-                Modifier.weight(1f),
-                highlighted = true
-            )
+            }
         }
 
-        Spacer(Modifier.height(12.dp))
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End
-        ) {
-            if (state.weeklySandwichRecipeId != null) {
-                TextButton(
-                    onClick = { state.removeSandwichThisWeek() }
-                ) {
-                    Text("Ingen sandwich denne uge")
+        item(key = "week-stats", contentType = "week-section") {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SummaryCard("Hjemme", "$homeCount dage", Modifier.weight(1f))
+                    SummaryCard(
+                        "Sandwich",
+                        sandwichDay?.shortDanishName() ?: "–",
+                        Modifier.weight(1f),
+                        highlighted = true
+                    )
                 }
-            } else {
-                TextButton(
-                    onClick = { showSandwichPicker = true }
+                if (state.weeklySandwichRecipeId == null ||
+                    sandwichDay?.let(state::isCompletedDayLocked) != true
                 ) {
-                    Text("Tilføj sandwich")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(
+                            onClick = {
+                                if (state.weeklySandwichRecipeId != null)
+                                    state.removeSandwichThisWeek()
+                                else showSandwichPicker = true
+                            }
+                        ) {
+                            Text(
+                                if (state.weeklySandwichRecipeId != null) "Fjern sandwich"
+                                else "Tilføj sandwich"
+                            )
+                        }
+                    }
                 }
             }
         }
 
+        item(key = "week-lunch", contentType = "week-section") {
         SectionCard("Frokost") {
             selectedLunch.forEach { recipe ->
                 Row(
@@ -525,10 +568,6 @@ fun WeekScreen(
                 }
             }
         }
-
-        Spacer(Modifier.height(14.dp))
-
-            }
         }
 
         items(
@@ -542,8 +581,7 @@ fun WeekScreen(
                 onOpenRecipe = onOpenRecipe,
                 onFinishDinner = { date, recipeId ->
                     finishingDinner = date to recipeId
-                },
-                onMealHistory = onMealHistory
+                }
             )
         }
     }
@@ -568,7 +606,7 @@ private fun SummaryCard(
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-        Column(Modifier.padding(12.dp)) {
+        Column(Modifier.padding(10.dp)) {
             Text(
                 title,
                 style = MaterialTheme.typography.labelSmall,
@@ -589,19 +627,23 @@ fun DayCard(
     day: DayOfWeek,
     state: MealPlannerState,
     onOpenRecipe: (String) -> Unit,
-    onFinishDinner: (LocalDate, String) -> Unit,
-    onMealHistory: () -> Unit
+    onFinishDinner: (LocalDate, String) -> Unit
 ) {
     val away = state.dayModes[day] == DayMode.AWAY
     // Compose observes these lists and maps directly. Remembering by size/id
     // leaves stale titles, locks and categories when existing rows change.
-    val recipe = state.recipeFor(day)
-    val isSandwich = recipe?.id != null && recipe.id == state.weeklySandwichRecipeId
-    val isLocked = day in state.lockedDays
-    val maxPrepMinutes = state.dayMaxPrepMinutes[day]
-    val mealDate = state.displayedWeekStart
-        .plusDays((day.value - 1).toLong())
+    val mealDate = state.displayedWeekStart.plusDays((day.value - 1).toLong())
     val eatenId = state.history.find { it.eatenOn == mealDate }?.recipeId
+    val completedLocked = state.isCompletedDayLocked(day)
+    val plannedRecipe = state.recipeFor(day)
+    // A corrected history entry should show what was actually eaten, not the
+    // stale planned recipe. While explicitly unlocked, show the editable plan.
+    val recipe = if (completedLocked && eatenId != null) {
+        state.recipes.find { it.id == eatenId } ?: plannedRecipe
+    } else plannedRecipe
+    val isSandwich = recipe?.id != null && recipe.id == state.weeklySandwichRecipeId
+    val isLocked = state.isDayLocked(day)
+    val maxPrepMinutes = state.dayMaxPrepMinutes[day]
     val recipeCategory = if (recipe != null) {
         recipeCategoryDisplayName(
             state.recipeCategoryName(recipe),
@@ -614,8 +656,37 @@ fun DayCard(
     var showTimePicker by remember { mutableStateOf(false) }
     var pendingRecipeId by remember { mutableStateOf<String?>(null) }
     var showChangeConfirmation by remember { mutableStateOf(false) }
+    var showCompletedUnlockConfirmation by remember(day, state.displayedWeekStart) {
+        mutableStateOf(false)
+    }
+
+    if (showCompletedUnlockConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showCompletedUnlockConfirmation = false },
+            title = { Text("Lås spist måltid op?") },
+            text = {
+                Text(
+                    "Retten er allerede registreret som spist. Du kan midlertidigt " +
+                        "ændre madplanen efter oplåsning, men måltidshistorik og " +
+                        "lagerforbrug ændres ikke automatisk."
+                )
+            },
+            dismissButton = {
+                TextButton(onClick = { showCompletedUnlockConfirmation = false }) {
+                    Text("Annuller")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showCompletedUnlockConfirmation = false
+                    state.toggleLockDay(day)
+                }) { Text("Lås dagen op") }
+            }
+        )
+    }
 
     fun chooseRecipe(id: String?) {
+        if (completedLocked) return
         showRecipePicker = false
         recipeSearch = ""
         if (recipe?.id == id && !away) return
@@ -668,7 +739,7 @@ fun DayCard(
             title = { Text("Vælg ret til ${day.danishName()}") },
             text = {
                 Column {
-                    if (isLocked) {
+                    if (isLocked && !completedLocked) {
                         Text(
                             "Låsen beskytter mod automatisk genplanlægning. Du kan stadig vælge en ret manuelt.",
                             style = MaterialTheme.typography.bodySmall
@@ -732,7 +803,7 @@ fun DayCard(
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = if (away) 0.dp else 1.dp)
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
+        Column(modifier = Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     modifier = Modifier.size(44.dp),
@@ -792,7 +863,10 @@ fun DayCard(
                         modifier = Modifier.size(40.dp)
                     ) {
                         IconButton(
-                            onClick = { state.toggleLockDay(day) },
+                            onClick = {
+                                if (completedLocked) showCompletedUnlockConfirmation = true
+                                else state.toggleLockDay(day)
+                            },
                             modifier = Modifier.fillMaxSize()
                         ) {
                             Icon(
@@ -807,6 +881,7 @@ fun DayCard(
 
                 Switch(
                     checked = !away,
+                    enabled = !completedLocked,
                     onCheckedChange = { state.toggleEatingAtHome(day) },
                     modifier = Modifier.semantics {
                         contentDescription = "Spiser hjemme ${day.danishName()}"
@@ -829,38 +904,41 @@ fun DayCard(
 
                 Spacer(Modifier.height(8.dp))
 
-                // Let long categories and the time filter wrap on small screens.
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier.fillMaxWidth()
+                // Metadata stays on the left; the time control, when applicable,
+                // remains fixed to the right of the first row on small screens.
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.Top
                 ) {
-                    if (recipe != null) {
+                    FlowRow(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
                         if (isSandwich) StatusPill("Ugens sandwich", true)
-                        if (recipeCategory.isNotBlank()) StatusPill(recipeCategory, false)
-                        recipe.prepMinutes?.let {
-                            StatusPill("$it min", false)
-                        }
+                        if (recipeCategory.isNotBlank() &&
+                            !(isSandwich && recipeCategory.equals("Sandwich", ignoreCase = true))
+                        ) StatusPill(recipeCategory, false)
+                        recipe?.prepMinutes?.let { StatusPill("$it min", false) }
                     }
 
-                    Box {
+                    if (!completedLocked) Box {
                         FilterChip(
+                            modifier = Modifier.heightIn(min = 32.dp),
                             selected = maxPrepMinutes != null,
                             onClick = { showTimePicker = true },
                             label = {
-                                Text(prepLimitLabel(maxPrepMinutes))
+                                Text(prepLimitLabel(maxPrepMinutes), maxLines = 1)
                             }
                         )
-
                         DropdownMenu(
                             expanded = showTimePicker,
                             onDismissRequest = { showTimePicker = false }
                         ) {
                             listOf(null, 30, 60).forEach { minutes ->
                                 DropdownMenuItem(
-                                    text = {
-                                        Text(prepLimitOptionLabel(minutes))
-                                    },
+                                    text = { Text(prepLimitOptionLabel(minutes)) },
                                     onClick = {
                                         state.setDayMaxPrepMinutes(day, minutes)
                                         showTimePicker = false
@@ -871,67 +949,48 @@ fun DayCard(
                     }
                 }
 
-                if (mealDate <= LocalDate.now() &&
+                if (eatenId == null &&
+                    mealDate <= LocalDate.now() &&
                     !mealDate.isBefore(LocalDate.now().minusDays(89)) &&
                     recipe != null
                 ) {
                     Spacer(Modifier.height(10.dp))
-                    if (eatenId == null) {
-                        Button(
-                            onClick = { onFinishDinner(mealDate, recipe.id) },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Færdig – registrér lagerforbrug")
-                        }
-                    } else {
-                        val eatenName = state.recipes.find { it.id == eatenId }?.name
-                            ?: "Ukendt opskrift"
-                        Text(
-                            "Spist og registreret: $eatenName",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                        TextButton(onClick = onMealHistory) {
-                            Text("Ret spist ret")
-                        }
-                    }
+                    Button(
+                        onClick = { onFinishDinner(mealDate, recipe.id) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Færdig – registrér lagerforbrug") }
                 }
 
-                Spacer(Modifier.height(8.dp))
-
-                if (isSandwich) {
-                    OutlinedButton(
-                        onClick = { state.moveSandwich() },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("Flyt sandwich")
-                    }
-                } else {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
+                // A completed day has no editable actions until the user
+                // explicitly unlocks its padlock in the header.
+                if (!completedLocked) {
+                    Spacer(Modifier.height(8.dp))
+                    if (isSandwich) {
                         OutlinedButton(
-                            onClick = { showRecipePicker = true },
-                            modifier = Modifier.weight(1f),
+                            onClick = { state.moveSandwich() },
+                            modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp)
-                        ) { Text("Skift ret") }
-
-
-                        if (!isLocked && recipe != null) {
-                            IconButton(
-                                onClick = { state.reroll(day) }
-                            ) {
-                                Icon(
-                                    Icons.Filled.Refresh,
-                                    contentDescription = "Ny ret"
-                                )
+                        ) { Text("Flyt sandwich") }
+                    } else {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            OutlinedButton(
+                                onClick = { showRecipePicker = true },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp)
+                            ) { Text("Skift ret") }
+                            if (!isLocked && !state.isWeekRegenerationLocked() && recipe != null) {
+                                IconButton(onClick = { state.reroll(day) }) {
+                                    Icon(Icons.Filled.Refresh, contentDescription = "Ny ret")
+                                }
                             }
                         }
                     }
                 }
+
             }
         }
     }
@@ -943,6 +1002,7 @@ private fun StatusPill(
     highlighted: Boolean
 ) {
     Surface(
+        modifier = Modifier.heightIn(min = 32.dp),
         shape = CircleShape,
         color = if (highlighted) {
             MaterialTheme.colorScheme.primary
@@ -950,19 +1010,21 @@ private fun StatusPill(
             MaterialTheme.colorScheme.surfaceVariant
         }
     ) {
-        Text(
-            text,
-            modifier = Modifier
-                .padding(horizontal = 8.dp, vertical = 3.dp)
-                .widthIn(max = 210.dp),
-            style = MaterialTheme.typography.labelSmall,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            color = if (highlighted) {
-                MaterialTheme.colorScheme.onPrimary
-            } else {
-                MaterialTheme.colorScheme.onSurfaceVariant
-            }
-        )
+        Box(contentAlignment = Alignment.Center) {
+            Text(
+                text,
+                modifier = Modifier
+                    .padding(horizontal = 10.dp, vertical = 5.dp)
+                    .widthIn(max = 210.dp),
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                color = if (highlighted) {
+                    MaterialTheme.colorScheme.onPrimary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                }
+            )
+        }
     }
 }

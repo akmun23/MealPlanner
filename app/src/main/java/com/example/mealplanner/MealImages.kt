@@ -16,7 +16,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
-import coil.compose.SubcomposeAsyncImage
 import coil.imageLoader
 import coil.request.ImageRequest
 import io.github.jan.supabase.storage.storage
@@ -192,32 +191,31 @@ internal fun MealImage(
     }
 
     if (request != null && thumbnail && !fallback.isNullOrBlank()) {
-        // Broken/revoked remote product URLs must show the same-sized
-        // placeholder instead of leaving a visually empty pantry tile.
-        SubcomposeAsyncImage(
-            model = request,
-            contentDescription = null,
+        // A background placeholder stays visible on loading/error. Using
+        // AsyncImage avoids the extra subcomposition phase in scrolling rows.
+        Box(
             modifier = modifier,
-            contentScale = contentScale,
-            loading = {
-                Box(
-                    modifier = Modifier.fillMaxSize()
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(fallback, style = MaterialTheme.typography.titleLarge)
-                }
-            },
-            error = {
-                Box(
-                    modifier = Modifier.fillMaxSize()
-                        .background(MaterialTheme.colorScheme.primaryContainer),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(fallback, style = MaterialTheme.typography.titleLarge)
-                }
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.primaryContainer),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    fallback,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    style = MaterialTheme.typography.titleLarge
+                )
             }
-        )
+            AsyncImage(
+                model = request,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = contentScale
+            )
+        }
     } else if (request != null) {
         AsyncImage(
             model = request,

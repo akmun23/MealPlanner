@@ -369,7 +369,8 @@ fun ShoppingScreen(state: MealPlannerState) {
 
                         items(
                             items = categoryItems,
-                            key = { "missing-${it.ingredient.id}" }
+                            key = { "missing-${it.ingredient.id}" },
+                            contentType = { "shopping-line" }
                         ) { item ->
                             ShoppingItemCard(
                                 item = item,
@@ -404,7 +405,8 @@ fun ShoppingScreen(state: MealPlannerState) {
 
                     items(
                         items = uncategorized,
-                        key = { "missing-${it.ingredient.id}" }
+                        key = { "missing-${it.ingredient.id}" },
+                            contentType = { "shopping-line" }
                     ) { item ->
                         ShoppingItemCard(
                             item = item,
@@ -431,7 +433,11 @@ fun ShoppingScreen(state: MealPlannerState) {
                     }
                 }
 
-                if (showBought) items(bought.sortedBy { it.ingredient.name.lowercase() }, key = { it.ingredient.id }) { item ->
+                if (showBought) items(
+                    items = bought.sortedBy { it.ingredient.name.lowercase() },
+                    key = { it.ingredient.id },
+                    contentType = { "shopping-line" }
+                ) { item ->
                     ShoppingItemCard(
                         item = item,
                         state = state,
@@ -463,7 +469,8 @@ fun ShoppingScreen(state: MealPlannerState) {
 
                 if (showExcluded) items(
                     items = excluded.sortedBy { it.ingredient.name.lowercase() },
-                    key = { "excluded-${it.ingredient.id}" }
+                    key = { "excluded-${it.ingredient.id}" },
+                    contentType = { "shopping-line" }
                 ) { item ->
                     ShoppingItemCard(
                         item = item,
