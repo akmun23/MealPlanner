@@ -93,7 +93,8 @@ internal fun FinishMealDialog(
                 Text(
                     "Markér det, du faktisk har brugt fra lageret, og ret eventuelt " +
                         "mængderne. Kun markerede varer trækkes fra. " +
-                        "Du kan også markere retten som spist uden lagerforbrug.",
+                        "Du kan også markere retten som spist uden lagerforbrug. " +
+                        "Når du gemmer, låses dagens ret i madplanen.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
