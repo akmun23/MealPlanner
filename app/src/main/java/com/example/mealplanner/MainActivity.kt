@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.requiredSize
@@ -57,6 +58,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -85,6 +88,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -267,6 +271,15 @@ fun MealPlannerApp(
     val pantryListState = rememberLazyListState()
     val tabStateHolder = rememberSaveableStateHolder()
     val messageHostState = remember { SnackbarHostState() }
+
+    val missingShoppingCount by remember(state) {
+        derivedStateOf {
+            state.shoppingItems().count { item ->
+                state.isShoppingIncluded(item.ingredient.id) &&
+                    state.shoppingChecked[item.ingredient.id] != true
+            }
+        }
+    }
 
     LaunchedEffect(state.lastError) {
         val message = state.lastError ?: return@LaunchedEffect
@@ -468,6 +481,7 @@ fun MealPlannerApp(
                     if (!WindowInsets.isImeVisible) {
                     NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                         AppTab.entries.forEach { item ->
+                            val isShopping = item == AppTab.SHOPPING
                             NavigationBarItem(
                                 selected = item == tab,
                                 onClick = {
@@ -477,10 +491,28 @@ fun MealPlannerApp(
                                     }
                                 },
                                 icon = {
-                                    Icon(
-                                        item.icon,
-                                        contentDescription = item.label
-                                    )
+                                    if (isShopping && missingShoppingCount > 0) {
+                                        BadgedBox(
+                                            badge = {
+                                                Badge {
+                                                    Text(
+                                                        if (missingShoppingCount > 99) "99+" else missingShoppingCount.toString(),
+                                                        style = MaterialTheme.typography.labelSmall
+                                                    )
+                                                }
+                                            }
+                                        ) {
+                                            Icon(
+                                                item.icon,
+                                                contentDescription = item.label
+                                            )
+                                        }
+                                    } else {
+                                        Icon(
+                                            item.icon,
+                                            contentDescription = item.label
+                                        )
+                                    }
                                 },
                                 label = {
                                     Text(
@@ -628,24 +660,47 @@ private fun SyncStatusBadge(
 
 @Composable
 private fun AppHeader(onSettings: () -> Unit) {
-    Surface(shadowElevation = 1.dp) {
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 12.dp),
+                .padding(horizontal = 20.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Filled.Restaurant,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+            Spacer(Modifier.width(12.dp))
             Text(
                 "MealPlanner",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f)
             )
 
-            IconButton(onClick = onSettings) {
+            IconButton(
+                onClick = onSettings,
+                modifier = Modifier.clip(CircleShape)
+            ) {
                 Icon(
                     Icons.Filled.Settings,
-                    contentDescription = "Indstillinger"
+                    contentDescription = "Indstillinger",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -1387,17 +1442,63 @@ internal fun SectionCard(
 }
 
 @Composable
-internal fun EmptyCard(text: String) {
-    Surface(
+internal fun EmptyCard(
+    text: String,
+    icon: ImageVector? = null,
+    title: String? = null,
+    action: (@Composable () -> Unit)? = null
+) {
+    Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Text(
-            text,
-            modifier = Modifier.padding(16.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            if (icon != null) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+            }
+            if (title != null) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.height(4.dp))
+            }
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (action != null) {
+                Spacer(Modifier.height(12.dp))
+                action()
+            }
+        }
     }
 }
 
@@ -1405,16 +1506,24 @@ internal fun EmptyCard(text: String) {
 internal fun SearchField(
     value: String,
     onValueChange: (String) -> Unit,
-    placeholder: String
+    placeholder: String,
+    modifier: Modifier = Modifier
 ) {
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        placeholder = { Text(placeholder) },
+        placeholder = {
+            Text(
+                placeholder,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+            )
+        },
         leadingIcon = {
             Icon(
                 Icons.Filled.Search,
-                contentDescription = null
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         },
         trailingIcon = {
@@ -1424,14 +1533,22 @@ internal fun SearchField(
                 ) {
                     Icon(
                         Icons.Filled.Clear,
-                        contentDescription = "Ryd søgning"
+                        contentDescription = "Ryd søgning",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
         },
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        singleLine = true
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        singleLine = true,
+        colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
+            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f),
+            focusedBorderColor = MaterialTheme.colorScheme.primary,
+            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+        )
     )
 }
 

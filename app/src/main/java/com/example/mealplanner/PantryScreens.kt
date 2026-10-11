@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -163,24 +164,30 @@ fun PantryScreen(
 
         if (filtered.isEmpty()) {
             item {
-                EmptyCard(
-                    if (state.ingredients.isEmpty()) {
-                        "Ingen ingredienser endnu. Tilføj en ingrediens for at komme i gang."
-                    } else {
-                        "Ingen ingredienser matcher dine filtre."
-                    }
-                )
-                if (searchQuery.isNotBlank() || selectedCategoryId != null ||
+                val isFiltered = searchQuery.isNotBlank() || selectedCategoryId != null ||
                     stockFilter != PantryStockFilter.ALL ||
                     sortOrder != PantrySortOrder.NAME_ASC
-                ) {
-                    TextButton(onClick = {
-                        searchQuery = ""
-                        selectedCategoryId = null
-                        stockFilterKey = PantryStockFilter.ALL.name
-                        sortOrderKey = PantrySortOrder.NAME_ASC.name
-                    }) { Text("Ryd filtre") }
-                }
+
+                EmptyCard(
+                    title = if (state.ingredients.isEmpty()) "Ingen ingredienser endnu" else "Ingen ingredienser fundet",
+                    text = if (state.ingredients.isEmpty()) "Tilføj en ny ingrediens for at holde styr på dit lager." else "Ingen ingredienser matcher dine nuværende filtre.",
+                    icon = Icons.Filled.Inventory2,
+                    action = if (isFiltered) {
+                        {
+                            Button(
+                                onClick = {
+                                    searchQuery = ""
+                                    selectedCategoryId = null
+                                    stockFilterKey = PantryStockFilter.ALL.name
+                                    sortOrderKey = PantrySortOrder.NAME_ASC.name
+                                },
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text("Ryd filtre")
+                            }
+                        }
+                    } else null
+                )
             }
         }
 

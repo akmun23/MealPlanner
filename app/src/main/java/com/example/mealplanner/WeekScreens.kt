@@ -24,9 +24,11 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Today
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -250,63 +252,150 @@ fun WeekScreen(
         ) state.recipeFor(today.dayOfWeek) else null
         val todayEaten = state.history.find { it.eatenOn == today }
 
-        Row(
+        Card(
             modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surface
+            ),
+            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
         ) {
-            IconButton(
-                onClick = { state.changeDisplayedWeek(-1) },
-                enabled = !state.isLocalMode && !state.isWeekChanging
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(14.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Icon(Icons.Filled.ChevronLeft, contentDescription = "Forrige uge")
-            }
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    "Uge $weekNumber · ${start.get(WeekFields.ISO.weekBasedYear())}",
-                    fontWeight = FontWeight.SemiBold
-                )
-                Text(
-                    "${start.format(dateFormat)} – ${end.format(dateFormat)}",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            IconButton(
-                onClick = { state.changeDisplayedWeek(1) },
-                enabled = !state.isLocalMode && !state.isWeekChanging
-            ) {
-                Icon(Icons.Filled.ChevronRight, contentDescription = "Næste uge")
-            }
-        }
-        Spacer(Modifier.height(12.dp))
-        if (today in start..end) {
-            SectionCard("I dag · aftensmad") {
-                Text(
-                    todayEaten?.recipeId?.let { eaten ->
-                        state.recipes.find { it.id == eaten }?.name
-                    } ?: todayRecipe?.name ?: "Ingen ret planlagt",
-                    fontWeight = FontWeight.SemiBold
-                )
-                Spacer(Modifier.height(8.dp))
-                if (todayEaten != null) {
-                    Text("Spist og registreret", color = MaterialTheme.colorScheme.primary)
-                    TextButton(onClick = onMealHistory) {
-                        Text("Ret registreringen")
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    IconButton(
+                        onClick = { state.changeDisplayedWeek(-1) },
+                        enabled = !state.isLocalMode && !state.isWeekChanging
+                    ) {
+                        Icon(Icons.Filled.ChevronLeft, contentDescription = "Forrige uge")
                     }
-                } else if (todayRecipe != null) {
-                    Button(
-                        onClick = { finishingDinner = today to todayRecipe.id },
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Text("Færdig – registrér dagens ret") }
-                } else {
-                    TextButton(onClick = onMealHistory) {
-                        Text("Registrér en anden ret")
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Text(
+                                "Uge $weekNumber · ${start.get(WeekFields.ISO.weekBasedYear())}",
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "${start.format(dateFormat)} – ${end.format(dateFormat)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                    IconButton(
+                        onClick = { state.changeDisplayedWeek(1) },
+                        enabled = !state.isLocalMode && !state.isWeekChanging
+                    ) {
+                        Icon(Icons.Filled.ChevronRight, contentDescription = "Næste uge")
+                    }
+                }
+
+                if (start != LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)) &&
+                    !state.isLocalMode
+                ) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = { state.showCurrentWeek() },
+                        enabled = !state.isWeekChanging,
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Icon(Icons.Filled.Today, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Tilbage til denne uge")
                     }
                 }
             }
-            Spacer(Modifier.height(12.dp))
         }
+
+        if (today in start..end) {
+            Spacer(Modifier.height(10.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
+                ),
+                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(
+                                Icons.Filled.Today,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                "I dag · Aftensmad",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                        TextButton(onClick = onMealHistory) {
+                            Icon(Icons.Filled.History, contentDescription = null, modifier = Modifier.size(16.dp))
+                            Spacer(Modifier.width(4.dp))
+                            Text("Historik")
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        todayEaten?.recipeId?.let { eaten ->
+                            state.recipes.find { it.id == eaten }?.name
+                        } ?: todayRecipe?.name ?: "Ingen ret planlagt",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    if (todayEaten != null) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "✓ Spist og registreret",
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    } else if (todayRecipe != null) {
+                        Button(
+                            onClick = { finishingDinner = today to todayRecipe.id },
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Færdig – registrér dagens ret")
+                        }
+                    } else {
+                        TextButton(onClick = onMealHistory) {
+                            Text("Registrér en anden ret")
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(Modifier.height(12.dp))
+
         Button(
             onClick = {
                 if (WeekRules.needsRegenerationConfirmation(
@@ -352,29 +441,14 @@ fun WeekScreen(
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
-        Spacer(Modifier.height(8.dp))
-        if (start != LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)) &&
-            !state.isLocalMode
-        ) {
-            TextButton(
-                onClick = { state.showCurrentWeek() },
-                enabled = !state.isWeekChanging,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Tilbage til denne uge")
-            }
-        }
+
         if (state.isWeekChanging) {
             CircularProgressIndicator(
                 modifier = Modifier.size(24.dp)
             )
         }
 
-        Spacer(Modifier.height(6.dp))
-        TextButton(onClick = onMealHistory) {
-            Text("Spiste måltider / Madhistorik")
-        }
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(12.dp))
 
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             SummaryCard("Hjemme", "$homeCount dage", Modifier.weight(1f))
@@ -386,7 +460,7 @@ fun WeekScreen(
             )
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(12.dp))
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -712,20 +786,23 @@ fun DayCard(
                 }
 
                 if (!away && recipe != null) {
-                    IconButton(
-                        onClick = { state.toggleLockDay(day) },
-                        modifier = Modifier.size(48.dp)
+                    Surface(
+                        shape = CircleShape,
+                        color = if (isLocked) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent,
+                        modifier = Modifier.size(40.dp)
                     ) {
-                        Icon(
-                            imageVector = if (isLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
-                            contentDescription = if (isLocked) "Lås op for ${day.danishName()}" else "Lås ret for ${day.danishName()}",
-                            tint = if (isLocked) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            }
-                        )
+                        IconButton(
+                            onClick = { state.toggleLockDay(day) },
+                            modifier = Modifier.fillMaxSize()
+                        ) {
+                            Icon(
+                                imageVector = if (isLocked) Icons.Filled.Lock else Icons.Filled.LockOpen,
+                                contentDescription = if (isLocked) "Lås op for ${day.danishName()}" else "Lås ret for ${day.danishName()}",
+                                tint = if (isLocked) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
                     }
+                    Spacer(Modifier.width(4.dp))
                 }
 
                 Switch(

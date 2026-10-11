@@ -17,7 +17,9 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -282,29 +284,44 @@ fun ShoppingScreen(state: MealPlannerState) {
 
         if (shoppingItems.isNotEmpty()) {
             item {
+                val percentage = if (included.isEmpty()) 0 else (checkedCount * 100 / included.size)
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(18.dp),
+                    shape = RoundedCornerShape(20.dp),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.primaryContainer
                     )
                 ) {
-                    Column(Modifier.padding(14.dp)) {
-                        Text(
-                            "$checkedCount af ${included.size} købt",
-                            fontWeight = FontWeight.Bold
-                        )
-                        Spacer(Modifier.height(6.dp))
+                    Column(Modifier.padding(16.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Indkøbsstatus",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Text(
+                                "$checkedCount af ${included.size} købt ($percentage%)",
+                                style = MaterialTheme.typography.bodyMedium,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                        Spacer(Modifier.height(8.dp))
                         LinearProgressIndicator(
                             progress = {
-                                if (included.isEmpty()) {
-                                    0f
-                                } else {
-                                    checkedCount.toFloat() /
-                                        included.size.toFloat()
-                                }
+                                if (included.isEmpty()) 0f
+                                else checkedCount.toFloat() / included.size.toFloat()
                             },
-                            modifier = Modifier.fillMaxWidth()
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(8.dp),
+                            color = MaterialTheme.colorScheme.primary,
+                            trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f)
                         )
                     }
                 }
@@ -313,9 +330,23 @@ fun ShoppingScreen(state: MealPlannerState) {
 
         if (shoppingItems.isEmpty()) {
             item {
-                EmptyCard("Indkøbslisten er tom.")
+                EmptyCard(
+                    title = "Indkøbslisten er tom",
+                    text = "Der er ingen varer at købe lige nu. Tilføj en madplan eller retter for at se ingredienser her.",
+                    icon = Icons.Filled.ShoppingCart
+                )
             }
         } else {
+            if (missing.isEmpty() && included.isNotEmpty()) {
+                item {
+                    EmptyCard(
+                        title = "Alt på indkøbslisten er købt! 🎉",
+                        text = "Alle $checkedCount valgte varer er markeret som købt. Du kan udvide 'Købte varer' nedenfor for at se eller lægge dem på lager.",
+                        icon = Icons.Filled.CheckCircle
+                    )
+                }
+            }
+
             if (missing.isNotEmpty()) {
                 val categories = state.ingredientCategories.sortedBy { it.name.lowercase() }
                 val knownIds = categories.map { it.id }.toSet()
@@ -465,13 +496,14 @@ private fun ShoppingItemCard(
     val missingBase = (item.requiredBase - item.pantryBase).coerceAtLeast(0.0)
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (checked) MaterialTheme.colorScheme.surfaceVariant
+            containerColor = if (checked) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
             else MaterialTheme.colorScheme.surface
-        )
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = if (checked) 0.dp else 1.dp)
     ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp)) {
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(
                     checked = checked,

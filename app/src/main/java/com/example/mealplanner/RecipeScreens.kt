@@ -21,7 +21,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.RestaurantMenu
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -226,18 +228,30 @@ fun RecipesScreen(
 
         if (filteredRecipes.isEmpty()) {
             item {
-                EmptyCard("Ingen opskrifter fundet.")
-                if (searchQuery.isNotBlank() ||
+                val isFiltered = searchQuery.isNotBlank() ||
                     mealFilter != "Alle måltider" ||
                     categoryFilter != "Alle kategorier" || canMakeOnly
-                ) {
-                    TextButton(onClick = {
-                        searchQuery = ""
-                        mealFilter = "Alle måltider"
-                        categoryFilter = "Alle kategorier"
-                        canMakeOnly = false
-                    }) { Text("Ryd filtre") }
-                }
+
+                EmptyCard(
+                    title = if (state.recipes.isEmpty()) "Ingen opskrifter endnu" else "Ingen opskrifter fundet",
+                    text = if (state.recipes.isEmpty()) "Opret din første opskrift ved at trykke på 'Ny opskrift' ovenfor." else "Prøv en anden søgning eller ryd dine filtre.",
+                    icon = Icons.Filled.RestaurantMenu,
+                    action = if (isFiltered) {
+                        {
+                            OutlinedButton(
+                                onClick = {
+                                    searchQuery = ""
+                                    mealFilter = "Alle måltider"
+                                    categoryFilter = "Alle kategorier"
+                                    canMakeOnly = false
+                                },
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text("Ryd filtre")
+                            }
+                        }
+                    } else null
+                )
             }
         } else {
             items(
@@ -332,10 +346,10 @@ private fun RecipeListCard(
                 }
             }
 
-            Text(
-                "›",
-                style = MaterialTheme.typography.headlineSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+            Icon(
+                Icons.Filled.ChevronRight,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
     }
