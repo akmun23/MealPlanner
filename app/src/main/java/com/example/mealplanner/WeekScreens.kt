@@ -80,6 +80,7 @@ fun WeekScreen(
     var showLunchPicker by remember { mutableStateOf(false) }
     var showSandwichPicker by remember { mutableStateOf(false) }
     var showGenerateConfirmation by remember { mutableStateOf(false) }
+    var showWeekUnlockConfirmation by remember { mutableStateOf(false) }
     var finishingDinner by remember { mutableStateOf<Pair<LocalDate, String>?>(null) }
     finishingDinner?.let { (date, recipeId) ->
         state.recipes.find { it.id == recipeId }?.let { meal ->
@@ -92,6 +93,31 @@ fun WeekScreen(
         }
     }
 
+
+    if (showWeekUnlockConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showWeekUnlockConfirmation = false },
+            title = { Text("Lås ugens genplanlægning op?") },
+            text = {
+                Text(
+                    "Denne uge indeholder allerede spiste måltider. " +
+                        "Genplanlægning kan ændre øvrige dage, men færdigregistrerede dage " +
+                        "forbliver låst. Næste uge kan planlægges normalt."
+                )
+            },
+            dismissButton = {
+                TextButton(onClick = { showWeekUnlockConfirmation = false }) {
+                    Text("Annuller")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showWeekUnlockConfirmation = false
+                    state.unlockWeekRegeneration()
+                }) { Text("Lås op") }
+            }
+        )
+    }
 
     if (showGenerateConfirmation) {
         AlertDialog(
@@ -374,15 +400,7 @@ fun WeekScreen(
                         color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
                     Spacer(Modifier.height(10.dp))
-                    if (todayEaten != null) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                "✓ Spist og registreret",
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.primary
-                            )
-                        }
-                    } else if (todayRecipe != null) {
+                    if (todayEaten == null && todayRecipe != null) {
                         Button(
                             onClick = { finishingDinner = today to todayRecipe.id },
                             modifier = Modifier.fillMaxWidth(),
@@ -390,7 +408,7 @@ fun WeekScreen(
                         ) {
                             Text("Færdig – registrér dagens ret")
                         }
-                    } else {
+                    } else if (todayEaten == null) {
                         TextButton(onClick = onMealHistory) {
                             Text("Registrér en anden ret")
                         }
@@ -418,7 +436,8 @@ fun WeekScreen(
             enabled = state.recipes.any { it.mealType == MealType.DINNER } &&
                 homeCount > 0 &&
                 !state.isPlanning &&
-                !state.isWeekChanging,
+                !state.isWeekChanging &&
+                !state.isWeekRegenerationLocked(),
             modifier = Modifier
                 .fillMaxWidth()
                 .height(48.dp),
@@ -434,6 +453,20 @@ fun WeekScreen(
             }
             Spacer(Modifier.width(8.dp))
             Text("Ny madplan", fontWeight = FontWeight.Bold)
+        }
+        if (state.isWeekRegenerationLocked()) {
+            Text(
+                "Ugen er låst efter registrering af spiste måltider. " +
+                    "Brug pilen til næste uge for at planlægge videre.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            OutlinedButton(
+                onClick = { showWeekUnlockConfirmation = true },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Lås ugens genplanlægning op")
+            }
         }
         if (state.recipes.none { it.mealType == MealType.DINNER }) {
             Text(
@@ -554,8 +587,7 @@ fun WeekScreen(
                 onOpenRecipe = onOpenRecipe,
                 onFinishDinner = { date, recipeId ->
                     finishingDinner = date to recipeId
-                },
-                onMealHistory = onMealHistory
+                }
             )
         }
     }
@@ -601,15 +633,15 @@ fun DayCard(
     day: DayOfWeek,
     state: MealPlannerState,
     onOpenRecipe: (String) -> Unit,
-    onFinishDinner: (LocalDate, String) -> Unit,
-    onMealHistory: () -> Unit
+    onFinishDinner: (LocalDate, String) -> Unit
 ) {
     val away = state.dayModes[day] == DayMode.AWAY
     // Compose observes these lists and maps directly. Remembering by size/id
     // leaves stale titles, locks and categories when existing rows change.
     val recipe = state.recipeFor(day)
     val isSandwich = recipe?.id != null && recipe.id == state.weeklySandwichRecipeId
-    val isLocked = day in state.lockedDays
+    val isLocked = state.isDayLocked(day)
+    val completedLocked = state.isCompletedDayLocked(day)
     val maxPrepMinutes = state.dayMaxPrepMinutes[day]
     val mealDate = state.displayedWeekStart
         .plusDays((day.value - 1).toLong())
@@ -626,8 +658,37 @@ fun DayCard(
     var showTimePicker by remember { mutableStateOf(false) }
     var pendingRecipeId by remember { mutableStateOf<String?>(null) }
     var showChangeConfirmation by remember { mutableStateOf(false) }
+    var showCompletedUnlockConfirmation by remember(day, state.displayedWeekStart) {
+        mutableStateOf(false)
+    }
+
+    if (showCompletedUnlockConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showCompletedUnlockConfirmation = false },
+            title = { Text("Lås spist måltid op?") },
+            text = {
+                Text(
+                    "Retten er allerede registreret som spist. Du kan midlertidigt " +
+                        "ændre madplanen efter oplåsning, men måltidshistorik og " +
+                        "lagerforbrug ændres ikke automatisk."
+                )
+            },
+            dismissButton = {
+                TextButton(onClick = { showCompletedUnlockConfirmation = false }) {
+                    Text("Annuller")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showCompletedUnlockConfirmation = false
+                    state.toggleLockDay(day)
+                }) { Text("Lås dagen op") }
+            }
+        )
+    }
 
     fun chooseRecipe(id: String?) {
+        if (completedLocked) return
         showRecipePicker = false
         recipeSearch = ""
         if (recipe?.id == id && !away) return
@@ -680,7 +741,7 @@ fun DayCard(
             title = { Text("Vælg ret til ${day.danishName()}") },
             text = {
                 Column {
-                    if (isLocked) {
+                    if (isLocked && !completedLocked) {
                         Text(
                             "Låsen beskytter mod automatisk genplanlægning. Du kan stadig vælge en ret manuelt.",
                             style = MaterialTheme.typography.bodySmall
@@ -804,7 +865,10 @@ fun DayCard(
                         modifier = Modifier.size(40.dp)
                     ) {
                         IconButton(
-                            onClick = { state.toggleLockDay(day) },
+                            onClick = {
+                                if (completedLocked) showCompletedUnlockConfirmation = true
+                                else state.toggleLockDay(day)
+                            },
                             modifier = Modifier.fillMaxSize()
                         ) {
                             Icon(
@@ -819,6 +883,7 @@ fun DayCard(
 
                 Switch(
                     checked = !away,
+                    enabled = !completedLocked,
                     onCheckedChange = { state.toggleEatingAtHome(day) },
                     modifier = Modifier.semantics {
                         contentDescription = "Spiser hjemme ${day.danishName()}"
@@ -887,45 +952,22 @@ fun DayCard(
                     }
                 }
 
-                if (mealDate <= LocalDate.now() &&
+                if (eatenId == null &&
+                    mealDate <= LocalDate.now() &&
                     !mealDate.isBefore(LocalDate.now().minusDays(89)) &&
                     recipe != null
                 ) {
                     Spacer(Modifier.height(10.dp))
-                    if (eatenId == null) {
-                        Button(
-                            onClick = { onFinishDinner(mealDate, recipe.id) },
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Færdig – registrér lagerforbrug")
-                        }
-                    } else {
-                        val eatenName = state.recipes.find { it.id == eatenId }?.name
-                            ?: "Ukendt opskrift"
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                        ) {
-                            Text(
-                                "Spist og registreret: $eatenName",
-                                modifier = Modifier.weight(1f),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.primary,
-                                maxLines = 2,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            TextButton(onClick = onMealHistory) {
-                                Text("Ret spist ret")
-                            }
-                        }
-                    }
+                    Button(
+                        onClick = { onFinishDinner(mealDate, recipe.id) },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Færdig – registrér lagerforbrug") }
                 }
 
                 Spacer(Modifier.height(8.dp))
 
                 if (isSandwich) {
-                    OutlinedButton(
+                    if (!completedLocked) OutlinedButton(
                         onClick = { state.moveSandwich() },
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp)
@@ -940,12 +982,13 @@ fun DayCard(
                     ) {
                         OutlinedButton(
                             onClick = { showRecipePicker = true },
+                            enabled = !completedLocked,
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp)
                         ) { Text("Skift ret") }
 
 
-                        if (!isLocked && recipe != null) {
+                        if (!isLocked && !state.isWeekRegenerationLocked() && recipe != null) {
                             IconButton(
                                 onClick = { state.reroll(day) }
                             ) {
