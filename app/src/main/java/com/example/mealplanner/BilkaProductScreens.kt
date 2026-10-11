@@ -22,6 +22,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ImageNotSupported
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -192,6 +194,10 @@ internal fun BilkaProductsScreen(
     var error by remember(householdId) { mutableStateOf<String?>(null) }
     var search by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf("Alle") }
+    var bulkSelection by remember(householdId) { mutableStateOf(setOf<String>()) }
+    var bulkConfirm by remember { mutableStateOf(false) }
+    var bulkBusy by remember { mutableStateOf(false) }
+    var bulkMessage by remember { mutableStateOf<String?>(null) }
 
     suspend fun reload() {
         busy = true
@@ -219,6 +225,47 @@ internal fun BilkaProductsScreen(
         { if (it.state == "READY") 0 else if (it.state == "CHOSEN") 1 else 2 },
         { it.name }
     ))
+    if (bulkConfirm) {
+        AlertDialog(
+            onDismissRequest = { bulkConfirm = false },
+            title = { Text("Søg efter ${bulkSelection.size} ingredienser?") },
+            text = {
+                Text(
+                    "Højst ${bulkSelection.size} nye Prej-kald. Hvert opslag viser op " +
+                        "til 100 varer, også de irrelevante. Allerede gemte opslag " +
+                        "bruger ingen nye kald. Massesøgningen stopper, hvis kvoten er brugt."
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val requested = bulkSelection.toList()
+                    bulkConfirm = false
+                    bulkBusy = true
+                    scope.launch {
+                        BilkaPrejClient.bulkSearch(householdId, requested)
+                            .onSuccess { response ->
+                                val used = response["requestsUsed"]?.toString() ?: "0"
+                                val shown = response["totalShown"]?.toString() ?: "0"
+                                val stopped = response["stoppedReason"]?.toString()
+                                bulkMessage = "Fandt $shown varer fordelt på de søgte ingredienser. " +
+                                    "Brugte $used API-kald." +
+                                    (if (stopped != null && stopped != "null")
+                                        " Stoppet: $stopped" else "")
+                                bulkSelection = emptySet()
+                                reload()
+                            }
+                            .onFailure { bulkMessage = it.message }
+                        bulkBusy = false
+                    }
+                }) { Text("Start massesøgning") }
+            },
+            dismissButton = {
+                TextButton(onClick = { bulkConfirm = false }) {
+                    Text("Annuller")
+                }
+            }
+        )
+    }
     SubpageScaffold(title = "Mine BilkaToGo-produkter", onBack = onBack) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
@@ -254,13 +301,22 @@ internal fun BilkaProductsScreen(
             }
             item {
                 Text(
-                    "Automatisk import er sat på pause, fordi søgeresultaterne " +
-                        "var upålidelige. Vælg en ingrediens nedenfor, og brug " +
-                        "'Søg i Bilka' på varesiden. Kun en ny, manuel søgning " +
-                        "kan bruge et Prej-kald; tidligere gemte søgninger er gratis.",
+                    "Alle søgeresultater vises, også dem uden ordmatch. " +
+                        "Vælg op til 5 ingredienser nedenfor med afkrydsningsfeltet, " +
+                        "og start massesøgningen. Det koster højst ét kald per " +
+                        "ingrediens (0 ved identisk gemt søgning).",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Button(
+                    onClick = { bulkConfirm = true },
+                    enabled = bulkSelection.isNotEmpty() && !bulkBusy && !busy,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Massesøg ${bulkSelection.size} ingredienser")
+                }
+                bulkMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                if (bulkBusy) CircularProgressIndicator()
             }
             item {
                 SearchField(search, { search = it }, "Søg efter ingrediens")
@@ -326,6 +382,16 @@ internal fun BilkaProductsScreen(
                                     )
                                 }
                             }
+                            Checkbox(
+                                checked = item.ingredientId in bulkSelection,
+                                onCheckedChange = { checked ->
+                                    bulkSelection = if (checked) {
+                                        if (bulkSelection.size < 5)
+                                            bulkSelection + item.ingredientId else bulkSelection
+                                    } else bulkSelection - item.ingredientId
+                                },
+                                enabled = !bulkBusy && !busy
+                            )
                             Text(
                                 if (item.state == "CHOSEN") "Ændr" else "Vælg",
                                 color = MaterialTheme.colorScheme.primary,
