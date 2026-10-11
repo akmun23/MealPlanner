@@ -89,6 +89,11 @@ class MealPlannerState(
     val selectedLunchRecipeIds = mutableStateListOf<String>()
     val history = mutableStateListOf<MealHistoryEntry>()
 
+    // Explicit unlocks are session-scoped: completed meals are locked again
+    // when the user reopens the app or navigates to another week.
+    private val editableCompletedDates = mutableStateSetOf<LocalDate>()
+    private val unlockedRegenerationWeeks = mutableStateSetOf<LocalDate>()
+
     var weeklySandwichRecipeId by mutableStateOf<String?>(null)
         private set
 
@@ -973,11 +978,55 @@ class MealPlannerState(
         return false
     }
 
+    private fun dateFor(day: DayOfWeek): LocalDate =
+        displayedWeekStart.plusDays((day.value - 1).toLong())
+
+    fun hasCompletedDinner(day: DayOfWeek): Boolean =
+        WeekRules.completedOn(dateFor(day), history)
+
+    fun isCompletedDayLocked(day: DayOfWeek): Boolean =
+        WeekRules.completedDayLocked(dateFor(day), history, editableCompletedDates)
+
+    fun isDayLocked(day: DayOfWeek): Boolean =
+        isCompletedDayLocked(day) || day in lockedDays
+
+    fun isWeekRegenerationLocked(): Boolean =
+        WeekRules.requiresRegenerationUnlock(
+            displayedWeekStart, history, unlockedRegenerationWeeks
+        )
+
+    /** This unlocks only regeneration; individual completed dinners stay protected. */
+    fun unlockWeekRegeneration() {
+        if (!canEditWeek() || !isWeekRegenerationLocked()) return
+        unlockedRegenerationWeeks.add(displayedWeekStart)
+    }
+
+    fun unlockRegisteredMeal(date: LocalDate) {
+        if (!WeekRules.completedOn(date, history)) return
+        editableCompletedDates.add(date)
+        if (date in displayedWeekStart..displayedWeekStart.plusDays(6)) {
+            lockedDays.remove(date.dayOfWeek)
+            persistWeek()
+        }
+    }
+
+    fun isRegisteredMealEditable(date: LocalDate): Boolean =
+        !WeekRules.completedOn(date, history) || date in editableCompletedDates
+
     fun toggleLockDay(day: DayOfWeek) {
         if (!canEditWeek()) return
         if (dayModes[day] == DayMode.AWAY || recipeFor(day) == null) return
 
-        if (day in lockedDays) {
+        val date = dateFor(day)
+        if (WeekRules.completedOn(date, history)) {
+            if (date in editableCompletedDates) {
+                editableCompletedDates.remove(date)
+                lockedDays.add(day)
+            } else {
+                editableCompletedDates.add(date)
+                lockedDays.remove(day)
+            }
+        } else if (day in lockedDays) {
             lockedDays.remove(day)
         } else {
             lockedDays.add(day)
@@ -987,6 +1036,10 @@ class MealPlannerState(
 
     fun setRecipeForDay(day: DayOfWeek, recipeId: String?) {
         if (!canEditWeek()) return
+        if (isCompletedDayLocked(day)) {
+            lastError = "Retten er markeret som spist. Lås dagen op før ændringer."
+            return
+        }
         if (day == sandwichDay) return
         if (plan[day] == recipeId &&
             (recipeId == null || dayModes[day] != DayMode.AWAY)
@@ -1657,6 +1710,10 @@ class MealPlannerState(
 
     fun removeSandwichThisWeek() {
         if (!canEditWeek()) return
+        if (sandwichDay?.let(::isCompletedDayLocked) == true) {
+            lastError = "Den spiste sandwich er låst. Lås dagen op før ændringer."
+            return
+        }
         if (weeklySandwichRecipeId == null && sandwichDay == null) return
 
         weeklySandwichRecipeId = null
@@ -1669,6 +1726,10 @@ class MealPlannerState(
 
     fun setWeeklySandwichRecipe(recipeId: String) {
         if (!canEditWeek()) return
+        if (sandwichDay?.let(::isCompletedDayLocked) == true) {
+            lastError = "Den spiste sandwich er låst. Lås dagen op før ændringer."
+            return
+        }
         if (recipes.none { it.id == recipeId && it.mealType == MealType.DINNER }) return
 
         weeklySandwichRecipeId = recipeId
@@ -1689,12 +1750,22 @@ class MealPlannerState(
 
     fun toggleEatingAtHome(day: DayOfWeek) {
         if (!canEditWeek()) return
+        if (isCompletedDayLocked(day)) {
+            lastError = "Dagen er markeret som spist og er låst."
+            return
+        }
         val result = WeekRules.toggleHome(
             day = day,
             modes = dayModes.toMap(),
             currentSandwichDay = sandwichDay,
             hasSandwichRecipe = weeklySandwichRecipeId != null
         )
+        if (result.sandwichDay != sandwichDay &&
+            (sandwichDay?.let(::isCompletedDayLocked) == true ||
+                result.sandwichDay?.let(::isCompletedDayLocked) == true)) {
+            lastError = "En spist sandwichdag kan ikke flyttes uden at låse dagen op."
+            return
+        }
 
         syncMap(
             target = dayModes,
@@ -1716,6 +1787,10 @@ class MealPlannerState(
         maxPrepMinutes: Int?
     ) {
         if (!canEditWeek()) return
+        if (isCompletedDayLocked(day)) {
+            lastError = "Dagen er markeret som spist og er låst."
+            return
+        }
         val normalized = maxPrepMinutes?.takeIf { it in 1..1440 }
         dayMaxPrepMinutes[day] = normalized
 
@@ -1841,12 +1916,17 @@ class MealPlannerState(
 
         remaining.forEach { (ingredientId, value) -> pantry[ingredientId] = value }
         history.add(MealHistoryEntry(recipeId, date))
+        // Completion and the persisted day lock share an offline outbox batch.
+        val lockMutation = if (date in displayedWeekStart..displayedWeekStart.plusDays(6)) {
+            lockedDays.add(date.dayOfWeek)
+            weeklyPlanId?.let(::weekStateMutation)
+        } else null
         enqueueMutations(
             remaining.map { (ingredientId, amountBase) ->
                 QueuedMutation.SetPantry(ingredientId = ingredientId, amountBase = amountBase)
             } + QueuedMutation.SetMealEaten(
                 eatenOn = date.toString(), recipeId = recipeId
-            )
+            ) + listOfNotNull(lockMutation)
         )
         return true
     }
@@ -1865,6 +1945,10 @@ class MealPlannerState(
             lastError = "Opskriften findes ikke længere."
             return
         }
+        if (!isRegisteredMealEditable(date)) {
+            lastError = "Det spiste måltid er låst. Lås op før du retter historikken."
+            return
+        }
         val previous = history.find { it.eatenOn == date }?.recipeId
         if (previous == recipeId) return
 
@@ -1872,23 +1956,39 @@ class MealPlannerState(
         if (recipeId != null) {
             history.add(MealHistoryEntry(recipeId, date))
         }
-        enqueueMutation(
-            QueuedMutation.SetMealEaten(
-                eatenOn = date.toString(),
-                recipeId = recipeId
-            )
+        // Editing a historic entry is a one-time operation; relock afterwards.
+        editableCompletedDates.remove(date)
+        val lockMutation = if (date in displayedWeekStart..displayedWeekStart.plusDays(6)) {
+            if (recipeId == null) lockedDays.remove(date.dayOfWeek)
+            else lockedDays.add(date.dayOfWeek)
+            weeklyPlanId?.let(::weekStateMutation)
+        } else null
+        enqueueMutations(
+            listOf(
+                QueuedMutation.SetMealEaten(
+                    eatenOn = date.toString(),
+                    recipeId = recipeId
+                )
+            ) + listOfNotNull(lockMutation)
         )
     }
 
     fun generateWeek() {
         if (isPlanning || isWeekChanging || weeklyPlanId == null) return
+        if (isWeekRegenerationLocked()) {
+            lastError = "Ugen indeholder spiste måltider. Lås genplanlægning op først."
+            return
+        }
 
         val recipesSnapshot = recipes.toList()
         val pantrySnapshot = pantry.toMap()
         val modeSnapshot = dayModes.toMap()
         val maxPrepSnapshot = dayMaxPrepMinutes.toMap()
         val planSnapshot = plan.toMap()
-        val lockSnapshot = lockedDays.toSet()
+        val lockSnapshot = lockedDays.toSet() +
+            WeekRules.completedDaysForWeek(displayedWeekStart, history).filter {
+                isCompletedDayLocked(it)
+            }
         val historySnapshot = history.toList()
         val weightsSnapshot = plannerWeights
         val proteinIngredientIds = ingredients
@@ -1936,6 +2036,10 @@ class MealPlannerState(
 
     fun reroll(day: DayOfWeek) {
         if (!canEditWeek()) return
+        if (isWeekRegenerationLocked() || isCompletedDayLocked(day)) {
+            lastError = "Ugen eller dagen er låst efter registrering af et måltid."
+            return
+        }
         if (
             day in lockedDays ||
             dayModes[day] == DayMode.AWAY ||
@@ -1988,11 +2092,17 @@ class MealPlannerState(
     fun moveSandwich() {
         if (!canEditWeek()) return
         if (weeklySandwichRecipeId == null) return
-
-        sandwichDay = WeekRules.nextSandwichDay(
+        val nextDay = WeekRules.nextSandwichDay(
             current = sandwichDay,
             modes = dayModes.toMap()
         )
+        if (sandwichDay?.let(::isCompletedDayLocked) == true ||
+            nextDay?.let(::isCompletedDayLocked) == true) {
+            lastError = "En spist sandwichdag er låst. Lås dagen op først."
+            return
+        }
+
+        sandwichDay = nextDay
 
         shoppingChecked.clear()
         shoppingIncluded.clear()
@@ -2233,6 +2343,8 @@ class MealPlannerState(
                             applyWeekSnapshot(week)
                             applyShoppingSnapshot(shopping)
                             displayedWeekStart = target
+                            editableCompletedDates.clear()
+                            unlockedRegenerationWeeks.clear()
                         }
                         roomCache.save(currentSnapshot())
                     }
