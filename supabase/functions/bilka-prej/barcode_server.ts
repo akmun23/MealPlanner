@@ -48,6 +48,37 @@ export function parseScannedProduct(payload: unknown): PrejProduct | null {
     p.name.trim().length > 0 ? p : null;
 }
 
+/**
+ * Populate exact retailer EAN cache from a normal name-search response.
+ * A single name query can thereby unlock multiple future EAN lookups
+ * at zero provider cost. Only retailer-supplied chain_gtins are trusted.
+ */
+export function eanCacheRowsForProducts(
+  items: PrejProduct[], now = Date.now(),
+): Array<{
+  query_key: string; product_ids: string[]; result_total: number;
+  page: number; truncated: boolean; expires_at: string;
+}> {
+  const seen = new Map<string, string>();
+  for (const item of items) {
+    const priced = toBilkaCacheRow(item, "bilkatogo");
+    if (!priced) continue;
+    const chain = item.prices?.find((price) => price.chain_slug === "bilkatogo");
+    for (const gtin of chain?.chain_gtins ?? []) {
+      if (typeof gtin !== "string" || !validGtin(gtin)) continue;
+      const cacheKey = "ean:bilkatogo:chain-verified1:" + canonicalGtin(gtin);
+      if (!seen.has(cacheKey)) seen.set(cacheKey, priced.id);
+      if (seen.size >= 100) break;
+    }
+    if (seen.size >= 100) break;
+  }
+  const expiry = new Date(now + 7 * 86400000).toISOString();
+  return [...seen.entries()].map(([query_key, productId]) => ({
+    query_key, product_ids: [productId], result_total: 1,
+    page: 1, truncated: false, expires_at: expiry,
+  }));
+}
+
 export type BarcodeLookupResult = {
   found: boolean; fromCache: boolean; productId: string | null;
   productName: string | null; exactBilkaToGoMatch: boolean;
