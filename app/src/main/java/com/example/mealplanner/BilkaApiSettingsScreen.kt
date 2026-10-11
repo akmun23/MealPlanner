@@ -92,6 +92,7 @@ internal fun BilkaApiSettingsScreen(
     var apiKey by remember { mutableStateOf("") }
     var keyInputOpen by remember { mutableStateOf(false) }
     var connected by remember { mutableStateOf(false) }
+    var keyStatusLoaded by remember { mutableStateOf(false) }
     var verified by remember { mutableStateOf(false) }
     var suffix by remember { mutableStateOf<String?>(null) }
     var localUsed by remember { mutableStateOf(0) }
@@ -113,14 +114,15 @@ internal fun BilkaApiSettingsScreen(
         localUsed = info.bilkaNumber("locallyReserved")
         localBudget = info.bilkaNumber("localBudget").coerceAtLeast(1)
         providerRemaining = info.bilkaText("providerRemaining")
-        if (connected) keyInputOpen = false
     }
 
     LaunchedEffect(householdId) {
-        busy = true
+        // Never lock the key form while status, catalogue or nightly data load.
+        // The user may open the form while the initial status call is pending.
         BilkaPrejClient.status()
             .onSuccess(::applyStatus)
             .onFailure { message = it.message }
+        keyStatusLoaded = true
         BilkaPrejClient.discoveryStatus(householdId)
             .onSuccess { importStatus = it }
             .onFailure { message = it.message }
@@ -132,7 +134,6 @@ internal fun BilkaApiSettingsScreen(
                 nightlyLoaded = true
             }
             .onFailure { nightlyLoaded = false }
-        busy = false
     }
 
     if (confirmRemove) {
@@ -179,7 +180,7 @@ internal fun BilkaApiSettingsScreen(
     // though the full account budget (including price checks) is 20.
     val discoveryQuotaExhausted = connected && localUsed >= minOf(localBudget, 18)
 
-    SubpageScaffold(title = "Bilka-produkter", onBack = onBack) { padding ->
+    SubpageScaffold(title = "BilkaToGo · Indstillinger", onBack = onBack) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(16.dp),
@@ -187,15 +188,16 @@ internal fun BilkaApiSettingsScreen(
         ) {
             item {
                 Text(
-                    "Find dine faste varer i Bilka. Vælg selv mærke og størrelse – vi skifter aldrig dit valg automatisk.",
+                    "Her kan du tilføje eller udskifte din personlige Prej-nøgle, kontrollere søgekvoten og styre prisopdateringer for BilkaToGo.",
                     style = MaterialTheme.typography.bodyMedium
                 )
             }
 
             item {
-                SectionCard("1. Forbind din Prej-konto") {
+                SectionCard("Prej API-nøgle · din konto") {
                     Text(
-                        if (!connected) "Tilføj din personlige API-nøgle for at finde Bilka-varer."
+                        if (!keyStatusLoaded) "Henter din Prej-nøglestatus … Du kan tilføje en nøgle med det samme."
+                        else if (!connected) "Tilføj din personlige API-nøgle for at finde BilkaToGo-varer."
                         else if (verified) "Din konto er forbundet. Nøglen slutter på ${suffix ?: "****"}."
                         else "Din nøgle er gemt, men skal kontrolleres én gang.",
                         style = MaterialTheme.typography.bodyMedium
@@ -245,19 +247,41 @@ internal fun BilkaApiSettingsScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        TextButton(
-                            onClick = { keyInputOpen = !keyInputOpen },
-                            enabled = !busy
-                        ) { Text(if (keyInputOpen) "Annuller" else "Brug en anden nøgle") }
+                    }
+                    if (connected || !keyStatusLoaded) {
+                        OutlinedButton(
+                            onClick = {
+                                keyInputOpen = !keyInputOpen
+                                if (!keyInputOpen) apiKey = ""
+                            },
+                            enabled = !busy,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(if (keyInputOpen) "Annuller nøgleskift" else "Tilføj / udskift min Prej API-nøgle")
+                        }
                     }
 
-                    if (!connected || keyInputOpen) {
+                    if ((keyStatusLoaded && !connected) || keyInputOpen) {
+                        Text(
+                            if (connected)
+                                "Indsæt din nye nøgle her. Kun nøglen på din egen konto udskiftes."
+                            else "Indsæt din personlige Prej API-nøgle for at aktivere BilkaToGo-søgning.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
                         OutlinedTextField(
                             value = apiKey,
                             onValueChange = { apiKey = it.trim().take(300) },
                             visualTransformation = PasswordVisualTransformation(),
-                            label = { Text("Din Prej API-nøgle") },
-                            placeholder = { Text("Indsæt nøglen fra prej.dk/konto") },
+                            label = { Text("Prej API-nøgle") },
+                            placeholder = { Text("prej_dev_…") },
+                            isError = apiKey.isNotBlank() && !BilkaKeyInputRules.isValid(apiKey),
+                            supportingText = {
+                                Text(
+                                    if (apiKey.isNotBlank() && !BilkaKeyInputRules.isValid(apiKey))
+                                        "Nøglen har ikke et gyldigt Prej-format. Kontrollér, at du har kopieret hele nøglen."
+                                    else "Gemmes krypteret på din konto – ikke i appen eller hos din partner."
+                                )
+                            },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true
                         )
@@ -270,6 +294,10 @@ internal fun BilkaApiSettingsScreen(
                                     BilkaPrejClient.saveKey(submitted)
                                         .onSuccess { response ->
                                             apiKey = ""
+                                            keyInputOpen = false
+                                            connected = true
+                                            verified = response.bilkaText("verificationPending") != "true"
+                                            suffix = response.bilkaText("keyLastFour")
                                             BilkaPrejClient.status().onSuccess(::applyStatus)
                                             message = if (response.bilkaText("verificationPending") == "true") {
                                                 "Den nye nøgle er gemt krypteret, men ikke " +
@@ -284,9 +312,9 @@ internal fun BilkaApiSettingsScreen(
                                     busy = false
                                 }
                             },
-                            enabled = !busy && apiKey.isNotBlank(),
+                            enabled = !busy && BilkaKeyInputRules.isValid(apiKey),
                             modifier = Modifier.fillMaxWidth()
-                        ) { Text("Kontrollér og gem nøgle") }
+                        ) { Text(if (busy) "Gemmer nøgle …" else "Gem og kontrollér Prej-nøgle") }
                     }
                     Text(
                         "Nøglen er personlig og gemmes krypteret. Den deles ikke med andre medlemmer af husstanden.",
@@ -296,8 +324,18 @@ internal fun BilkaApiSettingsScreen(
                 }
             }
 
+            message?.let { text ->
+                item {
+                    Text(
+                        text,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+
             item {
-                SectionCard("2. Find Bilka-varerne") {
+                SectionCard("Find BilkaToGo-varerne") {
                     if (importStatus == null) {
                         Text("Henter overblik over dine ingredienser …")
                     } else {
@@ -370,7 +408,7 @@ internal fun BilkaApiSettingsScreen(
             }
 
             item {
-                SectionCard("3. Vælg dine faste varer") {
+                SectionCard("Vælg dine faste BilkaToGo-varer") {
                     Text(
                         "Se alle ingredienser og sammenlign konkrete Bilka-varer " +
                             "på den selvstændige produktside.",
@@ -385,7 +423,7 @@ internal fun BilkaApiSettingsScreen(
 
             if (connected) {
                 item {
-                    SectionCard("4. Automatisk opdatering af priser") {
+                    SectionCard("Automatisk opdatering af priser") {
                         Text(
                             "Opdatér priser på valgte varer, uden at skifte mærke eller størrelse.",
                             style = MaterialTheme.typography.bodySmall
@@ -472,15 +510,6 @@ internal fun BilkaApiSettingsScreen(
             }
 
             if (busy) item { CircularProgressIndicator() }
-            message?.let { text ->
-                item {
-                    Text(
-                        text,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
             item { Spacer(Modifier.height(8.dp)) }
         }
     }

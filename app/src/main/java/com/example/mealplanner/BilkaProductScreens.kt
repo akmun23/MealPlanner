@@ -278,6 +278,12 @@ internal fun BilkaProductsScreen(
                 Text(
                     "Vælg selv mærke og pakkestørrelse. Dine faste varer deles i husstanden og ændres ikke automatisk."
                 )
+                OutlinedButton(
+                    onClick = onImport,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Prej API-nøgle og søgeindstillinger")
+                }
             }
             item {
                 Text(
@@ -348,7 +354,8 @@ internal fun BilkaProductsScreen(
             } else if (visible.isEmpty()) {
                 item {
                     EmptyCard(
-                        if (rows.isEmpty()) "Ingen varer endnu. Tryk på Hent flere varer."
+                        if (rows.isEmpty())
+                            "Ingen ingredienser at vælge endnu. Du kan kontrollere din Prej-nøgle i søgeindstillingerne."
                         else "Ingen ingredienser matcher søgningen."
                     )
                 }
@@ -487,6 +494,9 @@ internal fun BilkaProductPickerScreen(
                     "Sammenlign mærke, størrelse og pris. Vi gemmer kun det produkt, du vælger.",
                     style = MaterialTheme.typography.bodySmall
                 )
+                TextButton(onClick = onImport) {
+                    Text("Prej API-nøgle og søgeindstillinger")
+                }
             }
             if (!busy && data != null) {
                 item {
