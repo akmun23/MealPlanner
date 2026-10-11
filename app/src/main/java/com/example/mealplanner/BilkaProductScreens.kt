@@ -219,7 +219,7 @@ internal fun BilkaProductsScreen(
         { if (it.state == "READY") 0 else if (it.state == "CHOSEN") 1 else 2 },
         { it.name }
     ))
-    SubpageScaffold(title = "Mine Bilka-produkter", onBack = onBack) { padding ->
+    SubpageScaffold(title = "Mine BilkaToGo-produkter", onBack = onBack) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(16.dp),
@@ -404,7 +404,7 @@ internal fun BilkaProductPickerScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                Text("Vælg dit faste Bilka-produkt", style = MaterialTheme.typography.titleLarge)
+                Text("Vælg dit faste BilkaToGo-produkt", style = MaterialTheme.typography.titleLarge)
                 Text(
                     "Sammenlign mærke, størrelse og pris. Vi gemmer kun det produkt, du vælger.",
                     style = MaterialTheme.typography.bodySmall
@@ -413,7 +413,7 @@ internal fun BilkaProductPickerScreen(
             if (!busy && data != null) {
                 item {
                     TextButton(onClick = { searchOtherBrand = !searchOtherBrand }) {
-                        Text(if (searchOtherBrand) "Skjul varesøgning" else "Mangler dit mærke? Søg i Bilka")
+                        Text(if (searchOtherBrand) "Skjul varesøgning" else "Mangler dit mærke? Søg i BilkaToGo")
                     }
                 }
                 if (searchOtherBrand) item {
@@ -448,7 +448,7 @@ internal fun BilkaProductPickerScreen(
                             },
                             enabled = !searchingMore && moreQuery.trim().length >= 2,
                             modifier = Modifier.fillMaxWidth()
-                        ) { Text(if (searchingMore) "Søger …" else "Søg i Bilka") }
+                        ) { Text(if (searchingMore) "Søger …" else "Søg i BilkaToGo") }
                         moreMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
                     }
                 }
@@ -519,6 +519,7 @@ internal fun BilkaProductPickerScreen(
                                 )
                                 Text(
                                     product.brandLabel + " · " + packageLabel(product) +
+                                        (if (product.chainSlug == "bilkatogo") " · BilkaToGo" else " · Bilka") +
                                         (if (product.id == currentId) " · Fast valg" else ""),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
