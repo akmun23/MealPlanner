@@ -491,39 +491,37 @@ fun WeekScreen(
         }
 
         item(key = "week-stats", contentType = "week-section") {
-            Column {
-        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-            SummaryCard("Hjemme", "$homeCount dage", Modifier.weight(1f))
-            SummaryCard(
-                "Sandwich",
-                sandwichDay?.shortDanishName() ?: "–",
-                Modifier.weight(1f),
-                highlighted = true
-            )
-        }
-            }
-        }
-
-        item(key = "week-sandwich", contentType = "week-section") {
-            Column {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.End
-        ) {
-            if (state.weeklySandwichRecipeId != null) {
-                TextButton(
-                    onClick = { state.removeSandwichThisWeek() }
-                ) {
-                    Text("Ingen sandwich denne uge")
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SummaryCard("Hjemme", "$homeCount dage", Modifier.weight(1f))
+                    SummaryCard(
+                        "Sandwich",
+                        sandwichDay?.shortDanishName() ?: "–",
+                        Modifier.weight(1f),
+                        highlighted = true
+                    )
                 }
-            } else {
-                TextButton(
-                    onClick = { showSandwichPicker = true }
+                if (state.weeklySandwichRecipeId == null ||
+                    sandwichDay?.let(state::isCompletedDayLocked) != true
                 ) {
-                    Text("Tilføj sandwich")
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.End
+                    ) {
+                        TextButton(
+                            onClick = {
+                                if (state.weeklySandwichRecipeId != null)
+                                    state.removeSandwichThisWeek()
+                                else showSandwichPicker = true
+                            }
+                        ) {
+                            Text(
+                                if (state.weeklySandwichRecipeId != null) "Fjern sandwich"
+                                else "Tilføj sandwich"
+                            )
+                        }
+                    }
                 }
-            }
-        }
             }
         }
 
@@ -923,7 +921,9 @@ fun DayCard(
                         verticalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         if (isSandwich) StatusPill("Ugens sandwich", true)
-                        if (recipeCategory.isNotBlank()) StatusPill(recipeCategory, false)
+                        if (recipeCategory.isNotBlank() &&
+                            !(isSandwich && recipeCategory.equals("Sandwich", ignoreCase = true))
+                        ) StatusPill(recipeCategory, false)
                         recipe?.prepMinutes?.let { StatusPill("$it min", false) }
                     }
 
