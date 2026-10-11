@@ -12,7 +12,7 @@ const isUuid = (value: string) =>
 
 export async function manualProductSearch(
   ctx: Backend, ingredientId: string, text: string
-): Promise<{ count: number; fromCache: boolean }> {
+): Promise<{ count: number; fromCache: boolean; providerTotal: number | null; receivedCount: number | null; afterCategory: number | null; withToGoPrice: number | null }> {
   const query = text.trim().replace(/\s+/g, " ").slice(0, 80);
   if (!isUuid(ingredientId) || query.length < 2) throw new Error("invalid_search");
   const household = encodeURIComponent(ctx.householdId);
@@ -31,6 +31,10 @@ export async function manualProductSearch(
 
   let products: Array<{ id: string; name: string; unit_price_ore?: number | null }> = [];
   let fromCache = false;
+  let providerTotal: number | null = null;
+  let receivedCount: number | null = null;
+  let afterCategory: number | null = null;
+  let withToGoPrice: number | null = null;
   if (cached?.length && Date.parse(cached[0].expires_at) > Date.now()) {
     fromCache = true;
     const ids = cached[0].product_ids.filter((id) => /^bilkatogo:\d+$/.test(id)).slice(0, 100);
@@ -77,9 +81,17 @@ export async function manualProductSearch(
 
     const payload = await response.json().catch(() => null);
     if (!payload || !Array.isArray(payload.products)) throw new Error("prej_unavailable");
-    const valid = (payload.products as PrejProduct[]).filter((p) => isFoodSearchResult(p, true))
+    // Diagnostics explain missing suggestions without logging the user's
+    // Prej key or paying for an extra API request.
+    const providerProducts = payload.products as PrejProduct[];
+    providerTotal = Number.isSafeInteger(payload.total) ? payload.total : providerProducts.length;
+    receivedCount = providerProducts.length;
+    const categoryAllowed = providerProducts.filter((p) => isFoodSearchResult(p, true));
+    afterCategory = categoryAllowed.length;
+    const valid = categoryAllowed
       .map((p) => toBilkaCacheRow(p, "bilkatogo"))
       .filter((p): p is NonNullable<typeof p> => p !== null);
+    withToGoPrice = valid.length;
     const unique = [...new Map(valid.map((p) => [p.id, p])).values()];
     if (unique.length) {
       await ctx.admin("/rest/v1/bilka_products?on_conflict=id", "POST", unique);
@@ -136,5 +148,8 @@ export async function manualProductSearch(
       status: visible.length ? "COMPLETE" : "NO_MATCH"
     }]
   );
-  return { count: visible.length, fromCache };
+  return {
+    count: visible.length, fromCache,
+    providerTotal, receivedCount, afterCategory, withToGoPrice,
+  };
 }
