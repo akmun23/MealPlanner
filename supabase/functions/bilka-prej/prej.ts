@@ -26,13 +26,18 @@ export interface PrejProduct {
  * Unknown/missing categories are not safe to auto-suggest. A previously selected
  * SKU is preserved separately and its price updates never depend on this filter.
  */
-export function isFoodSearchResult(product: PrejProduct): boolean {
+export function isFoodSearchResult(
+  product: PrejProduct,
+  allowUncategorised = false,
+): boolean {
   const category = (product.category_name ?? product.category_slug ?? "")
     .toLowerCase()
     .replaceAll("æ", "ae").replaceAll("ø", "oe").replaceAll("å", "aa")
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, " ").trim();
-  if (!category) return false; // Broad Bilka catalog uses strict categorisation.
+  // ToGo is already a grocery-oriented catalog. Never discard an otherwise
+  // relevant product just because Prej has not categorised it yet.
+  if (!category) return allowUncategorised;
   const blocked = [
     /^personlig pleje(?: |$)/, /^dyremad(?: |$)/, /^dyr(?: |$)/,
     /^husholdning(?: |$)/, /^oevrigt(?: |$)/, /^baby boern(?: |$)/,
