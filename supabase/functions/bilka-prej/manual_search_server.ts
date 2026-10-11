@@ -1,5 +1,6 @@
 import { dailyRemaining, toBilkaCacheRow, storedProductId, type PrejProduct, type BilkaCacheRow } from "./prej.ts";
 import { type CatalogServices } from "./catalog_server.ts";
+import { eanCacheRowsForProducts } from "./barcode_server.ts";
 
 
 type Backend = CatalogServices & {
@@ -133,6 +134,11 @@ export async function manualProductSearch(
     const unique = [...new Map(all.map((p) => [p.id, p])).values()];
     if (unique.length) {
       await ctx.admin("/rest/v1/bilka_products?on_conflict=id", "POST", unique);
+      const eanRows = eanCacheRowsForProducts(providerProducts);
+      if (eanRows.length) {
+        await ctx.admin("/rest/v1/bilka_search_cache?on_conflict=query_key",
+          "POST", eanRows);
+      }
     }
     products = unique;
     await ctx.admin("/rest/v1/bilka_search_cache?on_conflict=query_key", "POST", [{
