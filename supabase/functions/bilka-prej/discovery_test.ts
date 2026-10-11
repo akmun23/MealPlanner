@@ -102,7 +102,7 @@ Deno.test("production bulk discovery is paused and cannot consume any quota", as
   eq(result.requestsUsed, 0);
   eq(result.addedCandidates, 0);
   eq(result.pending, 1);
-  eq(result.stopReason, "manual_search_recommended");
+  eq("stopReason" in result ? result.stopReason : null, "manual_search_recommended");
 });
 
 Deno.test("independent exact searches produce suggestions without selecting defaults", async () => {
