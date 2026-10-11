@@ -5,6 +5,9 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -193,37 +197,37 @@ fun RecipesScreen(
             )
         }
 
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Box(modifier = Modifier.weight(1f)) {
-                    SimpleSelector(
-                        label = mealFilter,
-                        options = mealOptions,
-                        optionText = { it },
-                        onSelected = { mealFilter = it }
-                    )
+        item(key = "recipe-filters") {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Box(modifier = Modifier.weight(1f)) {
+                        SimpleSelector(
+                            label = mealFilter,
+                            options = mealOptions,
+                            optionText = { it },
+                            onSelected = { mealFilter = it },
+                            fillWidth = true
+                        )
+                    }
+                    Box(modifier = Modifier.weight(1f)) {
+                        SimpleSelector(
+                            label = categoryFilter,
+                            options = categoryOptions,
+                            optionText = { it },
+                            onSelected = { categoryFilter = it },
+                            fillWidth = true
+                        )
+                    }
                 }
-
-                Box(modifier = Modifier.weight(1f)) {
-                    SimpleSelector(
-                        label = categoryFilter,
-                        options = categoryOptions,
-                        optionText = { it },
-                        onSelected = { categoryFilter = it }
-                    )
-                }
+                FilterChip(
+                    selected = canMakeOnly,
+                    onClick = { canMakeOnly = !canMakeOnly },
+                    label = { Text("Kan laves") }
+                )
             }
-        }
-
-        item {
-            FilterChip(
-                selected = canMakeOnly,
-                onClick = { canMakeOnly = !canMakeOnly },
-                label = { Text("Kan laves") }
-            )
         }
 
         if (filteredRecipes.isEmpty()) {
@@ -256,7 +260,8 @@ fun RecipesScreen(
         } else {
             items(
                 items = filteredRecipes,
-                key = { it.recipe.id }
+                key = { it.recipe.id },
+                contentType = { "recipe-card" }
             ) { item ->
                 RecipeListCard(
                     recipe = item.recipe,
@@ -834,6 +839,7 @@ internal fun RecipeDetailScreen(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun RecipeEditorScreen(
     state: MealPlannerState,
@@ -878,6 +884,10 @@ internal fun RecipeEditorScreen(
         mutableStateListOf<RecipeInstructionStep>().apply {
             addAll(existing?.instructionSteps.orEmpty())
         }
+    }
+    // Only visible steps are measured; typing never remeasures an entire steps card.
+    val numberedSteps by remember {
+        derivedStateOf { RecipeInstructionRules.numbered(instructionSteps.toList()) }
     }
     var newMainStep by rememberSaveable(recipeId) { mutableStateOf("") }
     var newSubStep by rememberSaveable(recipeId) { mutableStateOf("") }
@@ -1115,7 +1125,7 @@ internal fun RecipeEditorScreen(
         title = if (existing == null) "Ny opskrift" else "Rediger opskrift",
         onBack = { requestBack() },
         bottomBar = {
-            Surface(tonalElevation = 3.dp) {
+            if (!WindowInsets.isImeVisible) Surface(tonalElevation = 3.dp) {
                 Column {
                     saveHint?.let { hint ->
                         Text(
@@ -1185,7 +1195,8 @@ internal fun RecipeEditorScreen(
                             label = mealType.danishName(),
                             options = MealType.entries,
                             optionText = { it.danishName() },
-                            onSelected = { mealType = it }
+                            onSelected = { mealType = it },
+                            fillWidth = true
                         )
                     }
 
@@ -1208,7 +1219,8 @@ internal fun RecipeEditorScreen(
                                     ?: "Andet",
                                 options = state.recipeCategories.sortedBy { it.name.lowercase() },
                                 optionText = { it.name },
-                                onSelected = { categoryId = it.id }
+                                onSelected = { categoryId = it.id },
+                                fillWidth = true
                             )
                         }
                     }
@@ -1246,56 +1258,84 @@ internal fun RecipeEditorScreen(
                 )
             }
 
-            item {
-                SectionCard("Fremgangsmåde · ${instructionSteps.size} trin") {
-                    RecipeInstructionRules.numbered(instructionSteps.toList())
-                        .forEachIndexed { index, entry ->
-                            val (label, step) = entry
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.Top
-                            ) {
-                                Text(
-                                    label,
-                                    modifier = Modifier.width(42.dp).padding(top = 12.dp),
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                OutlinedTextField(
-                                    value = step.text,
-                                    onValueChange = { value ->
-                                        instructionSteps[index] = step.copy(text = value)
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                    label = {
-                                        Text(if (step.level == 1) "Undertrin" else "Trin")
-                                    },
-                                    minLines = 2
-                                )
-                            }
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                TextButton(onClick = {
+            item(key = "instruction-heading") {
+                Text(
+                    "Fremgangsmåde · ${instructionSteps.size} trin",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+            itemsIndexed(
+                items = numberedSteps,
+                key = { _, entry -> "instruction-${entry.second.id}" },
+                contentType = { _, _ -> "instruction-step" }
+            ) { index, entry ->
+                val (label, step) = entry
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    )
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Text(
+                                label,
+                                modifier = Modifier.width(38.dp).padding(top = 12.dp),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                            OutlinedTextField(
+                                value = step.text,
+                                onValueChange = { value ->
+                                    instructionSteps[index] = step.copy(text = value)
+                                },
+                                modifier = Modifier.weight(1f),
+                                label = { Text(if (step.level == 1) "Undertrin" else "Trin") },
+                                minLines = 2,
+                                maxLines = 5
+                            )
+                        }
+                        Row(
+                            modifier = Modifier.padding(start = 38.dp),
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            TextButton(
+                                enabled = index > 0,
+                                onClick = {
                                     val changed = RecipeInstructionRules.move(
                                         instructionSteps.toList(), index, -1
                                     )
                                     instructionSteps.clear()
                                     instructionSteps.addAll(changed)
-                                }) { Text("Op") }
-                                TextButton(onClick = {
+                                }
+                            ) { Text("Op") }
+                            TextButton(
+                                enabled = index < numberedSteps.lastIndex,
+                                onClick = {
                                     val changed = RecipeInstructionRules.move(
                                         instructionSteps.toList(), index, 1
                                     )
                                     instructionSteps.clear()
                                     instructionSteps.addAll(changed)
-                                }) { Text("Ned") }
-                                TextButton(onClick = {
-                                    val changed = RecipeInstructionRules.remove(
-                                        instructionSteps.toList(), index
-                                    )
-                                    instructionSteps.clear()
-                                    instructionSteps.addAll(changed)
-                                }) { Text("Fjern") }
-                            }
+                                }
+                            ) { Text("Ned") }
+                            TextButton(onClick = {
+                                val changed = RecipeInstructionRules.remove(
+                                    instructionSteps.toList(), index
+                                )
+                                instructionSteps.clear()
+                                instructionSteps.addAll(changed)
+                            }) { Text("Fjern") }
                         }
+                    }
+                }
+            }
+            item(key = "instruction-add") {
+                SectionCard("Tilføj trin") {
                     OutlinedTextField(
                         value = newMainStep,
                         onValueChange = { newMainStep = it.take(2000) },
@@ -1333,7 +1373,6 @@ internal fun RecipeEditorScreen(
                     }
                 }
             }
-
 
             if (mealType == MealType.DINNER) {
                 item {
