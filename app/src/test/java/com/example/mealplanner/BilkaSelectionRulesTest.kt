@@ -138,6 +138,18 @@ class BilkaSelectionRulesTest {
     }
 
     @Test
+    fun priceSortFallsBackToProviderRankForMixedOrMissingUnitBases() {
+        val items = listOf(
+            item("missing", "A", 100.0, null),
+            item("kilogram", "B", 900.0, BilkaUnitPriceBasis.KG)
+        )
+        val sorted = BilkaSelectionRules.sortForIngredient(
+            items, mapOf("kilogram" to 0, "missing" to 1), byUnitPrice = true
+        )
+        assertEquals(listOf("kilogram", "missing"), sorted.map { it.id })
+    }
+
+    @Test
     fun matchingIngredientDoesNotTreatANamePrefixAsACompleteMatch() {
         assertTrue(BilkaSelectionRules.ingredientNameScore("Fløde", "Arla Fløde 38%") >
             BilkaSelectionRules.ingredientNameScore("Fløde", "Flødebolle"))
