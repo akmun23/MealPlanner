@@ -84,6 +84,21 @@ export async function saveHouseholdDefault(
   if (!eligibleChoice(ingredientId, productId, candidateRows)) {
     return { error: "not_a_suggested_product", status: 400 };
   }
+  // Manual search deliberately displays every provider result, including
+  // ToGo products without a ToGo price. Those are browse-only and MUST
+  // NOT be accepted as the household's fixed, priced shopping SKU.
+  const chain = productId.startsWith("bilkatogo:") ? "bilkatogo" : "bilka";
+  const productRows = list<{ id: string; chain_slug: string; price_ore: number | null }>(
+    await ctx.admin(
+      "/rest/v1/bilka_products?select=id,chain_slug,price_ore&id=eq." +
+        encoded(productId) + "&chain_slug=eq." + chain + "&limit=1", "GET",
+    )
+  );
+  const priced = productRows[0];
+  if (!priced || priced.price_ore === null ||
+      !Number.isSafeInteger(priced.price_ore) || priced.price_ore < 0) {
+    return { error: "unpriced_product", status: 409 };
+  }
   await ctx.admin(
     "/rest/v1/ingredient_bilka_defaults?on_conflict=household_id,ingredient_id",
     "POST",
