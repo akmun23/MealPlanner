@@ -1726,19 +1726,22 @@ class MealPlannerState(
 
     fun setWeeklySandwichRecipe(recipeId: String) {
         if (!canEditWeek()) return
-        if (sandwichDay?.let(::isCompletedDayLocked) == true) {
-            lastError = "Den spiste sandwich er låst. Lås dagen op før ændringer."
-            return
-        }
         if (recipes.none { it.id == recipeId && it.mealType == MealType.DINNER }) return
 
-        weeklySandwichRecipeId = recipeId
-        if (
-            sandwichDay == null ||
+        val targetDay = if (sandwichDay == null ||
             sandwichDay?.let { dayModes[it] == DayMode.AWAY } == true
         ) {
-            sandwichDay = WeeklyPlanner.preferredSandwichDay(dayModes)
+            WeeklyPlanner.preferredSandwichDay(dayModes)
+        } else sandwichDay
+
+        if (sandwichDay?.let(::isCompletedDayLocked) == true ||
+            targetDay?.let(::isCompletedDayLocked) == true) {
+            lastError = "En spist sandwichdag er låst. Lås dagen op før ændringer."
+            return
         }
+
+        weeklySandwichRecipeId = recipeId
+        sandwichDay = targetDay
 
         shoppingChecked.clear()
         shoppingIncluded.clear()
