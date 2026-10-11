@@ -66,6 +66,27 @@ Deno.test("single-word food names do not match misleading compound prefixes", ()
   ]).map((x) => x.product.id), [44]);
 });
 
+Deno.test("production bulk discovery is paused and cannot consume any quota", async () => {
+  const result = await discoverProducts({
+    userId: "user",
+    householdId: "house",
+    admin: async (path: string, method: "GET" | "POST") => {
+      if (method !== "GET") throw new Error("Bulk scan cannot write jobs or results");
+      if (path.includes("/ingredients?")) return [{ id: "cucumber", name: "Agurk", never_buy: false }];
+      if (path.includes("/ingredient_bilka_defaults?")) return [];
+      if (path.includes("/ingredient_bilka_candidates?")) return [];
+      if (path.includes("/bilka_discovery_jobs?")) return [];
+      throw new Error("Unexpected GET " + path);
+    },
+    rpc: async () => { throw new Error("No Prej key or quota reservation allowed"); },
+    fetchPrej: async () => { throw new Error("No provider search allowed"); },
+  });
+  eq(result.requestsUsed, 0);
+  eq(result.addedCandidates, 0);
+  eq(result.pending, 1);
+  eq(result.stopReason, "manual_search_recommended");
+});
+
 Deno.test("independent exact searches produce suggestions without selecting defaults", async () => {
   const products: unknown[] = [];
   const candidates: unknown[] = [];
@@ -119,7 +140,7 @@ Deno.test("independent exact searches produce suggestions without selecting defa
       );
     },
   };
-  const first = await discoverProducts(ctx);
+  const first = await discoverProducts(ctx, true);
   eq(first.requestsUsed, 2);
   eq(first.ready, 2);
   eq(first.pending, 0);
@@ -136,7 +157,7 @@ Deno.test("independent exact searches produce suggestions without selecting defa
   eq(apiCalls.map((url) => new URL(url).searchParams.get("q")), ["hvedemel", "pizzamel"]);
   if (!rpcCalls.includes("prej_reserve_call")) throw new Error("Quota reservation missing");
 
-  const second = await discoverProducts(ctx);
+  const second = await discoverProducts(ctx, true);
   eq(second.requestsUsed, 0);
   eq(second.pending, 0);
   eq(apiCalls.length, 2);
@@ -213,7 +234,7 @@ Deno.test("missing results do not cause invented broader searches", async () => 
       return Response.json({ products: [], total: 0 });
     },
   };
-  const result = await discoverProducts(ctx);
+  const result = await discoverProducts(ctx, true);
   eq(calls, ["pizzamel"]);
   eq(result.ready, 0);
   eq(result.noMatch, 1);
