@@ -1902,6 +1902,10 @@ class MealPlannerState(
         recipeId: String,
         deductions: Map<String, Double>
     ): Boolean {
+        if (isPlanning || isWeekChanging) {
+            lastError = "Vent til madplanen er opdateret, før du registrerer retten."
+            return false
+        }
         if (!MealCompletionRules.mayFinish(date, LocalDate.now(), history)) {
             lastError = "Dagen er allerede registreret, eller datoen ligger uden for de seneste 90 dage."
             return false
@@ -1939,6 +1943,10 @@ class MealPlannerState(
      * planning entries are intentionally excluded from meal history.
      */
     fun recordEaten(date: LocalDate, recipeId: String?) {
+        if (isPlanning || isWeekChanging) {
+            lastError = "Vent til madplanen er opdateret, før du retter historikken."
+            return
+        }
         if (date.isAfter(LocalDate.now()) ||
             date.isBefore(LocalDate.now().minusDays(89))) {
             lastError = "Vælg en dag inden for de seneste 90 dage."
@@ -2038,7 +2046,7 @@ class MealPlannerState(
     }
 
     fun reroll(day: DayOfWeek) {
-        if (!canEditWeek()) return
+        if (!canEditWeek() || isPlanning) return
         if (isWeekRegenerationLocked() || isCompletedDayLocked(day)) {
             lastError = "Ugen eller dagen er låst efter registrering af et måltid."
             return
@@ -2062,6 +2070,7 @@ class MealPlannerState(
             .map { it.id }
             .toSet()
 
+        isPlanning = true
         scope.launch {
             try {
                 val updated = withContext(Dispatchers.Default) {
@@ -2081,6 +2090,7 @@ class MealPlannerState(
                     )
                 }
 
+                if (isWeekRegenerationLocked() || isCompletedDayLocked(day)) return@launch
                 plan.putAll(updated)
                 shoppingChecked.clear()
                 shoppingIncluded.clear()
@@ -2088,6 +2098,8 @@ class MealPlannerState(
             } catch (e: Exception) {
                 lastError =
                     "Retten kunne ikke skiftes. Prøv igen."
+            } finally {
+                isPlanning = false
             }
         }
     }
