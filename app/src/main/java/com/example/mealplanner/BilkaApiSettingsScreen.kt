@@ -92,6 +92,7 @@ internal fun BilkaApiSettingsScreen(
     var apiKey by remember { mutableStateOf("") }
     var keyInputOpen by remember { mutableStateOf(false) }
     var connected by remember { mutableStateOf(false) }
+    var keyStatusLoaded by remember { mutableStateOf(false) }
     var verified by remember { mutableStateOf(false) }
     var suffix by remember { mutableStateOf<String?>(null) }
     var localUsed by remember { mutableStateOf(0) }
@@ -113,17 +114,15 @@ internal fun BilkaApiSettingsScreen(
         localUsed = info.bilkaNumber("locallyReserved")
         localBudget = info.bilkaNumber("localBudget").coerceAtLeast(1)
         providerRemaining = info.bilkaText("providerRemaining")
-        if (connected) keyInputOpen = false
     }
 
     LaunchedEffect(householdId) {
-        // Key editing must not remain disabled while the slower independent
-        // catalogue and nightly-status requests load.
-        busy = true
+        // Never lock the key form while status, catalogue or nightly data load.
+        // The user may open the form while the initial status call is pending.
         BilkaPrejClient.status()
             .onSuccess(::applyStatus)
             .onFailure { message = it.message }
-        busy = false
+        keyStatusLoaded = true
         BilkaPrejClient.discoveryStatus(householdId)
             .onSuccess { importStatus = it }
             .onFailure { message = it.message }
@@ -197,7 +196,8 @@ internal fun BilkaApiSettingsScreen(
             item {
                 SectionCard("Prej API-nøgle · din konto") {
                     Text(
-                        if (!connected) "Tilføj din personlige API-nøgle for at finde Bilka-varer."
+                        if (!keyStatusLoaded) "Henter din Prej-nøglestatus … Du kan tilføje en nøgle med det samme."
+                        else if (!connected) "Tilføj din personlige API-nøgle for at finde BilkaToGo-varer."
                         else if (verified) "Din konto er forbundet. Nøglen slutter på ${suffix ?: "****"}."
                         else "Din nøgle er gemt, men skal kontrolleres én gang.",
                         style = MaterialTheme.typography.bodyMedium
@@ -247,6 +247,8 @@ internal fun BilkaApiSettingsScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
+                    }
+                    if (connected || !keyStatusLoaded) {
                         OutlinedButton(
                             onClick = {
                                 keyInputOpen = !keyInputOpen
@@ -259,7 +261,7 @@ internal fun BilkaApiSettingsScreen(
                         }
                     }
 
-                    if (!connected || keyInputOpen) {
+                    if ((keyStatusLoaded && !connected) || keyInputOpen) {
                         Text(
                             if (connected)
                                 "Indsæt din nye nøgle her. Kun nøglen på din egen konto udskiftes."
@@ -292,6 +294,10 @@ internal fun BilkaApiSettingsScreen(
                                     BilkaPrejClient.saveKey(submitted)
                                         .onSuccess { response ->
                                             apiKey = ""
+                                            keyInputOpen = false
+                                            connected = true
+                                            verified = response.bilkaText("verificationPending") != "true"
+                                            suffix = response.bilkaText("keyLastFour")
                                             BilkaPrejClient.status().onSuccess(::applyStatus)
                                             message = if (response.bilkaText("verificationPending") == "true") {
                                                 "Den nye nøgle er gemt krypteret, men ikke " +
