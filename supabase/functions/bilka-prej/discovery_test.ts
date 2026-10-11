@@ -66,6 +66,24 @@ Deno.test("single-word food names do not match misleading compound prefixes", ()
   ]).map((x) => x.product.id), [44]);
 });
 
+Deno.test("flavoured alcohol and gardening products cannot pass food matching", () => {
+  eq(scoreCandidate("Chili", {
+    id: 2119, name: "Sierra Tequila Likør m. Chili",
+  }), 0);
+  eq(scoreCandidate("Agurk", {
+    id: 9, name: "Salling Agurkfrø",
+  }), 0);
+  eq(scoreCandidate("Cherrytomater", {
+    id: 10, name: "Cherrytomat plante",
+  }), 0);
+  eq(scoreCandidate("Chili", {
+    id: 11, name: "Økologisk frisk Chili",
+  }), 0.78);
+  eq(scoreCandidate("Agurk", {
+    id: 12, name: "Dansk Agurk",
+  }), 0.88);
+});
+
 Deno.test("production bulk discovery is paused and cannot consume any quota", async () => {
   const result = await discoverProducts({
     userId: "user",
