@@ -399,7 +399,7 @@ fun WeekScreen(
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onPrimaryContainer
                     )
-                    Spacer(Modifier.height(10.dp))
+                    if (todayEaten == null) Spacer(Modifier.height(10.dp))
                     if (todayEaten == null && todayRecipe != null) {
                         Button(
                             onClick = { finishingDinner = today to todayRecipe.id },
@@ -638,14 +638,18 @@ fun DayCard(
     val away = state.dayModes[day] == DayMode.AWAY
     // Compose observes these lists and maps directly. Remembering by size/id
     // leaves stale titles, locks and categories when existing rows change.
-    val recipe = state.recipeFor(day)
+    val mealDate = state.displayedWeekStart.plusDays((day.value - 1).toLong())
+    val eatenId = state.history.find { it.eatenOn == mealDate }?.recipeId
+    val completedLocked = state.isCompletedDayLocked(day)
+    val plannedRecipe = state.recipeFor(day)
+    // A corrected history entry should show what was actually eaten, not the
+    // stale planned recipe. While explicitly unlocked, show the editable plan.
+    val recipe = if (completedLocked && eatenId != null) {
+        state.recipes.find { it.id == eatenId } ?: plannedRecipe
+    } else plannedRecipe
     val isSandwich = recipe?.id != null && recipe.id == state.weeklySandwichRecipeId
     val isLocked = state.isDayLocked(day)
-    val completedLocked = state.isCompletedDayLocked(day)
     val maxPrepMinutes = state.dayMaxPrepMinutes[day]
-    val mealDate = state.displayedWeekStart
-        .plusDays((day.value - 1).toLong())
-    val eatenId = state.history.find { it.eatenOn == mealDate }?.recipeId
     val recipeCategory = if (recipe != null) {
         recipeCategoryDisplayName(
             state.recipeCategoryName(recipe),
@@ -906,31 +910,27 @@ fun DayCard(
 
                 Spacer(Modifier.height(8.dp))
 
-                // Keep the preparation-time control anchored to the first row.
-                // A single FlowRow used to push "Tid" onto a visually detached
-                // second row when category labels were long.
+                // Metadata stays on the left; the time control, when applicable,
+                // remains fixed to the right of the first row on small screens.
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.Top
                 ) {
-                    if (recipe != null) {
-                        FlowRow(
-                            modifier = Modifier.weight(1f),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            verticalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            if (isSandwich) StatusPill("Ugens sandwich", true)
-                            if (recipeCategory.isNotBlank()) StatusPill(recipeCategory, false)
-                            recipe.prepMinutes?.let { StatusPill("$it min", false) }
-                        }
+                    FlowRow(
+                        modifier = Modifier.weight(1f),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        if (isSandwich) StatusPill("Ugens sandwich", true)
+                        if (recipeCategory.isNotBlank()) StatusPill(recipeCategory, false)
+                        recipe?.prepMinutes?.let { StatusPill("$it min", false) }
                     }
 
-                    Box {
+                    if (!completedLocked) Box {
                         FilterChip(
                             modifier = Modifier.heightIn(min = 32.dp),
                             selected = maxPrepMinutes != null,
-                            enabled = !completedLocked,
                             onClick = { showTimePicker = true },
                             label = {
                                 Text(prepLimitLabel(maxPrepMinutes), maxLines = 1)
