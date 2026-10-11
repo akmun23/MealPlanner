@@ -13,7 +13,7 @@ Billedcache i Coil er uændret: billeder, der allerede er indlæst, kan fortsat 
 
 ## Begrænsninger
 
-GitHub Actions-minutterne er opbrugt. Ingen Android-build, Compose-screenshot-test eller frame-time-benchmark er kørt for denne PR. Ændringerne er kontrolleret statisk for balance i Kotlin-blokke og duplikerede imports, men performanceforbedringerne er en **konkret hypotese, ikke målt resultat**. En APK og fysisk enhedstest er nødvendig for at sige, at hakket er væk. Release-optimering/R8 er **ikke** blevet aktiveret, da projektets README dokumenterer en tidligere opstartsfejl med optimeret release.
+GitHub Actions-minutterne er opbrugt. Ingen Android-build, Compose-screenshot-test eller frame-time-benchmark er kørt for denne PR. Ændringerne er kontrolleret statisk for balance i Kotlin-blokke og duplikerede imports, men performanceforbedringerne er en **konkret hypotese, ikke målt resultat**. En APK og fysisk enhedstest er nødvendig for at sige, at hakket er væk. Release-optimering/R8 er **nu aktiveret** i den faktiske `release`-variant for at imødekomme Play Consoles kommende DEX-krav. Projektet har tidligere haft en opstartsfejl med en R8-build uden dokumenteret root cause; derfor må den nye release **ikke** udgives til produktion, før en fysisk testinstallation har bestået opstart, lokalt/offline-flow, login, Supabase-synkronisering, billedindlæsning og madplan. Se `macrobenchmark/README.md` for signering, mapping.txt, shrinkage-sammenligning og intern Play-test.
 
 ## Manuel validering
 - Madplan med nul/én/flere kategorier, sandwichdag og lange kategorinavne: Tid står i en separat ensartet række.
