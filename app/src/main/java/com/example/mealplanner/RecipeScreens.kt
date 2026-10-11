@@ -143,7 +143,8 @@ fun RecipesScreen(
     // Typing a query should only filter cached IDs, not rescan stock per recipe.
     val makeableRecipeIds by remember(state) {
         derivedStateOf {
-            state.recipes.asSequence()
+            if (!canMakeOnly) emptySet()
+            else state.recipes.asSequence()
                 .filter { state.canMake(it) }
                 .map { it.id }
                 .toSet()
