@@ -1,4 +1,4 @@
-import { dailyRemaining, isFoodSearchResult, toBilkaCacheRow, type PrejProduct } from "./prej.ts";
+import { dailyRemaining, isFoodSearchResult, toBilkaCacheRow, storedProductId, providerProductId, type PrejProduct } from "./prej.ts";
 import { type CatalogServices } from "./catalog_server.ts";
 import { rankCandidates } from "./discovery.ts";
 
@@ -22,7 +22,7 @@ export async function manualProductSearch(
   ) as Array<{id: string; name: string; never_buy: boolean}>;
   if (!ingredients?.length || ingredients[0].never_buy) throw new Error("invalid_search");
 
-  const key = "q:bilka:grocery1:food2:" + query.toLowerCase();
+  const key = "q:bilkatogo:food3:" + query.toLowerCase();
   const cached = await ctx.admin(
     "/rest/v1/bilka_search_cache?select=query_key,product_ids,expires_at" +
     "&query_key=eq." + encodeURIComponent(key) + "&limit=1",
@@ -33,11 +33,11 @@ export async function manualProductSearch(
   let fromCache = false;
   if (cached?.length && Date.parse(cached[0].expires_at) > Date.now()) {
     fromCache = true;
-    const ids = cached[0].product_ids.filter((id) => /^\d+$/.test(id)).slice(0, 100);
+    const ids = cached[0].product_ids.filter((id) => /^bilkatogo:\d+$/.test(id)).slice(0, 100);
     if (ids.length) {
       // Cached IDs alone cannot be checked for ingredient relevance.
       products = await ctx.admin(
-        "/rest/v1/bilka_products?select=id,name,unit_price_ore&chain_slug=eq.bilka" +
+        "/rest/v1/bilka_products?select=id,name,unit_price_ore&chain_slug=eq.bilkatogo" +
           "&id=in.(" + ids.join(",") + ")&limit=100",
         "GET",
       ) as Array<{ id: string; name: string; unit_price_ore?: number | null }>;
@@ -54,7 +54,7 @@ export async function manualProductSearch(
     let remaining: number | null = null;
     try {
       const args = new URLSearchParams({
-        chain: "bilka", grocery: "1", q: query, page: "1", limit: "100"
+        chain: "bilkatogo", q: query, page: "1", limit: "100"
       });
       response = await ctx.request(
         "https://api.prej.app/v1/products?" + args.toString(),
@@ -77,7 +77,8 @@ export async function manualProductSearch(
 
     const payload = await response.json().catch(() => null);
     if (!payload || !Array.isArray(payload.products)) throw new Error("prej_unavailable");
-    const valid = (payload.products as PrejProduct[]).filter(isFoodSearchResult).map(toBilkaCacheRow)
+    const valid = (payload.products as PrejProduct[]).filter((p) => isFoodSearchResult(p, true))
+      .map((p) => toBilkaCacheRow(p, "bilkatogo"))
       .filter((p): p is NonNullable<typeof p> => p !== null);
     const unique = [...new Map(valid.map((p) => [p.id, p])).values()];
     if (unique.length) {
@@ -101,10 +102,10 @@ export async function manualProductSearch(
   const visible = rankCandidates(
     ingredients[0].name,
     products.map((p) => ({
-      id: Number(p.id),
+      id: Number(providerProductId(p.id)),
       name: p.name,
       prices: [{
-        chain_slug: "bilka",
+        chain_slug: "bilkatogo",
         unit_price: p.unit_price_ore ?? null,
       }],
     })),
@@ -117,7 +118,7 @@ export async function manualProductSearch(
       visible.map((p, i) => ({
         household_id: ctx.householdId,
         ingredient_id: ingredientId,
-        product_id: String(p.product.id),
+        product_id: storedProductId(p.product.id!, "bilkatogo"),
         match_status: "SUGGESTED",
         match_score: p.score,
         display_rank: i
