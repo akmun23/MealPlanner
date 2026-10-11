@@ -930,6 +930,7 @@ fun DayCard(
                         FilterChip(
                             modifier = Modifier.heightIn(min = 32.dp),
                             selected = maxPrepMinutes != null,
+                            enabled = !completedLocked,
                             onClick = { showTimePicker = true },
                             label = {
                                 Text(prepLimitLabel(maxPrepMinutes), maxLines = 1)
@@ -964,42 +965,36 @@ fun DayCard(
                     ) { Text("Færdig – registrér lagerforbrug") }
                 }
 
-                Spacer(Modifier.height(8.dp))
-
-                if (isSandwich) {
-                    if (!completedLocked) OutlinedButton(
-                        onClick = { state.moveSandwich() },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text("Flyt sandwich")
-                    }
-                } else {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
+                // A completed day has no editable actions until the user
+                // explicitly unlocks its padlock in the header.
+                if (!completedLocked) {
+                    Spacer(Modifier.height(8.dp))
+                    if (isSandwich) {
                         OutlinedButton(
-                            onClick = { showRecipePicker = true },
-                            enabled = !completedLocked,
-                            modifier = Modifier.weight(1f),
+                            onClick = { state.moveSandwich() },
+                            modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp)
-                        ) { Text("Skift ret") }
-
-
-                        if (!isLocked && !state.isWeekRegenerationLocked() && recipe != null) {
-                            IconButton(
-                                onClick = { state.reroll(day) }
-                            ) {
-                                Icon(
-                                    Icons.Filled.Refresh,
-                                    contentDescription = "Ny ret"
-                                )
+                        ) { Text("Flyt sandwich") }
+                    } else {
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            OutlinedButton(
+                                onClick = { showRecipePicker = true },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(12.dp)
+                            ) { Text("Skift ret") }
+                            if (!isLocked && !state.isWeekRegenerationLocked() && recipe != null) {
+                                IconButton(onClick = { state.reroll(day) }) {
+                                    Icon(Icons.Filled.Refresh, contentDescription = "Ny ret")
+                                }
                             }
                         }
                     }
                 }
+
             }
         }
     }
