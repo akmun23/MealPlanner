@@ -11,7 +11,9 @@ type Backend = CatalogServices & {
  * Keep provider results visible even if Prej supplies no ToGo price.
  * This is a browse-only placeholder, NOT a made-up retailer price.
  */
-function unpricedProviderResult(p: PrejProduct): BilkaCacheRow | null {
+type BrowsableProductRow = Omit<BilkaCacheRow, "price_ore"> & { price_ore: number | null };
+
+function unpricedProviderResult(p: PrejProduct): BrowsableProductRow | null {
   if (!Number.isSafeInteger(p.id) || Number(p.id) <= 0 ||
       typeof p.name !== "string" || !p.name.trim()) return null;
   return {
@@ -24,7 +26,7 @@ function unpricedProviderResult(p: PrejProduct): BilkaCacheRow | null {
     package_base_amount: null,
     quantity_kind: null,
     image_url: null,
-    price_ore: null as unknown as number,
+    price_ore: null,
     unit_price_ore: null,
     unit_price_basis: null,
     is_offer: null,
