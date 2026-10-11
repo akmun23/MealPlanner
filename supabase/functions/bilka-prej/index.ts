@@ -8,6 +8,7 @@ import { priceOnlyUpdates } from "./price_updates.ts";
 import {
   batchIds,
   dailyRemaining,
+  providerProductId,
   toBilkaCacheRow,
   validPrejKey,
   type PrejProduct,
@@ -19,13 +20,14 @@ const PREJ_BASE = "https://api.prej.app";
 const DAILY_BUDGET = 20; // 25 free calls; keep 5 in reserve (including key checks).
 
 type Payload = {
-  action?: "status" | "set-key" | "verify-key" | "remove-key" | "refresh" | "discover" | "discovery-status" | "catalog" | "choose-product" | "manual-search" | "nightly-status" | "set-nightly" | "shopping-context" | "record-purchase";
+  action?: "status" | "set-key" | "verify-key" | "remove-key" | "refresh" | "discover" | "discovery-status" | "catalog" | "choose-product" | "manual-search" | "bulk-search" | "nightly-status" | "set-nightly" | "shopping-context" | "record-purchase";
   apiKey?: unknown;
   householdId?: unknown;
   ingredientId?: unknown;
   ingredientIds?: unknown;
   productId?: unknown;
   query?: unknown;
+  page?: unknown;
   enabled?: unknown;
   weekId?: unknown;
   manualProductName?: unknown;
@@ -289,8 +291,9 @@ async function refresh(userId: string, householdId: unknown): Promise<Response> 
   if (!distinct.length) return json({ updated: 0, requested: 0, message: "no_selected_products" });
 
   // Phase 2 refreshes up to one batch. Discovery/queue is phase 3.
-  const batches = batchIds(distinct, 500);
-  const ids = batches[0] ?? [];
+  const batches = batchIds(distinct.map(providerProductId), 500);
+  const providerIds = batches[0] ?? [];
+  const ids = distinct.filter((id) => providerIds.includes(providerProductId(id)));
   const existing = await adminRequest(
     "/rest/v1/bilka_products?select=id,price_updated_at&id=in.(" + ids.join(",") + ")",
     "GET",
@@ -317,7 +320,8 @@ async function refresh(userId: string, householdId: unknown): Promise<Response> 
   let response: Response;
   try {
     response = await fetch(
-      PREJ_BASE + "/v1/products/batch?ids=" + encodeURIComponent(stale.join(",")),
+      PREJ_BASE + "/v1/products/batch?ids=" +
+        encodeURIComponent([...new Set(stale.map(providerProductId))].join(",")),
       {
         headers: { Authorization: "Bearer " + key },
         signal: AbortSignal.timeout(20_000),
@@ -413,6 +417,61 @@ Deno.serve(async (req) => {
           input.ingredientIds as string[] | undefined,
         ));
       }
+      case "bulk-search": {
+        const householdId = await verifiedHousehold(userId, input.householdId);
+        const ids = input.ingredientIds;
+        if (!Array.isArray(ids) || ids.length < 1 || ids.length > 5 ||
+            ids.some((id) => !uuid(id)) || new Set(ids).size !== ids.length) {
+          return json({ error: "invalid_bulk_selection" }, 400);
+        }
+        const ingredients = await adminRequest(
+          "/rest/v1/ingredients?select=id,name,never_buy&household_id=eq." +
+            encodeURIComponent(householdId) + "&id=in.(" + ids.join(",") + ")&limit=5",
+          "GET",
+        ) as Array<{ id: string; name: string; never_buy: boolean }>;
+        const byId = new Map(ingredients.map((item) => [item.id, item]));
+        if (ids.some((id) => !byId.has(id) || byId.get(id)!.never_buy)) {
+          return json({ error: "invalid_bulk_selection" }, 400);
+        }
+        // Count reservations from the actual local budget ledger, including
+        // provider failures after a call was reserved. We never call Prej
+        // to check usage.
+        const reservedNow = async (): Promise<number> => {
+          const rows = await adminRequest(
+            "/rest/v1/prej_api_usage?select=calls_reserved&user_id=eq." +
+              encodeURIComponent(userId) + "&quota_date_utc=eq." + utcDate() +
+              "&limit=1", "GET",
+          ) as Array<{ calls_reserved: number }>;
+          return rows[0]?.calls_reserved ?? 0;
+        };
+        const reservedBefore = await reservedNow();
+        const results: Array<{ ingredientId: string; name: string; count: number; fromCache: boolean }> = [];
+        let stoppedReason: string | null = null;
+        for (const id of ids) {
+          const ingredient = byId.get(id)!;
+          try {
+            const result = await manualProductSearch(
+              { admin: adminRequest, rpc, request: fetch, userId, householdId },
+              id, ingredient.name, 1,
+            );
+            results.push({
+              ingredientId: id, name: ingredient.name,
+              count: result.count, fromCache: result.fromCache,
+            });
+          } catch (error) {
+            stoppedReason = error instanceof Error && [
+              "daily_budget_exhausted", "prej_key_not_configured",
+              "prej_key_invalid", "prej_unavailable",
+            ].includes(error.message) ? error.message : "bulk_search_failed";
+            break;
+          }
+        }
+        return json({
+          results, stoppedReason,
+          requestsUsed: Math.max(0, (await reservedNow()) - reservedBefore),
+          totalShown: results.reduce((total, r) => total + r.count, 0),
+        });
+      }
       case "manual-search": {
         const householdId = await verifiedHousehold(userId, input.householdId);
         const ingredientId = typeof input.ingredientId === "string" ? input.ingredientId : "";
@@ -420,7 +479,7 @@ Deno.serve(async (req) => {
         try {
           return json(await manualProductSearch(
             { admin: adminRequest, rpc, request: fetch, userId, householdId },
-            ingredientId, query
+            ingredientId, query, input.page === undefined ? 1 : Number(input.page)
           ));
         } catch (error) {
           const code = error instanceof Error ? error.message : "prej_unavailable";

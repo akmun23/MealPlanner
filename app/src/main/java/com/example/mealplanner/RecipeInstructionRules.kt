@@ -2,6 +2,25 @@ package com.example.mealplanner
 
 /** Step labels and editing rules are independent of Compose for repeatable tests. */
 internal object RecipeInstructionRules {
+
+    /**
+     * Save should never drop a draft typed into the quick-add box, even if the
+     * user presses the main Save button before pressing Add step.
+     */
+    fun withPendingText(
+        steps: List<RecipeInstructionStep>,
+        pendingMain: String,
+        pendingSub: String,
+    ): List<RecipeInstructionStep> = buildList {
+        addAll(steps)
+        pendingMain.trim().takeIf { it.isNotEmpty() }?.let {
+            add(RecipeInstructionStep(text = it, level = 0))
+        }
+        pendingSub.trim().takeIf { it.isNotEmpty() && any { s -> s.level == 0 } }?.let {
+            add(RecipeInstructionStep(text = it, level = 1))
+        }
+    }
+
     fun numbered(steps: List<RecipeInstructionStep>): List<Pair<String, RecipeInstructionStep>> {
         var main = 0
         var sub = 0

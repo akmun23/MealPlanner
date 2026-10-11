@@ -337,40 +337,24 @@ internal fun BilkaApiSettingsScreen(
                         }
                     }
 
+                    Text(
+                        "Automatisk massesøgning er sat på pause, fordi Prej " +
+                            "gav forkerte varer og brugte for mange API-kald. " +
+                            "Ingen nye kald foretages uden at du selv søger " +
+                            "på en bestemt ingrediens.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
                     Button(
-                        onClick = {
-                            busy = true
-                            message = null
-                            scope.launch {
-                                BilkaPrejClient.discoverProducts(householdId)
-                                    .onSuccess { result ->
-                                        importStatus = result
-                                        val reason = result.bilkaText("stopReason")
-                                        message = "Produktforslagene er gemt. " +
-                                            (if (reason == null) "Se dem i produktoversigten."
-                                             else importStopMessage(reason))
-                                        BilkaPrejClient.status().onSuccess(::applyStatus)
-                                    }
-                                    .onFailure { message = it.message }
-                                busy = false
-                            }
-                        },
-                        enabled = connected && verified && !busy && !discoveryQuotaExhausted &&
-                            (importStatus == null || actionable),
+                        onClick = onViewProducts,
                         modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(
-                            when {
-                                importStatus != null && pending == 0 -> "Alle mulige søgninger er udført"
-                                importStatus != null && ready > 0 -> "Fortsæt med at finde varer"
-                                else -> "Find manglende Bilka-varer"
-                            }
-                        )
+                        Text("Vælg ingrediens og søg selv")
                     }
                     Text(
                         when {
-                            !connected -> "Tilføj din Prej-nøgle ovenfor for at starte søgningen."
-                            !verified -> "Kontrollér den gemte nøgle før produktsøgning."
+                            !connected -> "Tilføj din Prej-nøgle, hvis du vil søge manuelt efter produkter."
+                            !verified -> "Kontrollér den gemte nøgle før manuel varesøgning."
                             importStatus != null && pending == 0 && ready > 0 ->
                                 "Du kan nu vælge mærke og størrelse i produktoversigten."
                             importStatus != null && pending == 0 ->

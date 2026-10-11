@@ -1,4 +1,4 @@
-import { toBilkaCacheRow, type PrejProduct } from "./prej.ts";
+import { toBilkaCacheRow, isStoredProductId, type PrejProduct, type GroceryChain } from "./prej.ts";
 
 export type PriceOnlyUpdate = {
   id: string;
@@ -13,19 +13,21 @@ export type PriceOnlyUpdate = {
  *  chosen brand, package size, product name or photo with changed API metadata.
  */
 export function priceOnlyUpdates(products: PrejProduct[], expectedIds: string[]): PriceOnlyUpdate[] {
-  const allowed = new Set(expectedIds.filter((id) => /^[0-9]+$/.test(id)));
+  const allowed = new Set(expectedIds.filter(isStoredProductId));
   const rows = new Map<string, PriceOnlyUpdate>();
   for (const product of products) {
-    const item = toBilkaCacheRow(product);
-    if (!item || !allowed.has(item.id)) continue;
-    rows.set(item.id, {
-      id: item.id,
-      price_ore: item.price_ore,
-      unit_price_ore: item.unit_price_ore,
-      unit_price_basis: item.unit_price_basis,
-      is_offer: item.is_offer,
-      price_updated_at: item.price_updated_at,
-    });
+    for (const chain of ["bilka", "bilkatogo"] as GroceryChain[]) {
+      const item = toBilkaCacheRow(product, chain);
+      if (!item || !allowed.has(item.id)) continue;
+      rows.set(item.id, {
+        id: item.id,
+        price_ore: item.price_ore,
+        unit_price_ore: item.unit_price_ore,
+        unit_price_basis: item.unit_price_basis,
+        is_offer: item.is_offer,
+        price_updated_at: item.price_updated_at,
+      });
+    }
   }
   return [...rows.values()];
 }

@@ -1,4 +1,4 @@
-import { batchIds, dailyRemaining, toBilkaCacheRow, type PrejProduct, type BilkaCacheRow } from "./prej.ts";
+import { batchIds, dailyRemaining, toBilkaCacheRow, providerProductId, isStoredProductId, type GroceryChain, type PrejProduct, type BilkaCacheRow } from "./prej.ts";
 
 export type Admin = (path: string, method: "GET" | "POST" | "PATCH", body?: unknown, prefer?: string) => Promise<unknown>;
 export type Rpc = (name: string, args: Record<string, unknown>) => Promise<unknown>;
@@ -29,7 +29,7 @@ export function pickNightlyOwners(
   const already = new Set(pastRuns.filter((r) => r.local_date === localDate).map((r) => r.household_id));
   const products = new Map<string, Set<string>>();
   for (const d of defaults) {
-    if (!/^\d+$/.test(d.product_id)) continue;
+    if (!isStoredProductId(d.product_id)) continue;
     if (!products.has(d.household_id)) products.set(d.household_id, new Set());
     products.get(d.household_id)!.add(d.product_id);
   }
@@ -74,7 +74,7 @@ export async function performNightly(deps: NightlyDeps) {
     );
     if (!list(claim).length) continue;
     let count = 0, requests = 0, error: string | null = null;
-    const chunks = batchIds(owner.productIds, 500);
+    const chunks = batchIds(owner.productIds.map(providerProductId), 500);
     try {
       const key = await deps.rpc("prej_read_key", { p_user_id: owner.userId });
       if (typeof key !== "string" || !key) throw new Error("key_not_available");
@@ -102,9 +102,14 @@ export async function performNightly(deps: NightlyDeps) {
         if (!response.ok) throw new Error("provider_unavailable");
         const body = await response.json().catch(() => null);
         if (!body || !Array.isArray(body.products)) throw new Error("invalid_provider_response");
-        const requested = new Set(ids);
+        const requested = new Set(
+          owner.productIds.filter((id) => ids.includes(providerProductId(id))),
+        );
         const prices = (body.products as PrejProduct[])
-          .map(toBilkaCacheRow)
+          .flatMap((product) =>
+            (["bilka", "bilkatogo"] as GroceryChain[])
+              .map((chain) => toBilkaCacheRow(product, chain))
+          )
           .filter((r): r is BilkaCacheRow => r !== null && requested.has(r.id))
           .map((r) => ({
             id: r.id, price_ore: r.price_ore, unit_price_ore: r.unit_price_ore,

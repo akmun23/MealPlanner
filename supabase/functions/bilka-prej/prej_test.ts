@@ -41,6 +41,26 @@ Deno.test("only Bilka prices, never BilkaToGo or product-level cheapest price", 
   eq(row?.chain_slug, "bilka");
 });
 
+Deno.test("BilkaToGo is a distinct SKU and keeps its own price", () => {
+  const product = {
+    id: 42, name: "Arla Mælk",
+    prices: [
+      { chain_slug: "bilka", price: 1595 },
+      { chain_slug: "bilkatogo", price: 1795 },
+    ],
+  };
+  const bilka = toBilkaCacheRow(product, "bilka");
+  const togo = toBilkaCacheRow(product, "bilkatogo");
+  eq(bilka?.id, "42");
+  eq(togo?.id, "bilkatogo:42");
+  eq(bilka?.chain_slug, "bilka");
+  eq(togo?.chain_slug, "bilkatogo");
+  eq(bilka?.price_ore, 1595);
+  eq(togo?.price_ore, 1795);
+  eq(isFoodSearchResult({ id: 99, name: "Agurk" }, true), true);
+  eq(isFoodSearchResult({ id: 99, name: "Agurk", category_name: "Have" }, true), false);
+});
+
 Deno.test("products without Bilka price are excluded", () => {
   eq(toBilkaCacheRow({
     id: 5, name: "Kartofler", prices: [{ chain_slug: "bilkatogo", price: 1200 }],

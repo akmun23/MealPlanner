@@ -1,20 +1,48 @@
-import { dailyRemaining, isFoodSearchResult, toBilkaCacheRow, type PrejProduct } from "./prej.ts";
+import { dailyRemaining, toBilkaCacheRow, storedProductId, type PrejProduct, type BilkaCacheRow } from "./prej.ts";
 import { type CatalogServices } from "./catalog_server.ts";
-import { rankCandidates } from "./discovery.ts";
+
 
 type Backend = CatalogServices & {
   rpc: (name: string, args: Record<string, unknown>) => Promise<unknown>;
   request: typeof fetch;
   userId: string;
 };
+/**
+ * Keep provider results visible even if Prej supplies no ToGo price.
+ * This is a browse-only placeholder, NOT a made-up retailer price.
+ */
+type BrowsableProductRow = Omit<BilkaCacheRow, "price_ore"> & { price_ore: number | null };
+
+function unpricedProviderResult(p: PrejProduct): BrowsableProductRow | null {
+  if (!Number.isSafeInteger(p.id) || Number(p.id) <= 0 ||
+      typeof p.name !== "string" || !p.name.trim()) return null;
+  return {
+    id: storedProductId(p.id!, "bilkatogo"),
+    chain_slug: "bilkatogo",
+    name: p.name.trim().slice(0, 300),
+    brand: typeof p.brand === "string" ? p.brand.trim().slice(0, 150) : null,
+    package_quantity: null,
+    package_unit: null,
+    package_base_amount: null,
+    quantity_kind: null,
+    image_url: null,
+    price_ore: null,
+    unit_price_ore: null,
+    unit_price_basis: null,
+    is_offer: null,
+    is_available: false,
+    price_updated_at: null,
+  };
+}
+
 const isUuid = (value: string) =>
   /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
 
 export async function manualProductSearch(
-  ctx: Backend, ingredientId: string, text: string
-): Promise<{ count: number; fromCache: boolean }> {
+  ctx: Backend, ingredientId: string, text: string, page = 1
+): Promise<{ count: number; page: number; fromCache: boolean; providerTotal: number | null; receivedCount: number | null; afterCategory: number | null; withToGoPrice: number | null; hasMore: boolean }> {
   const query = text.trim().replace(/\s+/g, " ").slice(0, 80);
-  if (!isUuid(ingredientId) || query.length < 2) throw new Error("invalid_search");
+  if (!isUuid(ingredientId) || query.length < 2 || !Number.isInteger(page) || page < 1 || page > 1000) throw new Error("invalid_search");
   const household = encodeURIComponent(ctx.householdId);
   const ingredients = await ctx.admin(
     "/rest/v1/ingredients?select=id,name,never_buy&household_id=eq." + household +
@@ -22,25 +50,33 @@ export async function manualProductSearch(
   ) as Array<{id: string; name: string; never_buy: boolean}>;
   if (!ingredients?.length || ingredients[0].never_buy) throw new Error("invalid_search");
 
-  const key = "q:bilka:grocery1:food2:" + query.toLowerCase();
+  const key = "q:bilkatogo:raw4:" + query.toLowerCase() + ":p" + page;
   const cached = await ctx.admin(
-    "/rest/v1/bilka_search_cache?select=query_key,product_ids,expires_at" +
+    "/rest/v1/bilka_search_cache?select=query_key,product_ids,expires_at,result_total" +
     "&query_key=eq." + encodeURIComponent(key) + "&limit=1",
     "GET"
-  ) as Array<{product_ids: string[]; expires_at: string}>;
+  ) as Array<{product_ids: string[]; expires_at: string; result_total: number}>;
 
   let products: Array<{ id: string; name: string; unit_price_ore?: number | null }> = [];
+  let totalFound: number | null = null;
   let fromCache = false;
+  let providerTotal: number | null = null;
+  let receivedCount: number | null = null;
+  let afterCategory: number | null = null;
+  let withToGoPrice: number | null = null;
   if (cached?.length && Date.parse(cached[0].expires_at) > Date.now()) {
     fromCache = true;
-    const ids = cached[0].product_ids.filter((id) => /^\d+$/.test(id)).slice(0, 100);
+    totalFound = cached[0].result_total;
+    const ids = cached[0].product_ids.filter((id) => /^bilkatogo:\d+$/.test(id)).slice(0, 100);
     if (ids.length) {
       // Cached IDs alone cannot be checked for ingredient relevance.
       products = await ctx.admin(
-        "/rest/v1/bilka_products?select=id,name,unit_price_ore&chain_slug=eq.bilka" +
-          "&id=in.(" + ids.join(",") + ")&limit=100",
+        "/rest/v1/bilka_products?select=id,name,unit_price_ore&chain_slug=eq.bilkatogo" +
+          "&id=in.(" + ids.map(encodeURIComponent).join(",") + ")&limit=100",
         "GET",
       ) as Array<{ id: string; name: string; unit_price_ore?: number | null }>;
+      const byId = new Map(products.map((p) => [p.id,p]));
+      products = ids.map((id) => byId.get(id)).filter((p): p is NonNullable<typeof p> => !!p);
     }
   } else {
     const apiKey = await ctx.rpc("prej_read_key", { p_user_id: ctx.userId });
@@ -54,7 +90,7 @@ export async function manualProductSearch(
     let remaining: number | null = null;
     try {
       const args = new URLSearchParams({
-        chain: "bilka", grocery: "1", q: query, page: "1", limit: "100"
+        chain: "bilkatogo", q: query, page: String(page), limit: "100"
       });
       response = await ctx.request(
         "https://api.prej.app/v1/products?" + args.toString(),
@@ -77,9 +113,24 @@ export async function manualProductSearch(
 
     const payload = await response.json().catch(() => null);
     if (!payload || !Array.isArray(payload.products)) throw new Error("prej_unavailable");
-    const valid = (payload.products as PrejProduct[]).filter(isFoodSearchResult).map(toBilkaCacheRow)
+    // Diagnostics explain missing suggestions without logging the user's
+    // Prej key or paying for an extra API request.
+    const providerProducts = payload.products as PrejProduct[];
+    providerTotal = Number.isSafeInteger(payload.total) ? payload.total : providerProducts.length;
+    receivedCount = providerProducts.length;
+    // Never silently discard products due to name/category relevance. Display
+    // every SKU in the requested chain with an actual ToGo price, in provider
+    // order. Other-chain prices must NOT be passed off as BilkaToGo.
+    afterCategory = providerProducts.length;
+    const priced = providerProducts
+      .map((p) => toBilkaCacheRow(p, "bilkatogo"))
       .filter((p): p is NonNullable<typeof p> => p !== null);
-    const unique = [...new Map(valid.map((p) => [p.id, p])).values()];
+    withToGoPrice = priced.length;
+    totalFound = providerTotal;
+    const all = providerProducts
+      .map((p) => toBilkaCacheRow(p, "bilkatogo") ?? unpricedProviderResult(p))
+      .filter((p): p is NonNullable<typeof p> => p !== null);
+    const unique = [...new Map(all.map((p) => [p.id, p])).values()];
     if (unique.length) {
       await ctx.admin("/rest/v1/bilka_products?on_conflict=id", "POST", unique);
     }
@@ -88,28 +139,16 @@ export async function manualProductSearch(
       query_key: key,
       product_ids: unique.map((p) => p.id),
       result_total: Number.isSafeInteger(payload.total) ? payload.total : unique.length,
-      page: 1,
-      truncated: payload.total > 100,
+      page,
+      truncated: payload.total > page * 100,
       expires_at: new Date(Date.now() + 7 * 86400000).toISOString()
     }]);
   }
 
-  // Manual queries must still correspond to the actual ingredient, not just
-  // share a prefix like "Fløde"/"Flødebolle" or "Flødelikør". Re-check
-  // cached products as well, including entries from older cache versions.
-  // The user still explicitly chooses the final product; no defaults change.
-  const visible = rankCandidates(
-    ingredients[0].name,
-    products.map((p) => ({
-      id: Number(p.id),
-      name: p.name,
-      prices: [{
-        chain_slug: "bilka",
-        unit_price: p.unit_price_ore ?? null,
-      }],
-    })),
-    10,
-  );
+  // All page results are user-visible candidates. No product relevance
+  // filtering or automatic selection. The raw search intentionally allows
+  // unrelated items; users decide what to pick. Ranking is provider order.
+  const visible = products.slice(0, 100);
   if (visible.length) {
     await ctx.admin(
       "/rest/v1/ingredient_bilka_candidates?on_conflict=household_id,ingredient_id,product_id",
@@ -117,12 +156,12 @@ export async function manualProductSearch(
       visible.map((p, i) => ({
         household_id: ctx.householdId,
         ingredient_id: ingredientId,
-        product_id: String(p.product.id),
+        product_id: p.id,
         match_status: "SUGGESTED",
-        match_score: p.score,
-        display_rank: i
+        match_score: null,
+        display_rank: (page - 1) * 100 + i,
       })),
-      "resolution=ignore-duplicates,return=minimal"
+      "resolution=ignore-duplicates,return=minimal",
     );
   }
   await ctx.admin(
@@ -135,5 +174,9 @@ export async function manualProductSearch(
       status: visible.length ? "COMPLETE" : "NO_MATCH"
     }]
   );
-  return { count: visible.length, fromCache };
+  return {
+    count: visible.length, page, fromCache,
+    providerTotal: totalFound, receivedCount, afterCategory, withToGoPrice,
+    hasMore: totalFound !== null && page * 100 < totalFound,
+  };
 }

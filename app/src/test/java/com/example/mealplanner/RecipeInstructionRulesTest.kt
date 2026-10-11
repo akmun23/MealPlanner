@@ -56,6 +56,19 @@ class RecipeInstructionRulesTest {
     }
 
     @Test
+    fun savingRecipeAlsoStoresUnsubmittedStepText() {
+        val result = RecipeInstructionRules.withPendingText(
+            steps, "  Servér retten varm  ", "  Drys frisk persille over  "
+        )
+        assertEquals(6, result.size)
+        assertEquals("Servér retten varm", result[4].text)
+        assertEquals(0, result[4].level)
+        assertEquals("Drys frisk persille over", result[5].text)
+        assertEquals(1, result[5].level)
+        assertEquals(steps.size, RecipeInstructionRules.withPendingText(steps, "", " ").size)
+    }
+
+    @Test
     fun previousRecipesDefaultToNoStepsOrSourceUrl() {
         val original = Recipe(
             id = "old",

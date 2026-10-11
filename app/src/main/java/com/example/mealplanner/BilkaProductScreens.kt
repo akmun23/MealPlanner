@@ -22,6 +22,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ImageNotSupported
 import androidx.compose.material3.Button
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -192,6 +194,10 @@ internal fun BilkaProductsScreen(
     var error by remember(householdId) { mutableStateOf<String?>(null) }
     var search by remember { mutableStateOf("") }
     var filter by remember { mutableStateOf("Alle") }
+    var bulkSelection by remember(householdId) { mutableStateOf(setOf<String>()) }
+    var bulkConfirm by remember { mutableStateOf(false) }
+    var bulkBusy by remember { mutableStateOf(false) }
+    var bulkMessage by remember { mutableStateOf<String?>(null) }
 
     suspend fun reload() {
         busy = true
@@ -219,7 +225,48 @@ internal fun BilkaProductsScreen(
         { if (it.state == "READY") 0 else if (it.state == "CHOSEN") 1 else 2 },
         { it.name }
     ))
-    SubpageScaffold(title = "Mine Bilka-produkter", onBack = onBack) { padding ->
+    if (bulkConfirm) {
+        AlertDialog(
+            onDismissRequest = { bulkConfirm = false },
+            title = { Text("Søg efter ${bulkSelection.size} ingredienser?") },
+            text = {
+                Text(
+                    "Højst ${bulkSelection.size} nye Prej-kald. Hvert opslag viser op " +
+                        "til 100 varer, også de irrelevante. Allerede gemte opslag " +
+                        "bruger ingen nye kald. Massesøgningen stopper, hvis kvoten er brugt."
+                )
+            },
+            confirmButton = {
+                Button(onClick = {
+                    val requested = bulkSelection.toList()
+                    bulkConfirm = false
+                    bulkBusy = true
+                    scope.launch {
+                        BilkaPrejClient.bulkSearch(householdId, requested)
+                            .onSuccess { response ->
+                                val used = response["requestsUsed"]?.toString() ?: "0"
+                                val shown = response["totalShown"]?.toString() ?: "0"
+                                val stopped = response["stoppedReason"]?.toString()
+                                bulkMessage = "Fandt $shown varer fordelt på de søgte ingredienser. " +
+                                    "Brugte $used API-kald." +
+                                    (if (stopped != null && stopped != "null")
+                                        " Stoppet: $stopped" else "")
+                                bulkSelection = emptySet()
+                                reload()
+                            }
+                            .onFailure { bulkMessage = it.message }
+                        bulkBusy = false
+                    }
+                }) { Text("Start massesøgning") }
+            },
+            dismissButton = {
+                TextButton(onClick = { bulkConfirm = false }) {
+                    Text("Annuller")
+                }
+            }
+        )
+    }
+    SubpageScaffold(title = "Mine BilkaToGo-produkter", onBack = onBack) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(16.dp),
@@ -253,9 +300,23 @@ internal fun BilkaProductsScreen(
                 }
             }
             item {
-                Button(onClick = onImport, modifier = Modifier.fillMaxWidth()) {
-                    Text("Hent flere varer")
+                Text(
+                    "Alle søgeresultater vises, også dem uden ordmatch. " +
+                        "Vælg op til 5 ingredienser nedenfor med afkrydsningsfeltet, " +
+                        "og start massesøgningen. Det koster højst ét kald per " +
+                        "ingrediens (0 ved identisk gemt søgning).",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Button(
+                    onClick = { bulkConfirm = true },
+                    enabled = bulkSelection.isNotEmpty() && !bulkBusy && !busy,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text("Massesøg ${bulkSelection.size} ingredienser")
                 }
+                bulkMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                if (bulkBusy) CircularProgressIndicator()
             }
             item {
                 SearchField(search, { search = it }, "Søg efter ingrediens")
@@ -321,6 +382,16 @@ internal fun BilkaProductsScreen(
                                     )
                                 }
                             }
+                            Checkbox(
+                                checked = item.ingredientId in bulkSelection,
+                                onCheckedChange = { checked ->
+                                    bulkSelection = if (checked) {
+                                        if (bulkSelection.size < 5)
+                                            bulkSelection + item.ingredientId else bulkSelection
+                                    } else bulkSelection - item.ingredientId
+                                },
+                                enabled = !bulkBusy && !busy
+                            )
                             Text(
                                 if (item.state == "CHOSEN") "Ændr" else "Vælg",
                                 color = MaterialTheme.colorScheme.primary,
@@ -364,6 +435,9 @@ internal fun BilkaProductPickerScreen(
     var searchOtherBrand by remember(ingredientId) { mutableStateOf(false) }
     var searchingMore by remember(ingredientId) { mutableStateOf(false) }
     var moreMessage by remember(ingredientId) { mutableStateOf<String?>(null) }
+    var lastQuery by remember(ingredientId) { mutableStateOf(ingredientName) }
+    var nextPage by remember(ingredientId) { mutableStateOf<Int?>(null) }
+    var totalRawFound by remember(ingredientId) { mutableStateOf<Int?>(null) }
 
     suspend fun reload() {
         busy = true
@@ -399,7 +473,7 @@ internal fun BilkaProductPickerScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
-                Text("Vælg dit faste Bilka-produkt", style = MaterialTheme.typography.titleLarge)
+                Text("Vælg dit faste BilkaToGo-produkt", style = MaterialTheme.typography.titleLarge)
                 Text(
                     "Sammenlign mærke, størrelse og pris. Vi gemmer kun det produkt, du vælger.",
                     style = MaterialTheme.typography.bodySmall
@@ -408,13 +482,15 @@ internal fun BilkaProductPickerScreen(
             if (!busy && data != null) {
                 item {
                     TextButton(onClick = { searchOtherBrand = !searchOtherBrand }) {
-                        Text(if (searchOtherBrand) "Skjul varesøgning" else "Mangler dit mærke? Søg i Bilka")
+                        Text(if (searchOtherBrand) "Skjul varesøgning" else "Mangler dit mærke? Søg i BilkaToGo")
                     }
                 }
                 if (searchOtherBrand) item {
                     SectionCard("Find en anden vare") {
                         Text(
-"Søg på mærke eller varenavn. Gemte søgninger bruger ingen API-kald.",
+"Indtast et konkret produktnavn. En ny søgning bruger 1 Prej-kald, " +
+                                "men et identisk gemt opslag bruger 0. " +
+                                "Kun du vælger den endelige vare.",
                             style = MaterialTheme.typography.bodySmall
                         )
                         androidx.compose.material3.OutlinedTextField(
@@ -430,10 +506,27 @@ internal fun BilkaProductPickerScreen(
                                 moreMessage = null
                                 scope.launch {
                                     BilkaPrejClient.manualSearch(
-                                        householdId, ingredientId, moreQuery
+                                        householdId, ingredientId, moreQuery, 1
                                     ).onSuccess { info ->
+                                        lastQuery = moreQuery
+                                        nextPage = if (info["hasMore"]?.toString() == "true") 2 else null
+                                        totalRawFound = info["providerTotal"]?.toString()?.toIntOrNull()
                                         val count = info["count"]?.toString()?.trim('"') ?: "0"
-                                        moreMessage = "Fandt $count forslag. Vælg dit produkt nedenfor."
+                                        val received = info["receivedCount"]?.toString()?.toIntOrNull()
+                                        val afterCategory = info["afterCategory"]?.toString()?.toIntOrNull()
+                                        val withPrice = info["withToGoPrice"]?.toString()?.toIntOrNull()
+                                        val total = info["providerTotal"]?.toString()?.toIntOrNull()
+                                        val cached = info["fromCache"]?.toString() == "true"
+                                        moreMessage = buildString {
+                                            append("Fandt $count relevante BilkaToGo-forslag. ")
+                                            append(if (cached) "Genbrugt cache – 0 API-kald." else "Ny søgning – 1 API-kald.")
+                                            if (received != null && afterCategory != null && withPrice != null) {
+                                                append(" Prej returnerede $received")
+                                                if (total != null && total > received) append(" af $total")
+                                                append(" varer; $afterCategory efter kategorikontrol, ")
+                                                append("$withPrice med BilkaToGo-pris.")
+                                            }
+                                        }
                                         reload()
                                     }.onFailure { moreMessage = it.message }
                                     searchingMore = false
@@ -441,8 +534,31 @@ internal fun BilkaProductPickerScreen(
                             },
                             enabled = !searchingMore && moreQuery.trim().length >= 2,
                             modifier = Modifier.fillMaxWidth()
-                        ) { Text(if (searchingMore) "Søger …" else "Søg i Bilka") }
+                        ) { Text(if (searchingMore) "Søger …" else "Søg i BilkaToGo") }
                         moreMessage?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+                        nextPage?.let { page ->
+                            OutlinedButton(
+                                enabled = !searchingMore,
+                                onClick = {
+                                    searchingMore = true
+                                    scope.launch {
+                                        BilkaPrejClient.manualSearch(
+                                            householdId, ingredientId, lastQuery, page
+                                        ).onSuccess { info ->
+                                            val added = info["count"]?.toString() ?: "0"
+                                            moreMessage = "Side $page: $added varer tilføjet til listen. " +
+                                                "I alt: ${totalRawFound ?: "ukendt"}. " +
+                                                "Et nyt sideopslag kan koste ét kald."
+                                            nextPage = if (info["hasMore"]?.toString() == "true")
+                                                page + 1 else null
+                                            reload()
+                                        }.onFailure { moreMessage = it.message }
+                                        searchingMore = false
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) { Text("Hent næste 100 varer – op til 1 kald") }
+                        }
                     }
                 }
             }
@@ -455,8 +571,11 @@ internal fun BilkaProductPickerScreen(
             } else if (options.isEmpty() && data?.productsFor(ingredientId).isNullOrEmpty()) {
                 item {
                     EmptyCard("Ingen produktforslag til " + ingredientName + " endnu.")
-                    Button(onClick = onImport, modifier = Modifier.fillMaxWidth()) {
-                        Text("Hent flere produktforslag")
+                    Button(
+                        onClick = { searchOtherBrand = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Søg selv efter Bilka-varer")
                     }
                 }
             } else {
@@ -483,7 +602,10 @@ internal fun BilkaProductPickerScreen(
                 }
                 items(options, key = { it.id }) { product ->
                     val chosen = selected == product.id
-                    val selectable = product.id in suggestions || product.id == currentId
+                    // Raw results without a ToGo price remain visible but
+                    // cannot be chosen as a priced shopping SKU.
+                    val selectable = (product.id in suggestions && product.priceOre != null) ||
+                        product.id == currentId
                     Card(
                         onClick = { selected = product.id },
                         enabled = selectable,
@@ -509,6 +631,7 @@ internal fun BilkaProductPickerScreen(
                                 )
                                 Text(
                                     product.brandLabel + " · " + packageLabel(product) +
+                                        (if (product.chainSlug == "bilkatogo") " · BilkaToGo" else " · Bilka") +
                                         (if (product.id == currentId) " · Fast valg" else ""),
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,

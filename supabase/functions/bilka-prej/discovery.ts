@@ -78,6 +78,10 @@ export function scoreCandidate(ingredientName: string, product: PrejProduct): nu
   const wanted = normalizeIngredient(ingredientName);
   const name = normalizeIngredient(product.name ?? "");
   if (!wanted || !name) return 0;
+  // General product-type safety gate, not an ingredient synonym table:
+  // a flavour in alcohol or a cultivation product is not a meal ingredient.
+  const nonCooking = /\b(?:tequila|likoer|spiritus|vodka|whisky|whiskey|rom|snaps|cider|saafroe|pottejord)\b|(?:^| )\S*(?:froe|plante|blomst)(?:r)?(?: |$)/;
+  if (nonCooking.test(name)) return 0;
   if (name === wanted) return 1;
   // Word boundaries vary between provider products: "Basmati ris" and
   // "Basmatiris" should match without inventing a synonym.

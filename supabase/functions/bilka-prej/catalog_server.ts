@@ -11,7 +11,7 @@ export type CatalogServices = {
   householdId: string;
 };
 const encoded = (value: string) => encodeURIComponent(value);
-const idRe = /^[0-9]+$/;
+const idRe = /^(?:[0-9]+|bilkatogo:[0-9]+)$/;
 const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const list = <T>(data: unknown): T[] => Array.isArray(data) ? data as T[] : [];
 
@@ -59,7 +59,7 @@ export async function catalog(ctx: CatalogServices, ingredientIds?: string[]) {
     ctx.admin("/rest/v1/bilka_products?select=id,name,brand,chain_slug," +
       "package_quantity,package_unit,package_base_amount,quantity_kind,image_url," +
       "price_ore,unit_price_ore,unit_price_basis,is_offer,is_available,price_updated_at" +
-      "&chain_slug=eq.bilka&id=in.(" + batch.join(",") + ")&limit=100", "GET")
+      "&id=in.(" + batch.join(",") + ")&limit=100", "GET")
   ))).flatMap((x) => list<Record<string, unknown>>(x));
 
   return { candidates, defaults, products };

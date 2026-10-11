@@ -7,7 +7,7 @@ export type ShoppingService = {
   householdId: string;
 };
 const uuid = (s: string) => /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(s);
-const onlyNumber = (s: string) => /^\d+$/.test(s);
+const onlyNumber = (s: string) => /^(?:\d+|bilkatogo:\d+)$/.test(s);
 const list = <T>(x: unknown): T[] => Array.isArray(x) ? x as T[] : [];
 const encode = (v: string) => encodeURIComponent(v);
 
@@ -106,7 +106,9 @@ export async function recordPurchase(ctx: ShoppingService, input: CheckoutPayloa
     }
     const products = list<ProductRow>(await ctx.admin(
       "/rest/v1/bilka_products?select=id,package_base_amount,quantity_kind,price_ore" +
-        "&id=eq." + productId + "&chain_slug=eq.bilka&limit=1", "GET"
+        "&id=eq." + encode(productId) + "&chain_slug=eq." +
+      (productId.startsWith("bilkatogo:") ? "bilkatogo" : "bilka") +
+      "&limit=1", "GET"
     ));
     const product = products[0];
     if (!product) throw new CheckoutError("not_bilka_product", 400);
