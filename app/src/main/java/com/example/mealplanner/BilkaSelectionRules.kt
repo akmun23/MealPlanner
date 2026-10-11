@@ -56,12 +56,18 @@ internal object BilkaSelectionRules {
             .filter { it.priceOre != null && it.unitPriceOre != null }
             .mapNotNull { it.unitPriceBasis }
             .distinct()
-        val comparable = byUnitPrice && bases.size == 1
+        val comparable = byUnitPrice && bases.size == 1 &&
+            products.all { it.unitPriceOre == null || it.unitPriceBasis == bases.single() }
+        // Computing a normalized score once per SKU keeps scrolling/recomposition
+        // inexpensive even after many manually loaded result pages.
+        val relevance = if (!byUnitPrice && ingredientName != null)
+            products.associate { it.id to ingredientNameScore(ingredientName, it.name) }
+        else emptyMap()
         return products.sortedWith(compareBy<BilkaProduct>(
             { if (it.id == chosenProductId) 0 else 1 },
             {
                 if (!byUnitPrice && ingredientName != null)
-                    -ingredientNameScore(ingredientName, it.name)
+                    -(relevance[it.id] ?: 0)
                 else 0
             },
             { if (!byUnitPrice) it.priceOre == null else if (comparable) it.unitPriceOre == null else false },
