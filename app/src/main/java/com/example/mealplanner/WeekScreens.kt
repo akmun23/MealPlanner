@@ -804,7 +804,7 @@ fun DayCard(
                             onClick = { onFinishDinner(mealDate, recipe.id) },
                             modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Færdig – registrér spist og lagerforbrug")
+                            Text("Færdig – registrér lagerforbrug")
                         }
                     } else {
                         val eatenName = state.recipes.find { it.id == eatenId }?.name
