@@ -433,8 +433,18 @@ Deno.serve(async (req) => {
         if (ids.some((id) => !byId.has(id) || byId.get(id)!.never_buy)) {
           return json({ error: "invalid_bulk_selection" }, 400);
         }
-        // Explicit max-five user-selected searches. Each cache miss costs one
-        // request; a failure stops immediately and returns completed results.
+        // Count reservations from the actual local budget ledger, including
+        // provider failures after a call was reserved. We never call Prej
+        // to check usage.
+        const reservedNow = async (): Promise<number> => {
+          const rows = await adminRequest(
+            "/rest/v1/prej_api_usage?select=calls_reserved&user_id=eq." +
+              encodeURIComponent(userId) + "&quota_date_utc=eq." + utcDate() +
+              "&limit=1", "GET",
+          ) as Array<{ calls_reserved: number }>;
+          return rows[0]?.calls_reserved ?? 0;
+        };
+        const reservedBefore = await reservedNow();
         const results: Array<{ ingredientId: string; name: string; count: number; fromCache: boolean }> = [];
         let stoppedReason: string | null = null;
         for (const id of ids) {
@@ -458,7 +468,7 @@ Deno.serve(async (req) => {
         }
         return json({
           results, stoppedReason,
-          requestsUsed: results.filter((r) => !r.fromCache).length,
+          requestsUsed: Math.max(0, (await reservedNow()) - reservedBefore),
           totalShown: results.reduce((total, r) => total + r.count, 0),
         });
       }
