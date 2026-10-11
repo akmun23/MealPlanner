@@ -430,14 +430,15 @@ internal fun BilkaProductPickerScreen(
     var saveError by remember(ingredientId) { mutableStateOf<String?>(null) }
     var error by remember(ingredientId) { mutableStateOf<String?>(null) }
     var search by remember(ingredientId) { mutableStateOf("") }
-    var cheapest by remember(ingredientId) { mutableStateOf(true) }
+    // Prefer ingredient-name matches. Unit-price ranking stays an explicit option.
+    var cheapest by remember(ingredientId) { mutableStateOf(false) }
+    var visibleCount by remember(ingredientId) { mutableStateOf(12) }
     var moreQuery by remember(ingredientId) { mutableStateOf(ingredientName) }
     var searchOtherBrand by remember(ingredientId) { mutableStateOf(false) }
     var searchingMore by remember(ingredientId) { mutableStateOf(false) }
     var moreMessage by remember(ingredientId) { mutableStateOf<String?>(null) }
     var lastQuery by remember(ingredientId) { mutableStateOf(ingredientName) }
     var nextPage by remember(ingredientId) { mutableStateOf<Int?>(null) }
-    var totalRawFound by remember(ingredientId) { mutableStateOf<Int?>(null) }
 
     suspend fun reload() {
         busy = true
@@ -456,15 +457,20 @@ internal fun BilkaProductPickerScreen(
 
     val currentId = data?.defaultId(ingredientId)
     val suggestions = data?.suggestions(ingredientId).orEmpty()
-    val options = BilkaSelectionRules.sortForIngredient(
-        data?.productsFor(ingredientId).orEmpty(),
-        data?.ranks(ingredientId).orEmpty(),
-        cheapest,
-        chosenProductId = currentId
-    ).filter {
-        search.isBlank() || it.name.contains(search.trim(), true) ||
-            it.brandLabel.contains(search.trim(), true)
+    val options = remember(data, ingredientId, ingredientName, cheapest, search) {
+        BilkaSelectionRules.sortForIngredient(
+            data?.productsFor(ingredientId).orEmpty(),
+            data?.ranks(ingredientId).orEmpty(),
+            cheapest,
+            chosenProductId = data?.defaultId(ingredientId),
+            ingredientName = ingredientName
+        ).filter {
+            search.isBlank() || it.name.contains(search.trim(), true) ||
+                it.brandLabel.contains(search.trim(), true)
+        }
     }
+
+    LaunchedEffect(search, cheapest, ingredientId) { visibleCount = 12 }
 
     SubpageScaffold(title = ingredientName, onBack = onBack) { padding ->
         LazyColumn(
@@ -510,21 +516,18 @@ internal fun BilkaProductPickerScreen(
                                     ).onSuccess { info ->
                                         lastQuery = moreQuery
                                         nextPage = if (info["hasMore"]?.toString() == "true") 2 else null
-                                        totalRawFound = info["providerTotal"]?.toString()?.toIntOrNull()
                                         val count = info["count"]?.toString()?.trim('"') ?: "0"
                                         val received = info["receivedCount"]?.toString()?.toIntOrNull()
-                                        val afterCategory = info["afterCategory"]?.toString()?.toIntOrNull()
                                         val withPrice = info["withToGoPrice"]?.toString()?.toIntOrNull()
                                         val total = info["providerTotal"]?.toString()?.toIntOrNull()
                                         val cached = info["fromCache"]?.toString() == "true"
                                         moreMessage = buildString {
-                                            append("Fandt $count relevante BilkaToGo-forslag. ")
-                                            append(if (cached) "Genbrugt cache – 0 API-kald." else "Ny søgning – 1 API-kald.")
-                                            if (received != null && afterCategory != null && withPrice != null) {
-                                                append(" Prej returnerede $received")
-                                                if (total != null && total > received) append(" af $total")
-                                                append(" varer; $afterCategory efter kategorikontrol, ")
-                                                append("$withPrice med BilkaToGo-pris.")
+                                            append("$count varer fra BilkaToGo. ")
+                                            append(if (cached) "Gemt søgning – 0 API-kald." else "1 Prej-kald.")
+                                            if (received != null && withPrice != null) {
+                                                append(" $withPrice af $received har BilkaToGo-pris.")
+                                                if (total != null && total > received)
+                                                    append(" Flere varer kan hentes.")
                                             }
                                         }
                                         reload()
@@ -546,9 +549,7 @@ internal fun BilkaProductPickerScreen(
                                             householdId, ingredientId, lastQuery, page
                                         ).onSuccess { info ->
                                             val added = info["count"]?.toString() ?: "0"
-                                            moreMessage = "Side $page: $added varer tilføjet til listen. " +
-                                                "I alt: ${totalRawFound ?: "ukendt"}. " +
-                                                "Et nyt sideopslag kan koste ét kald."
+                                            moreMessage = "Side $page: $added varer tilføjet til listen."
                                             nextPage = if (info["hasMore"]?.toString() == "true")
                                                 page + 1 else null
                                             reload()
@@ -586,21 +587,28 @@ internal fun BilkaProductPickerScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         FilterChip(
+                            selected = !cheapest,
+                            onClick = { cheapest = false },
+                            label = { Text("Bedste match") }
+                        )
+                        FilterChip(
                             selected = cheapest,
                             onClick = { cheapest = true },
                             label = { Text("Laveste enhedspris") }
-                        )
-                        FilterChip(
-                            selected = !cheapest,
-                            onClick = { cheapest = false },
-                            label = { Text("Relevans") }
                         )
                     }
                 }
                 if (options.isEmpty()) item {
                     EmptyCard("Ingen varer passer til søgningen.")
                 }
-                items(options, key = { it.id }) { product ->
+                item {
+                    Text(
+                        "Mest sandsynlige match først. Alle varer kan stadig ses.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                items(options.take(visibleCount), key = { it.id }) { product ->
                     val chosen = selected == product.id
                     // Raw results without a ToGo price remain visible but
                     // cannot be chosen as a priced shopping SKU.
@@ -688,6 +696,16 @@ internal fun BilkaProductPickerScreen(
                                     modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp)
                                 )
                             }
+                        }
+                    }
+                }
+                if (options.size > visibleCount) {
+                    item {
+                        OutlinedButton(
+                            onClick = { visibleCount = (visibleCount + 20).coerceAtMost(options.size) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Vis flere varer (${visibleCount.coerceAtMost(options.size)} af ${options.size})")
                         }
                     }
                 }

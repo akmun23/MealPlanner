@@ -108,4 +108,54 @@ class BilkaSelectionRulesTest {
         )
         assertEquals(emptyList<BilkaProduct>(), catalog.productsFor("flour"))
     }
+    @Test
+    fun relevanceSortPutsActualCreamBeforeLiqueurAndSweetsWithoutHidingAnything() {
+        val items = listOf(
+            item("liqueur", "A", 800.0, BilkaUnitPriceBasis.L).copy(name = "Flødelikør 17%"),
+            item("chocolate", "B", 700.0, BilkaUnitPriceBasis.PIECE).copy(name = "Proteinbar Flødebolle"),
+            item("cream", "C", 1900.0, BilkaUnitPriceBasis.L).copy(name = "Arla Piskefløde 38%"),
+            item("plain", "D", 2200.0, BilkaUnitPriceBasis.L).copy(name = "Fløde")
+        )
+        val ranked = BilkaSelectionRules.sortForIngredient(
+            items, emptyMap(), false, ingredientName = "Fløde"
+        )
+        assertEquals(listOf("plain", "cream", "chocolate", "liqueur"), ranked.map { it.id })
+        assertEquals(4, ranked.size)
+    }
+
+    @Test
+    fun relevanceKeepsSavedSkuFirstAndDemotesCultivationAndAlcohol() {
+        val items = listOf(
+            item("garden", "A", 1200.0, BilkaUnitPriceBasis.KG).copy(name = "Chili plante"),
+            item("alcohol", "B", 1100.0, BilkaUnitPriceBasis.L).copy(name = "Chili tequila"),
+            item("food", "C", 2200.0, BilkaUnitPriceBasis.KG).copy(name = "Økologisk Chili")
+        )
+        val ranked = BilkaSelectionRules.sortForIngredient(
+            items, emptyMap(), false, chosenProductId = "garden", ingredientName = "Chili"
+        )
+        assertEquals(listOf("garden", "food", "alcohol"), ranked.map { it.id })
+        assertEquals(3, ranked.size)
+    }
+
+    @Test
+    fun priceSortFallsBackToProviderRankForMixedOrMissingUnitBases() {
+        val items = listOf(
+            item("missing", "A", 100.0, null),
+            item("kilogram", "B", 900.0, BilkaUnitPriceBasis.KG)
+        )
+        val sorted = BilkaSelectionRules.sortForIngredient(
+            items, mapOf("kilogram" to 0, "missing" to 1), byUnitPrice = true
+        )
+        assertEquals(listOf("kilogram", "missing"), sorted.map { it.id })
+    }
+
+    @Test
+    fun matchingIngredientDoesNotTreatANamePrefixAsACompleteMatch() {
+        assertTrue(BilkaSelectionRules.ingredientNameScore("Fløde", "Arla Fløde 38%") >
+            BilkaSelectionRules.ingredientNameScore("Fløde", "Flødebolle"))
+        assertTrue(BilkaSelectionRules.ingredientNameScore("Mælk", "Sødmælk") >
+            BilkaSelectionRules.ingredientNameScore("Mælk", "Mælkebøttefjerner"))
+        assertTrue(BilkaSelectionRules.ingredientNameScore("Agurk", "Agurkeplanter") <= 0)
+    }
+
 }

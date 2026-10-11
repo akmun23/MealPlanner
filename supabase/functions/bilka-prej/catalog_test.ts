@@ -49,9 +49,12 @@ Deno.test("explicit save only updates one ingredient default, never its candidat
   const services = {
     householdId: "ce85a721-78a3-40c5-a18d-13b1011ba54b",
     admin: async (path: string, method: "GET" | "POST", body?: unknown): Promise<unknown> => {
-      if (method === "GET") return [{
-        ingredient_id: id, product_id: "42",
-      }];
+      if (method === "GET") {
+        if (path.includes("/bilka_products?")) {
+          return [{ id: "42", chain_slug: "bilka", price_ore: 2500 }];
+        }
+        return [{ ingredient_id: id, product_id: "42" }];
+      }
       if (!path.startsWith("/rest/v1/ingredient_bilka_defaults"))
         throw new Error("Must not write search candidates");
       writes.push(...(body as Record<string, unknown>[]));
@@ -125,4 +128,38 @@ Deno.test("previously selected SKU stays available when suggestions are cleared"
   eq(result.defaults, [{ ingredient_id: id, product_id: "42" }]);
   eq(result.products.map((p) => p.id), ["42"]);
   eq(requests.some((path) => path.includes("id=in.(42)")), true);
+});
+
+Deno.test("ToGo items with no actual ToGo price cannot become fixed SKUs", async () => {
+  const writes: unknown[] = [];
+  let price: number | null = null;
+  let chain = "bilkatogo";
+  const service = {
+    householdId: "ce85a721-78a3-40c5-a18d-13b1011ba54b",
+    admin: async (path: string, method: "GET" | "POST", body?: unknown): Promise<unknown> => {
+      if (method === "POST") {
+        writes.push(body);
+        return body;
+      }
+      if (path.includes("/ingredient_bilka_candidates?")) {
+        return [{ ingredient_id: id, product_id: "bilkatogo:123" }];
+      }
+      if (path.includes("/bilka_products?")) {
+        return [{ id: "bilkatogo:123", chain_slug: chain, price_ore: price }];
+      }
+      throw new Error("unexpected query " + path);
+    },
+  };
+  const missing = await saveHouseholdDefault(service, id, "bilkatogo:123");
+  eq(missing.error, "unpriced_product");
+  eq(writes.length, 0);
+  price = 1295;
+  chain = "bilka";
+  const wrongChain = await saveHouseholdDefault(service, id, "bilkatogo:123");
+  eq(wrongChain.error, "unpriced_product");
+  eq(writes.length, 0);
+  chain = "bilkatogo";
+  const good = await saveHouseholdDefault(service, id, "bilkatogo:123");
+  eq(good.saved, true);
+  eq(writes.length, 1);
 });
