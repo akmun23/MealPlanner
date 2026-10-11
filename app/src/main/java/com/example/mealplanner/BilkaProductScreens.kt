@@ -57,6 +57,8 @@ import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.contentOrNull
 
 @Serializable
 internal data class BilkaListIngredient(
@@ -564,7 +566,7 @@ internal fun BilkaProductPickerScreen(
                                     ).onSuccess { info ->
                                         val found = info["found"]?.toString() == "true"
                                         val cached = info["fromCache"]?.toString() == "true"
-                                        val name = info["productName"]?.toString()?.trim('"')
+                                        val name = info["productName"]?.jsonPrimitive?.contentOrNull
                                         moreMessage = when {
                                             found ->
                                                 "EAN fundet hos BilkaToGo – " +
