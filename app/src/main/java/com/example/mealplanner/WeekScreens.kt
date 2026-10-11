@@ -78,6 +78,18 @@ fun WeekScreen(
     var showLunchPicker by remember { mutableStateOf(false) }
     var showSandwichPicker by remember { mutableStateOf(false) }
     var showGenerateConfirmation by remember { mutableStateOf(false) }
+    var finishingDinner by remember { mutableStateOf<Pair<LocalDate, String>?>(null) }
+    finishingDinner?.let { (date, recipeId) ->
+        state.recipes.find { it.id == recipeId }?.let { meal ->
+            FinishMealDialog(
+                date = date,
+                recipe = meal,
+                state = state,
+                onDismiss = { finishingDinner = null }
+            )
+        }
+    }
+
 
     if (showGenerateConfirmation) {
         AlertDialog(
@@ -232,6 +244,12 @@ fun WeekScreen(
         val end = start.plusDays(6)
         val dateFormat = DateTimeFormatter.ofPattern("d. MMM", Locale.forLanguageTag("da-DK"))
         val weekNumber = start.get(WeekFields.ISO.weekOfWeekBasedYear())
+        val today = LocalDate.now()
+        val todayRecipe = if (today in start..end &&
+            state.dayModes[today.dayOfWeek] != DayMode.AWAY
+        ) state.recipeFor(today.dayOfWeek) else null
+        val todayEaten = state.history.find { it.eatenOn == today }
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -262,6 +280,33 @@ fun WeekScreen(
             }
         }
         Spacer(Modifier.height(12.dp))
+        if (today in start..end) {
+            SectionCard("I dag · aftensmad") {
+                Text(
+                    todayEaten?.recipeId?.let { eaten ->
+                        state.recipes.find { it.id == eaten }?.name
+                    } ?: todayRecipe?.name ?: "Ingen ret planlagt",
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(Modifier.height(8.dp))
+                if (todayEaten != null) {
+                    Text("Spist og registreret", color = MaterialTheme.colorScheme.primary)
+                    TextButton(onClick = onMealHistory) {
+                        Text("Ret registreringen")
+                    }
+                } else if (todayRecipe != null) {
+                    Button(
+                        onClick = { finishingDinner = today to todayRecipe.id },
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Færdig – registrér dagens ret") }
+                } else {
+                    TextButton(onClick = onMealHistory) {
+                        Text("Registrér en anden ret")
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
+        }
         Button(
             onClick = {
                 if (WeekRules.needsRegenerationConfirmation(
@@ -420,7 +465,11 @@ fun WeekScreen(
             DayCard(
                 day = day,
                 state = state,
-                onOpenRecipe = onOpenRecipe
+                onOpenRecipe = onOpenRecipe,
+                onFinishDinner = { date, recipeId ->
+                    finishingDinner = date to recipeId
+                },
+                onMealHistory = onMealHistory
             )
         }
     }
@@ -465,7 +514,9 @@ private fun SummaryCard(
 fun DayCard(
     day: DayOfWeek,
     state: MealPlannerState,
-    onOpenRecipe: (String) -> Unit
+    onOpenRecipe: (String) -> Unit,
+    onFinishDinner: (LocalDate, String) -> Unit,
+    onMealHistory: () -> Unit
 ) {
     val away = state.dayModes[day] == DayMode.AWAY
     // Compose observes these lists and maps directly. Remembering by size/id
@@ -743,22 +794,29 @@ fun DayCard(
                     }
                 }
 
-                if (mealDate <= LocalDate.now() && recipe != null) {
-                    Spacer(Modifier.height(5.dp))
+                if (mealDate <= LocalDate.now() &&
+                    !mealDate.isBefore(LocalDate.now().minusDays(89)) &&
+                    recipe != null
+                ) {
+                    Spacer(Modifier.height(10.dp))
                     if (eatenId == null) {
-                        TextButton(onClick = {
-                            state.recordEaten(mealDate, recipe.id)
-                        }) {
-                            Text("Bekræft spist")
+                        Button(
+                            onClick = { onFinishDinner(mealDate, recipe.id) },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Færdig – registrér spist og lagerforbrug")
                         }
                     } else {
                         val eatenName = state.recipes.find { it.id == eatenId }?.name
                             ?: "Ukendt opskrift"
                         Text(
-                            "Spist: $eatenName",
-                            style = MaterialTheme.typography.bodySmall,
+                            "Spist og registreret: $eatenName",
+                            style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.primary
                         )
+                        TextButton(onClick = onMealHistory) {
+                            Text("Ret spist ret")
+                        }
                     }
                 }
 

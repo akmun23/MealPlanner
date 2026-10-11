@@ -1814,6 +1814,44 @@ class MealPlannerState(
     }
 
     /**
+     * Finish a planned dinner and record the explicitly reviewed pantry usage
+     * in one offline-sync batch. A second tap cannot consume stock again;
+     * corrections to history remain possible in the separate history screen
+     * without repeating pantry deductions.
+     */
+    fun completePlannedDinner(
+        date: LocalDate,
+        recipeId: String,
+        deductions: Map<String, Double>
+    ): Boolean {
+        if (!MealCompletionRules.mayFinish(date, LocalDate.now(), history)) {
+            lastError = "Dagen er allerede registreret, eller datoen ligger uden for de seneste 90 dage."
+            return false
+        }
+        val recipe = recipes.find { it.id == recipeId && it.mealType == MealType.DINNER }
+        if (recipe == null) {
+            lastError = "Opskriften findes ikke længere."
+            return false
+        }
+        val remaining = MealCompletionRules.remainingAfterMeal(recipe, pantry, deductions)
+        if (remaining == null) {
+            lastError = "Kontrollér lagerforbruget. En mængde er ugyldig eller større end lageret."
+            return false
+        }
+
+        remaining.forEach { (ingredientId, value) -> pantry[ingredientId] = value }
+        history.add(MealHistoryEntry(recipeId, date))
+        enqueueMutations(
+            remaining.map { (ingredientId, amountBase) ->
+                QueuedMutation.SetPantry(ingredientId = ingredientId, amountBase = amountBase)
+            } + QueuedMutation.SetMealEaten(
+                eatenOn = date.toString(), recipeId = recipeId
+            )
+        )
+        return true
+    }
+
+    /**
      * Confirm or correct the actual dinner eaten on a date. Unconfirmed
      * planning entries are intentionally excluded from meal history.
      */
