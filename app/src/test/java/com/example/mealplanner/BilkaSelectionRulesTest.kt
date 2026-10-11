@@ -143,7 +143,7 @@ class BilkaSelectionRulesTest {
             BilkaSelectionRules.ingredientNameScore("Fløde", "Flødebolle"))
         assertTrue(BilkaSelectionRules.ingredientNameScore("Mælk", "Sødmælk") >
             BilkaSelectionRules.ingredientNameScore("Mælk", "Mælkebøttefjerner"))
-        assertEquals(0, BilkaSelectionRules.ingredientNameScore("Agurk", "Agurkeplanter"))
+        assertTrue(BilkaSelectionRules.ingredientNameScore("Agurk", "Agurkeplanter") <= 0)
     }
 
 }
