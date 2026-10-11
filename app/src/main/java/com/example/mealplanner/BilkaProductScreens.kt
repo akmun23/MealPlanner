@@ -440,7 +440,21 @@ internal fun BilkaProductPickerScreen(
                                         householdId, ingredientId, moreQuery
                                     ).onSuccess { info ->
                                         val count = info["count"]?.toString()?.trim('"') ?: "0"
-                                        moreMessage = "Fandt $count forslag. Vælg dit produkt nedenfor."
+                                        val received = info["receivedCount"]?.toString()?.toIntOrNull()
+                                        val afterCategory = info["afterCategory"]?.toString()?.toIntOrNull()
+                                        val withPrice = info["withToGoPrice"]?.toString()?.toIntOrNull()
+                                        val total = info["providerTotal"]?.toString()?.toIntOrNull()
+                                        val cached = info["fromCache"]?.toString() == "true"
+                                        moreMessage = buildString {
+                                            append("Fandt $count relevante BilkaToGo-forslag. ")
+                                            append(if (cached) "Genbrugt cache – 0 API-kald." else "Ny søgning – 1 API-kald.")
+                                            if (received != null && afterCategory != null && withPrice != null) {
+                                                append(" Prej returnerede $received")
+                                                if (total != null && total > received) append(" af $total")
+                                                append(" varer; $afterCategory efter kategorikontrol, ")
+                                                append("$withPrice med BilkaToGo-pris.")
+                                            }
+                                        }
                                         reload()
                                     }.onFailure { moreMessage = it.message }
                                     searchingMore = false
