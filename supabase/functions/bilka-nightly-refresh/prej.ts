@@ -71,16 +71,16 @@ export type BilkaCacheRow = {
 export type GroceryChain = "bilka" | "bilkatogo";
 export function storedProductId(id: number | string, chain: GroceryChain): string {
   const raw = String(id);
-  if (!/^\\d+$/.test(raw)) throw new Error("invalid_prej_id");
+  if (!/^\d+$/.test(raw)) throw new Error("invalid_prej_id");
   return chain === "bilkatogo" ? "bilkatogo:" + raw : raw;
 }
 export function providerProductId(id: string): string {
   const sourceId = id.startsWith("bilkatogo:") ? id.slice("bilkatogo:".length) : id;
-  if (!/^\\d+$/.test(sourceId)) throw new Error("invalid_prej_id");
+  if (!/^\d+$/.test(sourceId)) throw new Error("invalid_prej_id");
   return sourceId;
 }
 export function isStoredProductId(id: string): boolean {
-  return /^\\d+$/.test(id) || /^bilkatogo:\\d+$/.test(id);
+  return /^\d+$/.test(id) || /^bilkatogo:\d+$/.test(id);
 }
 
 export function batchIds(ids: string[], size = 500): string[][] {
