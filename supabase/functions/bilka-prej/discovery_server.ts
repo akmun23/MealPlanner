@@ -111,9 +111,28 @@ export async function discoveryStatus(ctx: DiscoveryServices) {
 }
 
 /** Only suggests SKUs. Never writes ingredient_bilka_defaults. */
-export async function discoverProducts(ctx: DiscoveryServices) {
+export async function discoverProducts(
+  ctx: DiscoveryServices,
+  // Only internal regression tests may opt in to legacy bulk calls. The
+  // production endpoint always uses the default, which consumes ZERO calls.
+  allowProviderBulkSearch = false,
+) {
   const { admin, rpc, householdId, userId } = ctx;
   const initial = await discoveryStatus(ctx);
+  if (!allowProviderBulkSearch) {
+    // The provider's exact-name results have been dominated by garden seeds,
+    // plants and flavoured alcohol (e.g. Agurk, Chili, Cherrytomater).
+    // Never spend a household's entire daily quota on an unreviewed batch.
+    // Keep existing choices, manual search and cached catalog fully usable.
+    return {
+      ...stripInternal(initial),
+      requestsUsed: 0,
+      fromCache: 0,
+      addedCandidates: 0,
+      stopReason: "manual_search_recommended",
+      canContinue: false,
+    };
+  }
   if (!initial.pending) {
     return { ...stripInternal(initial), requestsUsed: 0, fromCache: 0, addedCandidates: 0 };
   }
