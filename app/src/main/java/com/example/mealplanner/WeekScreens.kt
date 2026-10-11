@@ -249,10 +249,10 @@ fun WeekScreen(
         item(key = "week-navigation", contentType = "week-section") {
             Column {
                 Text(
-            "Madplan",
-            style = MaterialTheme.typography.headlineMedium,
-            fontWeight = FontWeight.Bold
-        )
+                    "Madplan",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold
+                )
 
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -265,7 +265,7 @@ fun WeekScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(14.dp),
+                    .padding(12.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Row(
@@ -326,9 +326,9 @@ fun WeekScreen(
             }
         }
 
-        item(key = "week-today", contentType = "week-section") {
-            Column {
         if (today in start..end) {
+            item(key = "week-today", contentType = "week-section") {
+                Column {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
@@ -337,7 +337,7 @@ fun WeekScreen(
                 ),
                 elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
             ) {
-                Column(Modifier.padding(16.dp)) {
+                Column(Modifier.padding(12.dp)) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         horizontalArrangement = Arrangement.SpaceBetween,
@@ -421,8 +421,8 @@ fun WeekScreen(
                 !state.isWeekChanging,
             modifier = Modifier
                 .fillMaxWidth()
-                .height(52.dp),
-            shape = RoundedCornerShape(16.dp)
+                .height(48.dp),
+            shape = RoundedCornerShape(14.dp)
         ) {
             if (state.isPlanning) {
                 CircularProgressIndicator(
@@ -580,7 +580,7 @@ private fun SummaryCard(
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
     ) {
-        Column(Modifier.padding(12.dp)) {
+        Column(Modifier.padding(10.dp)) {
             Text(
                 title,
                 style = MaterialTheme.typography.labelSmall,
