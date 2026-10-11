@@ -67,6 +67,12 @@ class MealPlannerBenchmark {
      * so these tests reproduce the scrolling pauses reported on devices.
      */
     @Test
+    fun weekScrollFrameTiming() = measureListScroll("Madplan")
+
+    @Test
+    fun shoppingScrollFrameTiming() = measureListScroll("Indkøb")
+
+    @Test
     fun pantryScrollFrameTiming() = measureListScroll("Lager")
 
     @Test
