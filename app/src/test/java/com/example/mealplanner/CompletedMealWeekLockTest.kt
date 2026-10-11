@@ -50,4 +50,24 @@ class CompletedMealWeekLockTest {
         assertFalse(WeekRules.requiresRegenerationUnlock(monday, history, emptySet()))
         assertTrue(WeekRules.completedDaysForWeek(monday, history).isEmpty())
     }
+    @Test
+    fun regeneratedWeekPreservesRecordedDinner() {
+        val completed = Recipe(id = "completed", name = "Completed", ingredients = emptyList())
+        val candidate = Recipe(id = "candidate", name = "Candidate", ingredients = emptyList())
+        val history = listOf(MealHistoryEntry(completed.id, monday))
+        val result = WeeklyPlanner.generate(
+            recipes = listOf(completed, candidate),
+            pantry = emptyMap(),
+            dayModes = orderedWeekDays.associateWith { DayMode.AUTO },
+            weeklySandwichRecipeId = null,
+            currentPlan = mapOf(DayOfWeek.MONDAY to completed.id),
+            currentSandwichDay = null,
+            lockedDays = WeekRules.completedDaysForWeek(monday, history),
+            history = history,
+            weekStart = monday,
+            random = kotlin.random.Random(9)
+        )
+        assertEquals(completed.id, result.plan[DayOfWeek.MONDAY])
+    }
+
 }
