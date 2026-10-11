@@ -491,6 +491,9 @@ internal fun BilkaProductPickerScreen(
                     "Sammenlign mærke, størrelse og pris. Vi gemmer kun det produkt, du vælger.",
                     style = MaterialTheme.typography.bodySmall
                 )
+                TextButton(onClick = onImport) {
+                    Text("Prej API-nøgle og søgeindstillinger")
+                }
             }
             if (!busy && data != null) {
                 item {
