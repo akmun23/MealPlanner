@@ -32,7 +32,7 @@ export function isFoodSearchResult(product: PrejProduct): boolean {
     .replaceAll("æ", "ae").replaceAll("ø", "oe").replaceAll("å", "aa")
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, " ").trim();
-  if (!category) return false;
+  if (!category) return false; // Broad Bilka catalog uses strict categorisation.
   const blocked = [
     /^personlig pleje(?: |$)/, /^dyremad(?: |$)/, /^dyr(?: |$)/,
     /^husholdning(?: |$)/, /^oevrigt(?: |$)/, /^baby boern(?: |$)/,
@@ -46,7 +46,7 @@ export function isFoodSearchResult(product: PrejProduct): boolean {
 
 export type BilkaCacheRow = {
   id: string;
-  chain_slug: "bilka";
+  chain_slug: GroceryChain;
   name: string;
   brand: string | null;
   package_quantity: number | null;
@@ -61,6 +61,22 @@ export type BilkaCacheRow = {
   is_available: boolean;
   price_updated_at: string | null;
 };
+
+/** Prej IDs are global, but our saved SKUs must be per chain. */
+export type GroceryChain = "bilka" | "bilkatogo";
+export function storedProductId(id: number | string, chain: GroceryChain): string {
+  const raw = String(id);
+  if (!/^\\d+$/.test(raw)) throw new Error("invalid_prej_id");
+  return chain === "bilkatogo" ? "bilkatogo:" + raw : raw;
+}
+export function providerProductId(id: string): string {
+  const sourceId = id.startsWith("bilkatogo:") ? id.slice("bilkatogo:".length) : id;
+  if (!/^\\d+$/.test(sourceId)) throw new Error("invalid_prej_id");
+  return sourceId;
+}
+export function isStoredProductId(id: string): boolean {
+  return /^\\d+$/.test(id) || /^bilkatogo:\\d+$/.test(id);
+}
 
 export function batchIds(ids: string[], size = 500): string[][] {
   if (size < 1 || size > 500) throw new Error("Batch size must be 1..500");
@@ -100,10 +116,13 @@ function priceBasis(label: string | null): BilkaCacheRow["unit_price_basis"] {
 }
 
 /** A product-level minimum price is NEVER safe: only the bilka price row is used. */
-export function toBilkaCacheRow(product: PrejProduct): BilkaCacheRow | null {
+export function toBilkaCacheRow(
+  product: PrejProduct,
+  chain: GroceryChain = "bilka",
+): BilkaCacheRow | null {
   if (typeof product.id !== "number" || !Number.isSafeInteger(product.id) || product.id <= 0) return null;
   const name = product.name?.trim();
-  const price = product.prices?.find((p) => p.chain_slug === "bilka");
+  const price = product.prices?.find((p) => p.chain_slug === chain);
   if (!name || !price || typeof price.price !== "number" || !Number.isSafeInteger(price.price) || price.price < 0) return null;
 
   // Chain-specific package size wins: aggregate product quantities can differ by chain.
@@ -114,8 +133,8 @@ export function toBilkaCacheRow(product: PrejProduct): BilkaCacheRow | null {
   const updated = date && /^\d{4}-\d{2}-\d{2}$/.test(date) ? date + "T12:00:00Z" : null;
   const img = product.image_url;
   return {
-    id: String(product.id),
-    chain_slug: "bilka",
+    id: storedProductId(product.id, chain),
+    chain_slug: chain,
     name,
     brand: product.brand?.trim() || null,
     package_quantity: quantity,
