@@ -865,6 +865,8 @@ internal fun RecipeEditorScreen(
             addAll(existing?.instructionSteps.orEmpty())
         }
     }
+    var newMainStep by rememberSaveable(recipeId) { mutableStateOf("") }
+    var newSubStep by rememberSaveable(recipeId) { mutableStateOf("") }
     var imageUri by rememberSaveable(recipeId) { mutableStateOf(existing?.imageUri) }
     var ingredientSearch by rememberSaveable(recipeId) { mutableStateOf("") }
     var prerequisiteSearch by rememberSaveable(recipeId) { mutableStateOf("") }
@@ -1225,6 +1227,95 @@ internal fun RecipeEditorScreen(
                 )
             }
 
+            item {
+                SectionCard("Fremgangsmåde · ${instructionSteps.size} trin") {
+                    RecipeInstructionRules.numbered(instructionSteps.toList())
+                        .forEachIndexed { index, entry ->
+                            val (label, step) = entry
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.Top
+                            ) {
+                                Text(
+                                    label,
+                                    modifier = Modifier.width(42.dp).padding(top = 12.dp),
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                OutlinedTextField(
+                                    value = step.text,
+                                    onValueChange = { value ->
+                                        instructionSteps[index] = step.copy(text = value)
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    label = {
+                                        Text(if (step.level == 1) "Undertrin" else "Trin")
+                                    },
+                                    minLines = 2
+                                )
+                            }
+                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                TextButton(onClick = {
+                                    val changed = RecipeInstructionRules.move(
+                                        instructionSteps.toList(), index, -1
+                                    )
+                                    instructionSteps.clear()
+                                    instructionSteps.addAll(changed)
+                                }) { Text("Op") }
+                                TextButton(onClick = {
+                                    val changed = RecipeInstructionRules.move(
+                                        instructionSteps.toList(), index, 1
+                                    )
+                                    instructionSteps.clear()
+                                    instructionSteps.addAll(changed)
+                                }) { Text("Ned") }
+                                TextButton(onClick = {
+                                    val changed = RecipeInstructionRules.remove(
+                                        instructionSteps.toList(), index
+                                    )
+                                    instructionSteps.clear()
+                                    instructionSteps.addAll(changed)
+                                }) { Text("Fjern") }
+                            }
+                        }
+                    OutlinedTextField(
+                        value = newMainStep,
+                        onValueChange = { newMainStep = it.take(2000) },
+                        label = { Text("Skriv næste trin") },
+                        placeholder = { Text("F.eks. Skær grøntsagerne i tern") },
+                        minLines = 2,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Button(
+                        onClick = {
+                            instructionSteps.add(
+                                RecipeInstructionStep(text = newMainStep.trim(), level = 0)
+                            )
+                            newMainStep = ""
+                        },
+                        enabled = newMainStep.isNotBlank(),
+                        modifier = Modifier.fillMaxWidth()
+                    ) { Text("Tilføj trin") }
+                    if (instructionSteps.any { it.level == 0 }) {
+                        OutlinedTextField(
+                            value = newSubStep,
+                            onValueChange = { newSubStep = it.take(2000) },
+                            label = { Text("Skriv undertrin (valgfrit)") },
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        TextButton(
+                            enabled = newSubStep.isNotBlank(),
+                            onClick = {
+                                instructionSteps.add(
+                                    RecipeInstructionStep(text = newSubStep.trim(), level = 1)
+                                )
+                                newSubStep = ""
+                            }
+                        ) { Text("Tilføj undertrin") }
+                    }
+                }
+            }
+
+
             if (mealType == MealType.DINNER) {
                 item {
                     Text(
@@ -1366,71 +1457,6 @@ internal fun RecipeEditorScreen(
                             fontWeight = FontWeight.SemiBold
                         )
                         Text("Tilføj")
-                    }
-                }
-            }
-
-            item {
-                SectionCard("Fremgangsmåde") {
-                    RecipeInstructionRules.numbered(instructionSteps.toList())
-                        .forEachIndexed { index, entry ->
-                            val (label, step) = entry
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                verticalAlignment = Alignment.Top
-                            ) {
-                                Text(
-                                    label,
-                                    modifier = Modifier.width(42.dp).padding(top = 12.dp),
-                                    fontWeight = FontWeight.SemiBold
-                                )
-                                OutlinedTextField(
-                                    value = step.text,
-                                    onValueChange = { value ->
-                                        instructionSteps[index] = step.copy(text = value)
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                    label = {
-                                        Text(if (step.level == 1) "Undertrin" else "Trin")
-                                    },
-                                    minLines = 2
-                                )
-                            }
-                            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                TextButton(onClick = {
-                                    val changed = RecipeInstructionRules.move(
-                                        instructionSteps.toList(), index, -1
-                                    )
-                                    instructionSteps.clear()
-                                    instructionSteps.addAll(changed)
-                                }) { Text("Op") }
-                                TextButton(onClick = {
-                                    val changed = RecipeInstructionRules.move(
-                                        instructionSteps.toList(), index, 1
-                                    )
-                                    instructionSteps.clear()
-                                    instructionSteps.addAll(changed)
-                                }) { Text("Ned") }
-                                TextButton(onClick = {
-                                    val changed = RecipeInstructionRules.remove(
-                                        instructionSteps.toList(), index
-                                    )
-                                    instructionSteps.clear()
-                                    instructionSteps.addAll(changed)
-                                }) { Text("Fjern") }
-                            }
-                        }
-                    OutlinedButton(
-                        onClick = {
-                            instructionSteps.add(RecipeInstructionStep(text = "", level = 0))
-                        }
-                    ) { Text("Tilføj trin") }
-                    if (instructionSteps.any { it.level == 0 }) {
-                        TextButton(
-                            onClick = {
-                                instructionSteps.add(RecipeInstructionStep(text = "", level = 1))
-                            }
-                        ) { Text("Tilføj undertrin") }
                     }
                 }
             }
