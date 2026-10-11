@@ -32,6 +32,9 @@ jobs:
           echo "SUPABASE_URL=https://example.supabase.co" >> local.properties
           echo "SUPABASE_PUBLISHABLE_KEY=sb_publishable_build_check" >> local.properties
 
+      - name: Validate release App Bundle metadata checker
+        run: python3 scripts/test_check_release_bundle_metadata.py
+
       - name: Run unit tests
         run: bash ./gradlew :app:testDebugUnitTest --stacktrace
 
