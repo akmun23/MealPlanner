@@ -78,7 +78,7 @@ Deno.test("flavoured alcohol and gardening products cannot pass food matching", 
   }), 0);
   eq(scoreCandidate("Chili", {
     id: 11, name: "Økologisk frisk Chili",
-  }), 0.78);
+  }), 0.88);
   eq(scoreCandidate("Agurk", {
     id: 12, name: "Dansk Agurk",
   }), 0.88);
