@@ -156,6 +156,23 @@ Deno.test("unknown or mismatched EAN is negatively cached without saving a false
   }
 });
 
+Deno.test("malformed ingredient UUID is rejected before any network or database calls", async () => {
+  let calls = 0;
+  let rejected = false;
+  try {
+    await barcodeProductSearch({
+      householdId, userId: "owner",
+      admin: async () => { calls++; return []; },
+      rpc: async () => { calls++; return true; },
+      request: async () => { calls++; return Response.json({}); },
+    }, "0a132cc4-7633-40d3-47b2a99192fe", ean);
+  } catch (err) {
+    rejected = err instanceof Error && err.message === "invalid_search";
+  }
+  assert(rejected && calls === 0,
+    "A four-part ingredient ID is invalid and must not spend a Prej call");
+});
+
 Deno.test("invalid GTIN is rejected without a provider request or quota reservation", async () => {
   let calls = 0;
   let rejected = false;
