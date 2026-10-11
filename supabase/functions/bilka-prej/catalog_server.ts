@@ -95,7 +95,7 @@ export async function saveHouseholdDefault(
     )
   );
   const priced = productRows[0];
-  if (!priced || priced.price_ore === null ||
+  if (!priced || priced.chain_slug !== chain || priced.price_ore === null ||
       !Number.isSafeInteger(priced.price_ore) || priced.price_ore < 0) {
     return { error: "unpriced_product", status: 409 };
   }
