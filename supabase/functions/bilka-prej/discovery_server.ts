@@ -288,8 +288,8 @@ export async function discoverProducts(
     // Prej's grocery flag is not sufficient: reject known non-food categories
     // before persisting products or showing candidates. New cache namespace
     // prevents reuse of entries that predate this filtering.
-    const products = (payload.products as PrejProduct[]).filter(isFoodSearchResult);
-    const rows = products.map(toBilkaCacheRow)
+    const products = (payload.products as PrejProduct[]).filter((p) => isFoodSearchResult(p));
+    const rows = products.map((p) => toBilkaCacheRow(p))
       .filter((row): row is BilkaCacheRow => row !== null);
     const uniqueRows = [...new Map(rows.map((row) => [row.id, row])).values()];
     if (uniqueRows.length) {
