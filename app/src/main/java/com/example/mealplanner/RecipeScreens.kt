@@ -990,7 +990,7 @@ internal fun RecipeEditorScreen(
     // long recipes when the user navigates back from a partially edited form.
     fun formSnapshot(): List<Any?> = listOf(
         name, mealType, autoRotationEnabled, prepMinutesText, categoryId,
-        notes, sourceUrl, imageUri, instructionSteps.toList(),
+        notes, sourceUrl, imageUri, instructionSteps.toList(), newMainStep, newSubStep,
         drafts.toList(), prerequisiteDrafts.toList()
     )
     val initialForm = remember(recipeId) { formSnapshot() }
@@ -1043,6 +1043,11 @@ internal fun RecipeEditorScreen(
         else -> null
     }
     val saveRecipe: () -> Unit = {
+                        // Text still in the "next step" field is part of the
+                        // draft too; Save must never silently discard it.
+                        val fullSteps = RecipeInstructionRules.withPendingText(
+                            instructionSteps.toList(), newMainStep, newSubStep
+                        )
                         if (existing == null) {
                             val savedId = state.addRecipe(
                                 name = name,
@@ -1051,7 +1056,7 @@ internal fun RecipeEditorScreen(
                                 prepMinutes = prepMinutes,
                                 categoryId = categoryId,
                                 notes = notes,
-                                instructionSteps = instructionSteps.toList(),
+                                instructionSteps = fullSteps,
                                 sourceUrl = sourceUrl,
                                 imageUri = imageUri,
                                 pantryPrerequisites =
@@ -1075,7 +1080,7 @@ internal fun RecipeEditorScreen(
                                 prepMinutes = prepMinutes,
                                 categoryId = categoryId,
                                 notes = notes,
-                                instructionSteps = instructionSteps.toList(),
+                                instructionSteps = fullSteps,
                                 sourceUrl = sourceUrl,
                                 imageUri = imageUri,
                                 pantryPrerequisites =
