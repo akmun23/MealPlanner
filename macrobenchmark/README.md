@@ -30,6 +30,15 @@ test -s app/build/outputs/mapping/release/mapping.txt
 
 Archive that `mapping.txt` **for each release version**, alongside the final Play App Bundle (`app/build/outputs/bundle/release/*.aab`). The map is necessary to deobfuscate crashes; Play's app bundle upload usually carries the associated code mapping automatically. Generate and sign the final AAB with your actual upload key using Android Studio or a secured release system; the repository intentionally contains no signing credentials.
 
+To avoid uploading a bundle missing mapping, inspect the **actual** AAB:
+
+```bash
+python3 scripts/check_release_bundle_metadata.py \
+  app/build/outputs/bundle/release/app-release.aab
+```
+
+The release now requests `ndk.debugSymbolLevel = "FULL"` so any available native debug symbols are also embedded; if a third-party `.so` was pre-stripped, Gradle cannot recreate its symbols and the checker issues a warning. Consult `docs/play-console-symbol-files-20261011.md` for Play Console's two separate warnings, how to upload files matching an existing release, and which remaining native warnings may be unavoidable.
+
 **Previous R8 startup issue:** The project previously disabled optimized production release after a physical-device startup crash. Its root cause was never established from a trace. This PR configures R8 to meet the upcoming Play optimization requirement, but that crash may recur. **Do not promote the AAB to production until a correctly signed release-like build has been installed and fully tested on a spare phone, including startup, login and Supabase sync.**
 
 ### Test checklist before Play rollout
