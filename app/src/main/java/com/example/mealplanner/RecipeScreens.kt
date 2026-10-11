@@ -139,6 +139,17 @@ fun RecipesScreen(
         }
     }
 
+    // Keep pantry availability calculations independent of text search.
+    // Typing a query should only filter cached IDs, not rescan stock per recipe.
+    val makeableRecipeIds by remember(state) {
+        derivedStateOf {
+            state.recipes.asSequence()
+                .filter { state.canMake(it) }
+                .map { it.id }
+                .toSet()
+        }
+    }
+
     val filteredRecipes by remember {
         derivedStateOf {
             val query = searchQuery.trim()
@@ -159,7 +170,7 @@ fun RecipesScreen(
                         recipe.mealType.danishName() == mealFilter) &&
                     (categoryFilter == "Alle kategorier" ||
                         item.categoryName == categoryFilter) &&
-                    (!canMakeOnly || state.canMake(recipe))
+                    (!canMakeOnly || recipe.id in makeableRecipeIds)
             }
         }
     }
@@ -773,21 +784,30 @@ internal fun RecipeDetailScreen(
             }
 
             if (recipe.instructionSteps.isNotEmpty()) {
-                item {
-                    SectionCard("Fremgangsmåde") {
-                        RecipeInstructionRules.numbered(recipe.instructionSteps).forEach { (label, step) ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                                verticalAlignment = Alignment.Top
-                            ) {
-                                Text(
-                                    label,
-                                    modifier = Modifier.width(48.dp),
-                                    fontWeight = FontWeight.Bold
-                                )
-                                Text(step.text, modifier = Modifier.weight(1f))
-                            }
-                        }
+                item(key = "recipe-instructions-header") {
+                    Text(
+                        "Fremgangsmåde",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                items(
+                    items = RecipeInstructionRules.numbered(recipe.instructionSteps),
+                    key = { (_, step) -> "recipe-instruction-${step.id}" },
+                    contentType = { "recipe-instruction" }
+                ) { (label, step) ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Text(
+                            label,
+                            modifier = Modifier.width(44.dp),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(step.text, modifier = Modifier.weight(1f))
                     }
                 }
             }
@@ -848,6 +868,10 @@ internal fun RecipeEditorScreen(
     onBack: () -> Unit,
     onSaved: (String?) -> Unit
 ) {
+    val ingredientById by remember(state) {
+        derivedStateOf { state.ingredients.associateBy { it.id } }
+    }
+
     val existing = recipeId?.let { id ->
         state.recipes.find { it.id == id }
     }
@@ -904,9 +928,7 @@ internal fun RecipeEditorScreen(
     val drafts = rememberSaveable(recipeId, saver = recipeDraftSaver) {
         mutableStateListOf<DraftRequirement>().apply {
             existing?.ingredients?.forEach { requirement ->
-                val ingredient = state.ingredients.find {
-                    it.id == requirement.ingredientId
-                }
+                val ingredient = ingredientById[requirement.ingredientId]
 
                 if (ingredient != null) {
                     add(
@@ -926,9 +948,7 @@ internal fun RecipeEditorScreen(
     val prerequisiteDrafts = rememberSaveable(recipeId, saver = recipeDraftSaver) {
         mutableStateListOf<DraftRequirement>().apply {
             existing?.pantryPrerequisites?.forEach { prerequisite ->
-                val ingredient = state.ingredients.find {
-                    it.id == prerequisite.ingredientId
-                }
+                val ingredient = ingredientById[prerequisite.ingredientId]
 
                 if (ingredient != null) {
                     add(
@@ -1390,9 +1410,7 @@ internal fun RecipeEditorScreen(
                     }
                 ) { indexed ->
                     val draft = indexed.value
-                    val ingredient = state.ingredients.find {
-                        it.id == draft.ingredientId
-                    }
+                    val ingredient = ingredientById[draft.ingredientId]
 
                     if (ingredient != null) {
                         RequirementEditor(
@@ -1463,9 +1481,7 @@ internal fun RecipeEditorScreen(
                 key = { it.value.ingredientId }
             ) { indexed ->
                 val draft = indexed.value
-                val ingredient = state.ingredients.find {
-                    it.id == draft.ingredientId
-                }
+                val ingredient = ingredientById[draft.ingredientId]
 
                 if (ingredient != null) {
                     RequirementEditor(
@@ -1599,6 +1615,7 @@ private fun RequirementEditor(
                         ingredient.quantityType
                     ),
                     optionText = { it.selectorLabel() },
+                    minHeight = 56.dp,
                     onSelected = { selected ->
                         val entered = parseDanishDecimal(amountText)
                             ?.takeIf { it.isFinite() && it > 0.0 }
