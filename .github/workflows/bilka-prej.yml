@@ -25,6 +25,8 @@ jobs:
         run: deno check supabase/functions/bilka-nightly-refresh/index.ts
       - name: Test nightly quotas, DST and fixed product metadata
         run: deno test supabase/functions/bilka-nightly-refresh/nightly_test.ts
+      - name: Test Vault-only cron authorization
+        run: deno test supabase/functions/bilka-nightly-refresh/auth_test.ts
       - name: Test Bilka-only mappings and batching
         run: deno test supabase/functions/bilka-prej/key_management_test.ts supabase/functions/bilka-prej/prej_test.ts supabase/functions/bilka-prej/discovery_test.ts supabase/functions/bilka-prej/catalog_test.ts supabase/functions/bilka-prej/manual_search_test.ts supabase/functions/bilka-prej/shopping_test.ts supabase/functions/bilka-prej/price_updates_test.ts
       - name: Guard against malformed phase-5 and phase-6 SQL migrations
@@ -34,6 +36,13 @@ jobs:
           phase5 = Path("supabase/migrations/20261010140000_bilka_nightly_prices.sql").read_text()
           phase6 = Path("supabase/migrations/20261010150000_bilka_purchase_transaction.sql").read_text()
           phase7 = Path("supabase/migrations/20261010160000_bilka_release_readiness.sql").read_text()
+          vault_auth = Path("supabase/migrations/20261011123000_bilka_nightly_vault_auth.sql").read_text().lower()
+          assert "extensions.gen_random_bytes(48)" in vault_auth, "Cron token must be random"
+          assert "vault.create_secret" in vault_auth, "Cron token must be Vault-backed"
+          assert "revoke all on function public.bilka_nightly_token_digest()" in vault_auth
+          assert "grant execute on function public.bilka_nightly_token_digest()" in vault_auth
+          assert "to service_role" in vault_auth
+          assert "alter_job" not in vault_auth, "Do not activate scheduler until worker is deployed"
           assert phase5.count("select cron.schedule(") == 1, "Nightly job must be scheduled exactly once"
           assert phase5.count("$price_only$") == 2, "Price RPC requires matching SQL dollar quotes"
           assert "id ~ '^[0-9]+$'" in phase5, "Price id pattern was corrupted"
