@@ -1,4 +1,4 @@
-import { dailyRemaining, toBilkaCacheRow, type PrejProduct } from "./prej.ts";
+import { dailyRemaining, toBilkaCacheRow, storedProductId, type PrejProduct, type BilkaCacheRow } from "./prej.ts";
 import { type CatalogServices } from "./catalog_server.ts";
 
 
@@ -7,6 +7,32 @@ type Backend = CatalogServices & {
   request: typeof fetch;
   userId: string;
 };
+/**
+ * Keep provider results visible even if Prej supplies no ToGo price.
+ * This is a browse-only placeholder, NOT a made-up retailer price.
+ */
+function unpricedProviderResult(p: PrejProduct): BilkaCacheRow | null {
+  if (!Number.isSafeInteger(p.id) || Number(p.id) <= 0 ||
+      typeof p.name !== "string" || !p.name.trim()) return null;
+  return {
+    id: storedProductId(p.id!, "bilkatogo"),
+    chain_slug: "bilkatogo",
+    name: p.name.trim().slice(0, 300),
+    brand: typeof p.brand === "string" ? p.brand.trim().slice(0, 150) : null,
+    package_quantity: null,
+    package_unit: null,
+    package_base_amount: null,
+    quantity_kind: null,
+    image_url: null,
+    price_ore: null as unknown as number,
+    unit_price_ore: null,
+    unit_price_basis: null,
+    is_offer: null,
+    is_available: false,
+    price_updated_at: null,
+  };
+}
+
 const isUuid = (value: string) =>
   /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(value);
 
@@ -94,12 +120,15 @@ export async function manualProductSearch(
     // every SKU in the requested chain with an actual ToGo price, in provider
     // order. Other-chain prices must NOT be passed off as BilkaToGo.
     afterCategory = providerProducts.length;
-    const valid = providerProducts
+    const priced = providerProducts
       .map((p) => toBilkaCacheRow(p, "bilkatogo"))
       .filter((p): p is NonNullable<typeof p> => p !== null);
-    withToGoPrice = valid.length;
+    withToGoPrice = priced.length;
     totalFound = providerTotal;
-    const unique = [...new Map(valid.map((p) => [p.id, p])).values()];
+    const all = providerProducts
+      .map((p) => toBilkaCacheRow(p, "bilkatogo") ?? unpricedProviderResult(p))
+      .filter((p): p is NonNullable<typeof p> => p !== null);
+    const unique = [...new Map(all.map((p) => [p.id, p])).values()];
     if (unique.length) {
       await ctx.admin("/rest/v1/bilka_products?on_conflict=id", "POST", unique);
     }
