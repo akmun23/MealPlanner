@@ -1012,9 +1012,9 @@ class MealPlannerState(
 
     fun toggleLockDay(day: DayOfWeek) {
         if (!canEditWeek()) return
-        if (dayModes[day] == DayMode.AWAY || recipeFor(day) == null) return
-
         val date = dateFor(day)
+        if (!WeekRules.completedOn(date, history) &&
+            (dayModes[day] == DayMode.AWAY || recipeFor(day) == null)) return
         if (WeekRules.completedOn(date, history)) {
             if (date in editableCompletedDates) {
                 editableCompletedDates.remove(date)
@@ -1963,7 +1963,16 @@ class MealPlannerState(
             return
         }
         val previous = history.find { it.eatenOn == date }?.recipeId
-        if (previous == recipeId) return
+        if (previous == recipeId) {
+            // A confirmation of the existing registration must not leave an
+            // already-completed day permanently unlocked in this session.
+            editableCompletedDates.remove(date)
+            if (recipeId != null && date in displayedWeekStart..displayedWeekStart.plusDays(6)) {
+                lockedDays.add(date.dayOfWeek)
+                persistWeek()
+            }
+            return
+        }
 
         history.removeAll { it.eatenOn == date }
         if (recipeId != null) {
