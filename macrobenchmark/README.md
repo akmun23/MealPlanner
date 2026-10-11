@@ -1,59 +1,47 @@
 # On-device performance benchmarks
 
-These benchmarks are separate from the app and do **not** run on the usual GitHub CI emulator. They measure a non-debuggable, release-like `benchmark` variant on a physical phone. The production release keeps the previous startup-stability hotfix (R8 disabled). **The benchmark variant now deliberately enables R8** so startup and scrolling can be compared before any production rollout.
+These benchmarks run separately from the normal application on a physical Android phone. They measure a non-debuggable, release-like `benchmark` variant; the Play `release` variant now **also has R8 enabled**. The benchmark variant inherits production's optimization configuration but is signed with a debug key.
 
-**Warning:** The benchmark app uses the same application ID as MealPlanner but a debug signing key. Installing it over a Play/release-signed copy may require uninstalling the original app, which would erase its local Room/offline queue data. **Use a spare test device or backed-up installation; do not uninstall your primary copy merely to benchmark.**
+**Warning:** The benchmark app uses the same application ID as MealPlanner and a different signing key. Installing it over a Play/release-signed copy may require uninstalling the original, which would erase local Room/offline-queue data. **Use a spare test phone or an independently backed-up installation. Never uninstall the only copy just to benchmark.**
 
-## DEX optimization staging (R8)
+## R8 in production (AGP 9.4)
 
-Android Gradle Plugin 9.4 uses `optimization { enable = true }`, enabling both
-R8 bytecode optimization/shrinking and optimized resource shrinking. The
-non-debuggable `benchmark` build uses it; **production `release` does not**
-because a previous production-optimized build crashed at startup on a phone.
+`app/build.gradle.kts` enables `release.optimization.enable = true`. AGP 9.3+ activates code shrinking, optimization, obfuscation, and optimized resource shrinking from this setting; its default Android keep rules are applied automatically. Project-specific R8 rules, if evidence shows they are needed, belong under `app/src/main/keepRules/*.keep`. Avoid broad `-keep`, `-dontoptimize` or `-dontobfuscate` rules: they can prevent the app from meeting Play Console's DEX optimization goals.
+
+A separate, **non-distributable** `unoptimized` build type provides a valid comparison baseline. The `benchmark` variant remains R8-enabled for on-device frame timing.
+
+Build the three artifacts locally without spending GitHub Actions minutes:
 
 ```bash
-bash ./gradlew :app:assembleRelease :app:assembleBenchmark
+./gradlew :app:assembleUnoptimized :app:assembleRelease :app:bundleRelease :app:assembleBenchmark
 python3 scripts/check_dex_optimization.py \
-  --release app/build/outputs/apk/release/app-release-unsigned.apk \
-  --optimized app/build/outputs/apk/benchmark/app-benchmark.apk \
+  --baseline app/build/outputs/apk/unoptimized/app-unoptimized.apk \
+  --optimized app/build/outputs/apk/release/app-release-unsigned.apk \
   --report dex-optimization-report.json
 ```
 
-Use the actual APK filenames if your AGP version generates different names.
-The required Android CI performs DEX-size comparison automatically and saves
-the R8 obfuscation mapping and report for 14 days. It **does not run an
-emulator**: the hosted emulator previously stalled and caused cancelled
-checks despite passing all Gradle builds and the shrinkage report.
+Adjust the APK filenames if the Android Gradle Plugin produces different names. The DEX report shows the **size difference**, not whether Google Play's distinct obfuscation/optimization/shrinking percentages meet their thresholds.
 
-To test startup independently, use the GitHub Actions workflow
-**R8 emulator runtime smoke (manual)** via **Run workflow**. It boots an
-Android API 35 emulator, installs the optimized benchmark APK, verifies that
-the local login page appears, and uploads diagnostics. The workflow has a
-hard 18-minute job limit and is not a prerequisite for DEX compilation CI.
+The production mapping file must be present and nonempty:
 
-Passing DEX checks or the manual emulator smoke **does not prove** smoother
-scrolling or runtime correctness beyond the tested startup path. Do not enable
-R8 on the production release until physical-device local/cloud flows pass.
+```bash
+test -s app/build/outputs/mapping/release/mapping.txt
+```
 
-**Required before enabling R8 for production:**
+Archive that `mapping.txt` **for each release version**, alongside the final Play App Bundle (`app/build/outputs/bundle/release/*.aab`). The map is necessary to deobfuscate crashes; Play's app bundle upload usually carries the associated code mapping automatically. Generate and sign the final AAB with your actual upload key using Android Studio or a secured release system; the repository intentionally contains no signing credentials.
 
-- Install the optimized benchmark APK on a separate test phone; confirm it
-  launches repeatedly from a cold start and does not crash.
-- Exercise local-only mode, offline saves/reloads, recipe and ingredient
-  creation, pantry sorting, shopping, JSON backup/restore, and tab navigation.
-- Separately test a real signed-in household, Supabase sync/realtime, image
-  signing/loading, login/deep links and app restart after process death.
-- Record macrobenchmark cold-start, tab frame timing, pantry/recipe scrolling
-  and crash logs. Compare to an otherwise identical unoptimized test build
-  on the same device and dataset.
-- When validated, switch production `release.optimization.enable` to
-  `true`, ship as a new versionCode and retain the generated mapping file
-  for deobfuscating any R8-related stack traces.
+**Previous R8 startup issue:** The project previously disabled optimized production release after a physical-device startup crash. Its root cause was never established from a trace. This PR configures R8 to meet the upcoming Play optimization requirement, but that crash may recur. **Do not promote the AAB to production until a correctly signed release-like build has been installed and fully tested on a spare phone, including startup, login and Supabase sync.**
 
-Do not make broad `-keep class **` or `-dontoptimize` additions: fix only
-missing reflective entry points proven by crashes and keep library-supplied
-rules intact. Android/Room/WorkManager manifest entries and serializers need
-real-device validation after R8.
+### Test checklist before Play rollout
+
+- Confirm cold starts, repeated launches and no `FATAL EXCEPTION` or `ClassNotFoundException` in `adb logcat` with R8 active.
+- Test local-only mode, offline persistence, Room, recipe creation, pantry/shopping, backup/restore, authentication, login callback and process restart.
+- Test a real signed-in household, Supabase serialization, Edge-function calls, realtime updates, Coil image URLs and cold/warm scrolling.
+- Read the release `mapping.txt` for deobfuscating stack traces. If anything crashes, fix only the specific reflection/serialization keep rules supported by the crash; do not disable shrinking to mask it.
+- Compare `dex-optimization-report.json` to the DEX percentage figures reported by Play Console under App bundle explorer. Those numbers are **not the same metric**.
+- Begin with an **internal testing** Play track and inspect Android vitals before staged production rollout.
+
+The optional GitHub workflow `R8 emulator runtime smoke (manual)` can also be used once the Actions quota resets, but it verifies only the login screen and not a full release flow.
 
 ## Compile the harness
 
@@ -75,6 +63,6 @@ The frame benchmarks now cover **Madplan**, **Opskrifter**, **Lager** and **Indk
 
 `coldStartup` works at the login gate as well as inside a household. `tabNavigationFrameTiming` requires a previously signed-in and prepared household on the test installation; if you are on the login screen it reports a clear failure rather than fake zero-jank metrics.
 
-Record baseline median startup time and frame-time P90/P95 in Android Studio, and keep the generated JSON/Perfetto traces under your own results archive. Repeat each benchmark on the same device / OS / dataset at a consistent temperature and compare PRs only under the same conditions. Emulators are useful for testing benchmark plumbing but **not** trustworthy performance measurements.
+Record baseline median startup time and frame-time P90/P95 in Android Studio, and keep the generated JSON/Perfetto traces under your own results archive. Repeat each benchmark on the same device / OS / dataset at a consistent temperature and compare PRs only under the same conditions. Emulators are useful for testing benchmark plumbing but **not** trustworthy performance measurements. A debug APK is not a substitute for the production-optimized app.
 
 Official guide: https://developer.android.com/topic/performance/benchmarking/macrobenchmark-overview
