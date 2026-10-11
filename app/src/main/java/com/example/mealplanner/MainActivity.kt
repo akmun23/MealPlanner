@@ -261,6 +261,13 @@ fun MealPlannerApp(
         tab = AppTab.entries[pagerState.currentPage]
     }
     var page by remember { mutableStateOf<AppPage?>(null) }
+    // Remember the screen that opened Prej settings so Back goes there,
+    // whether the user came from settings, product overview, or the picker.
+    var bilkaSettingsReturnPage by remember { mutableStateOf<AppPage>(AppPage.Settings) }
+    fun openBilkaSettings(from: AppPage) {
+        bilkaSettingsReturnPage = from
+        page = AppPage.BilkaApiSettings
+    }
     var showSyncConflictDialog by remember {
         mutableStateOf(false)
     }
@@ -282,7 +289,7 @@ fun MealPlannerApp(
             AppPage.Settings -> null
             AppPage.MealHistory -> null
             AppPage.PlannerSettings -> AppPage.Settings
-            AppPage.BilkaApiSettings -> AppPage.BilkaProducts
+            AppPage.BilkaApiSettings -> bilkaSettingsReturnPage
             AppPage.BilkaProducts -> AppPage.Settings
             is AppPage.BilkaProductPicker -> AppPage.BilkaProducts
             AppPage.SyncStatus -> AppPage.Settings
@@ -371,7 +378,8 @@ fun MealPlannerApp(
             onIngredientCategories = { page = AppPage.IngredientCategories },
             onRecipeCategories = { page = AppPage.RecipeCategories },
             onPlannerSettings = { page = AppPage.PlannerSettings },
-            onBilkaApiSettings = { page = AppPage.BilkaProducts },
+            onBilkaApiSettings = { openBilkaSettings(AppPage.Settings) },
+            onBilkaProducts = { page = AppPage.BilkaProducts },
             onSyncStatus = { page = AppPage.SyncStatus },
             onDataBackup = { page = AppPage.DataBackup },
             themeMode = themeMode,
@@ -382,7 +390,7 @@ fun MealPlannerApp(
         AppPage.BilkaProducts -> BilkaProductsScreen(
             householdId = household.id,
             onBack = { navigateBack() },
-            onImport = { page = AppPage.BilkaApiSettings },
+            onImport = { openBilkaSettings(AppPage.BilkaProducts) },
             onPick = { ingredientId, ingredientName ->
                 page = AppPage.BilkaProductPicker(ingredientId, ingredientName)
             }
@@ -397,7 +405,7 @@ fun MealPlannerApp(
                 state.refreshNow()
                 page = AppPage.BilkaProducts
             },
-            onImport = { page = AppPage.BilkaApiSettings }
+            onImport = { openBilkaSettings(current) }
         )
 
         AppPage.BilkaApiSettings -> BilkaApiSettingsScreen(
@@ -1010,6 +1018,7 @@ private fun SettingsScreen(
     onRecipeCategories: () -> Unit,
     onPlannerSettings: () -> Unit,
     onBilkaApiSettings: () -> Unit,
+    onBilkaProducts: () -> Unit,
     onSyncStatus: () -> Unit,
     onDataBackup: () -> Unit,
     themeMode: ThemeMode,
@@ -1230,12 +1239,24 @@ private fun SettingsScreen(
             }
 
             item {
-                OutlinedButton(
-                    onClick = onBilkaApiSettings,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Text("Bilka-produkter og priser")
+                SectionCard("BilkaToGo") {
+                    Text(
+                        "Administrér din personlige Prej API-nøgle, søgekald og automatisk prisopdatering.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Button(
+                        onClick = onBilkaApiSettings,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Prej API-nøgle og søgeindstillinger")
+                    }
+                    OutlinedButton(
+                        onClick = onBilkaProducts,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Mine BilkaToGo-produkter")
+                    }
                 }
             }
 
