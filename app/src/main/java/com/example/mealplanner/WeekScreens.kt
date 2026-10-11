@@ -354,7 +354,6 @@ fun WeekScreen(
 
         if (today in start..end) {
             item(key = "week-today", contentType = "week-section") {
-                Column {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
@@ -416,7 +415,6 @@ fun WeekScreen(
                 }
             }
         }
-            }
         }
 
         item(key = "week-generate", contentType = "week-section") {
@@ -526,7 +524,6 @@ fun WeekScreen(
         }
 
         item(key = "week-lunch", contentType = "week-section") {
-            Column {
         SectionCard("Frokost") {
             selectedLunch.forEach { recipe ->
                 Row(
@@ -571,7 +568,6 @@ fun WeekScreen(
                 }
             }
         }
-            }
         }
 
         items(
