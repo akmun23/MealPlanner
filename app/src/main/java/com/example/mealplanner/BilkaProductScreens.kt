@@ -439,7 +439,6 @@ internal fun BilkaProductPickerScreen(
     var moreMessage by remember(ingredientId) { mutableStateOf<String?>(null) }
     var lastQuery by remember(ingredientId) { mutableStateOf(ingredientName) }
     var nextPage by remember(ingredientId) { mutableStateOf<Int?>(null) }
-    var totalRawFound by remember(ingredientId) { mutableStateOf<Int?>(null) }
 
     suspend fun reload() {
         busy = true
@@ -458,15 +457,17 @@ internal fun BilkaProductPickerScreen(
 
     val currentId = data?.defaultId(ingredientId)
     val suggestions = data?.suggestions(ingredientId).orEmpty()
-    val options = BilkaSelectionRules.sortForIngredient(
-        data?.productsFor(ingredientId).orEmpty(),
-        data?.ranks(ingredientId).orEmpty(),
-        cheapest,
-        chosenProductId = currentId,
-        ingredientName = ingredientName
-    ).filter {
-        search.isBlank() || it.name.contains(search.trim(), true) ||
-            it.brandLabel.contains(search.trim(), true)
+    val options = remember(data, ingredientId, ingredientName, cheapest, search) {
+        BilkaSelectionRules.sortForIngredient(
+            data?.productsFor(ingredientId).orEmpty(),
+            data?.ranks(ingredientId).orEmpty(),
+            cheapest,
+            chosenProductId = data?.defaultId(ingredientId),
+            ingredientName = ingredientName
+        ).filter {
+            search.isBlank() || it.name.contains(search.trim(), true) ||
+                it.brandLabel.contains(search.trim(), true)
+        }
     }
 
     LaunchedEffect(search, cheapest, ingredientId) { visibleCount = 12 }
@@ -515,10 +516,8 @@ internal fun BilkaProductPickerScreen(
                                     ).onSuccess { info ->
                                         lastQuery = moreQuery
                                         nextPage = if (info["hasMore"]?.toString() == "true") 2 else null
-                                        totalRawFound = info["providerTotal"]?.toString()?.toIntOrNull()
                                         val count = info["count"]?.toString()?.trim('"') ?: "0"
                                         val received = info["receivedCount"]?.toString()?.toIntOrNull()
-                                        val afterCategory = info["afterCategory"]?.toString()?.toIntOrNull()
                                         val withPrice = info["withToGoPrice"]?.toString()?.toIntOrNull()
                                         val total = info["providerTotal"]?.toString()?.toIntOrNull()
                                         val cached = info["fromCache"]?.toString() == "true"
