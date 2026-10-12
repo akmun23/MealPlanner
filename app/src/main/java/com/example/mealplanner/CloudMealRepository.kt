@@ -145,7 +145,11 @@ private data class RecipeIngredientRow(
     @SerialName("household_id") val householdId: String,
     @SerialName("recipe_id") val recipeId: String,
     @SerialName("ingredient_id") val ingredientId: String,
-    @SerialName("amount_base") val amountBase: Double
+    @SerialName("amount_base") val amountBase: Double,
+    @SerialName("display_amount") val displayAmount: Double? = null,
+    @SerialName("display_unit_code") val displayUnitCode: String? = null,
+    @SerialName("base_per_display_unit") val basePerDisplayUnit: Double? = null,
+    @SerialName("conversion_approximate") val conversionApproximate: Boolean = false
 )
 
 @Serializable
@@ -730,7 +734,11 @@ class CloudMealRepository(
                                 requirements[row.id].orEmpty().map {
                                     RecipeIngredient(
                                         ingredientId = it.ingredientId,
-                                        amountBase = it.amountBase
+                                        amountBase = it.amountBase,
+                                        displayAmount = it.displayAmount,
+                                        displayUnitCode = it.displayUnitCode,
+                                        basePerDisplayUnit = it.basePerDisplayUnit,
+                                        conversionApproximate = it.conversionApproximate
                                     )
                                 },
                             pantryPrerequisites =
@@ -1065,7 +1073,11 @@ class CloudMealRepository(
                         householdId = householdId,
                         recipeId = recipe.id,
                         ingredientId = it.ingredientId,
-                        amountBase = it.amountBase
+                        amountBase = it.amountBase,
+                        displayAmount = it.displayAmount,
+                        displayUnitCode = it.displayUnitCode,
+                        basePerDisplayUnit = it.basePerDisplayUnit,
+                        conversionApproximate = it.conversionApproximate
                     )
                 }
             ) {

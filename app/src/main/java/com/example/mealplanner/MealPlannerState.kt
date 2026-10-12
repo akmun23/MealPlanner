@@ -1529,7 +1529,8 @@ class MealPlannerState(
         pantryPrerequisites: List<DraftRequirement> = emptyList(),
         requirements: List<DraftRequirement>,
         instructionSteps: List<RecipeInstructionStep> = emptyList(),
-        sourceUrl: String? = null
+        sourceUrl: String? = null,
+        explicitlyEditedRequirementIds: Set<String> = emptySet()
     ): Boolean {
         val index = recipes.indexOfFirst { it.id == id }
         if (index < 0) return false
@@ -1540,7 +1541,7 @@ class MealPlannerState(
         }
 
         val existing = recipes[index]
-        val updated = buildRecipe(
+        val rebuilt = buildRecipe(
             id = id,
             name = name,
             mealType = mealType,
@@ -1555,6 +1556,19 @@ class MealPlannerState(
             instructionSteps = instructionSteps,
             sourceUrl = sourceUrl
         ) ?: return false
+
+        // The current editor can only edit the legacy measurement dimension.
+        // Retain frozen cross-dimension display text on metadata-only edits.
+        val previousRequirements = existing.ingredients.associateBy { it.ingredientId }
+        val updated = rebuilt.copy(
+            ingredients = rebuilt.ingredients.map { edited ->
+                val ingredient = ingredients.find { it.id == edited.ingredientId }
+                if (ingredient == null) edited else RecipeQuantityRules.retainUneditableSnapshot(
+                    previousRequirements[edited.ingredientId], edited, ingredient,
+                    displayExplicitlyEdited = edited.ingredientId in explicitlyEditedRequirementIds
+                )
+            }
+        )
 
         val retainedManual = manuallyAddedShoppingIds()
         recipes[index] = updated
@@ -1654,13 +1668,16 @@ class MealPlannerState(
                 draft.unit.quantityType != ingredient.quantityType
             ) return@mapNotNull null
 
-            RecipeIngredient(
+            // Freeze exactly what the user typed alongside the canonical
+            // physical amount. Later product defaults cannot change either.
+            RecipeQuantityRules.freeze(
                 ingredientId = draft.ingredientId,
-                amountBase = draft.unit.toBase(draft.amount)
-            )
+                displayAmount = draft.amount,
+                displayUnit = draft.unit
+            ) ?: return@mapNotNull null
         }
 
-        if (converted.isEmpty()) return null
+        if (converted.size != requirements.size) return null
 
         val convertedPrerequisites = if (mealType == MealType.DINNER) {
             pantryPrerequisites.mapNotNull { draft ->

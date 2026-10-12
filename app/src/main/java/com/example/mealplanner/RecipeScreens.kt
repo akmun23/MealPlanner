@@ -787,9 +787,8 @@ internal fun RecipeDetailScreen(
                                                 Modifier.weight(1f)
                                         )
                                         Text(
-                                            state.formatBaseAmount(
-                                                ingredient,
-                                                requirement.amountBase
+                                            RecipeQuantityRules.amountAndUnit(
+                                                requirement, ingredient
                                             ),
                                             fontWeight =
                                                 FontWeight.SemiBold
@@ -961,6 +960,13 @@ internal fun RecipeEditorScreen(
                     excludingId = existing?.id
                 )
 
+    // Track intentional amount/unit changes separately from metadata edits.
+    // Otherwise saving a title could rewrite a frozen "1 pakke" as "200 g",
+    // while choosing "0,2 kg" explicitly should replace that old display.
+    var explicitlyEditedIngredientIds by rememberSaveable(recipeId) {
+        mutableStateOf(arrayListOf<String>())
+    }
+
     val drafts = rememberSaveable(recipeId, saver = recipeDraftSaver) {
         mutableStateListOf<DraftRequirement>().apply {
             existing?.ingredients?.forEach { requirement ->
@@ -970,10 +976,12 @@ internal fun RecipeEditorScreen(
                     add(
                         DraftRequirement(
                             ingredientId = ingredient.id,
-                            amount = ingredient.preferredUnit.fromBase(
-                                requirement.amountBase
-                            ),
-                            unit = ingredient.preferredUnit
+                            amount = RecipeQuantityRules.legacyEditableAmount(
+                                requirement, ingredient
+                            ).first,
+                            unit = RecipeQuantityRules.legacyEditableAmount(
+                                requirement, ingredient
+                            ).second
                         )
                     )
                 }
@@ -1171,7 +1179,8 @@ internal fun RecipeEditorScreen(
                     } else {
                         emptyList()
                     },
-                requirements = drafts.toList()
+                requirements = drafts.toList(),
+                explicitlyEditedRequirementIds = explicitlyEditedIngredientIds.toSet()
             )
             if (saved) {
                 onSaved(existing.id)
@@ -1526,6 +1535,11 @@ internal fun RecipeEditorScreen(
                         ingredient = ingredient,
                         draft = draft,
                         onChange = {
+                            if (it != draft) {
+                                explicitlyEditedIngredientIds = ArrayList(
+                                    explicitlyEditedIngredientIds + draft.ingredientId
+                                )
+                            }
                             drafts[indexed.index] = it
                         },
                         onRemove = {
