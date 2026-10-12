@@ -2350,11 +2350,34 @@ class MealPlannerState(
                         offlineSyncQueue.drainInApp(repository)
                     }
                     if (offlineSyncQueue.hasPendingMutations()) {
-                        error("Pending offline mutations")
+                        // Never replace the only cached snapshot while the
+                        // previous week's optimistic writes still need syncing.
+                        lastError =
+                            "Ugeskift er sat på pause, fordi lokale ændringer endnu ikke er synkroniseret. " +
+                                "Dine data er ikke slettet. Prøv igen efter synkronisering."
+                        return@launch
                     }
                     reloadMutex.withLock {
                         val week = repository.loadWeekSnapshot(target)
                         val shopping = repository.loadShoppingSnapshot(week.weeklyPlanId)
+
+                        // Persist the complete target view first. If disk
+                        // persistence fails, the UI stays on its previous week
+                        // instead of showing an incompletely saved transition.
+                        val nextSnapshot = currentSnapshot().copy(
+                            dayModes = week.dayModes,
+                            dayMaxPrepMinutes = week.dayMaxPrepMinutes,
+                            plan = week.plan,
+                            lockedDays = week.lockedDays,
+                            selectedLunchRecipeIds = week.selectedLunchRecipeIds,
+                            weeklyPlanId = week.weeklyPlanId,
+                            weeklySandwichRecipeId = week.weeklySandwichRecipeId,
+                            sandwichDay = week.sandwichDay,
+                            shoppingChecked = shopping.checked,
+                            shoppingIncluded = shopping.included,
+                            viewWeekStart = target
+                        )
+                        roomCache.save(nextSnapshot)
                         Snapshot.withMutableSnapshot {
                             applyWeekSnapshot(week)
                             applyShoppingSnapshot(shopping)
@@ -2362,7 +2385,6 @@ class MealPlannerState(
                             editableCompletedDates.clear()
                             unlockedRegenerationWeeks.clear()
                         }
-                        roomCache.save(currentSnapshot())
                     }
                 }
             } catch (cancelled: CancellationException) {
