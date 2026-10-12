@@ -116,7 +116,8 @@ data class Ingredient(
     val imagePath: String? = null,
     // Household-approved conversions are synced separately from ingredients,
     // cached with the ingredient and keyed by ingredient UUID on the server.
-    val unitConversions: List<IngredientUnitConversion> = emptyList()
+    val unitConversions: List<IngredientUnitConversion> = emptyList(),
+    val unitConversionRevision: Long = 0L
 )
 
 /**
