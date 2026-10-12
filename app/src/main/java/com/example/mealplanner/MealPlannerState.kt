@@ -1174,12 +1174,20 @@ class MealPlannerState(
             isProtein = isProtein,
             neverBuy = neverBuy,
             imageUri = imageUri,
-            unitConversions = unitConversions
+            unitConversions = unitConversions,
+            unitConversionRevision = if (unitConversions.isEmpty()) 0L else 1L
         )
 
         ingredients += ingredient
-        enqueueMutation(
-            QueuedMutation.UpsertIngredient(ingredient)
+        enqueueMutations(
+            listOf(QueuedMutation.UpsertIngredient(ingredient)) +
+                if (unitConversions.isEmpty()) emptyList() else listOf(
+                    QueuedMutation.SaveIngredientConversions(
+                        ingredientId = ingredient.id,
+                        conversions = unitConversions,
+                        expectedRevision = 0L
+                    )
+                )
         )
         return true
     }
@@ -1232,7 +1240,9 @@ class MealPlannerState(
             return false
         }
 
-        val updated = ingredients[index].copy(
+        val previous = ingredients[index]
+        val conversionChanged = previous.unitConversions != conversions
+        val updated = previous.copy(
             name = name.normalizedDisplayName(),
             quantityType = type,
             preferredUnit = preferredUnit,
@@ -1240,11 +1250,20 @@ class MealPlannerState(
             isProtein = isProtein,
             neverBuy = neverBuy,
             imageUri = imageUri,
-            unitConversions = unitConversions ?: ingredients[index].unitConversions
+            unitConversions = conversions,
+            unitConversionRevision = previous.unitConversionRevision +
+                if (conversionChanged) 1L else 0L
         )
         ingredients[index] = updated
-        enqueueMutation(
-            QueuedMutation.UpsertIngredient(updated)
+        enqueueMutations(
+            listOf(QueuedMutation.UpsertIngredient(updated)) +
+                if (!conversionChanged) emptyList() else listOf(
+                    QueuedMutation.SaveIngredientConversions(
+                        ingredientId = id,
+                        conversions = conversions,
+                        expectedRevision = previous.unitConversionRevision
+                    )
+                )
         )
         return true
     }
