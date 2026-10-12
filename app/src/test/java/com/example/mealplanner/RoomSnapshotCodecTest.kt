@@ -21,7 +21,14 @@ class RoomSnapshotCodecTest {
                     shoppingCategoryId = "meat",
                     isProtein = true,
                     imageUri = "https://example.invalid/signed",
-                    imagePath = "ingredients/image.jpg"
+                    imagePath = "ingredients/image.jpg",
+                    unitConversions = listOf(IngredientUnitConversion(
+                        unit = QuantityUnit.PACK,
+                        baseAmountPerUnit = 200.0,
+                        approximate = true,
+                        source = "household-confirmed",
+                        revision = 2L
+                    ))
                 )
             ),
             ingredientCategories = listOf(
@@ -68,6 +75,23 @@ class RoomSnapshotCodecTest {
                 )
             ),
             pantry = mapOf("ingredient" to 250.0),
+            pantryLots = listOf(
+                PantryLot(
+                    id = "old-stock",
+                    ingredientId = "ingredient",
+                    originalBase = 100.0,
+                    remainingBase = 50.0,
+                    opened = true,
+                    legacyUnknown = true
+                ),
+                PantryLot(
+                    id = "new-package",
+                    ingredientId = "ingredient",
+                    originalBase = 200.0,
+                    remainingBase = 200.0,
+                    opened = false
+                )
+            ),
             dayModes = orderedWeekDays.associateWith {
                 if (it == DayOfWeek.WEDNESDAY) {
                     DayMode.AWAY
@@ -136,6 +160,7 @@ class RoomSnapshotCodecTest {
         assertEquals(original.ingredients, nextWeek.ingredients)
         assertEquals(original.recipes, nextWeek.recipes)
         assertEquals(original.pantry, nextWeek.pantry)
+        assertEquals(original.pantryLots, nextWeek.pantryLots)
         assertEquals(original.history, nextWeek.history)
         assertEquals("offline-week-${monday.plusWeeks(1)}", nextWeek.weeklyPlanId)
         assertEquals(null, nextWeek.plan[DayOfWeek.MONDAY])
