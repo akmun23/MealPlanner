@@ -64,9 +64,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.clearAndSetSemantics
@@ -102,6 +104,7 @@ fun WeekScreen(
     // The same action is also accessible via a tap-to-choose-day dialog.
     val weekListState = rememberLazyListState()
     val dragScope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
     val edgeThresholdPx = with(LocalDensity.current) { 72.dp.toPx() }
     // Layout positions are updated on every scroll frame: do not turn them
     // into Compose state or the whole week would recompose during scrolling.
@@ -661,6 +664,7 @@ fun WeekScreen(
                 dropTarget = hoveredDay == day,
                 dragging = draggingDay == day,
                 onStartDrag = { source, rootY ->
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                     draggingDay = source
                     dragPositionY.floatValue = rootY - listRootTop[0]
                     hoveredDay = null
@@ -1146,11 +1150,19 @@ fun DayCard(
                                 )
                             }
                     ) {
-                        Icon(
-                            Icons.Filled.DragHandle,
-                            contentDescription = "Flyt ${recipe?.name} fra ${day.danishName()}",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                Icons.Filled.DragHandle,
+                                contentDescription = "Flyt ${recipe?.name} fra ${day.danishName()}",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                "Flyt",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
                     }
                 }
 
