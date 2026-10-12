@@ -330,6 +330,14 @@ internal sealed interface QueuedMutation {
     ) : QueuedMutation
 
     @Serializable
+    @SerialName("consume_pantry_lots_once")
+    data class ConsumePantryLots(
+        val ingredientId: String,
+        val amountBase: Double,
+        val transactionId: String
+    ) : QueuedMutation
+
+    @Serializable
     @SerialName("set_pantry")
     data class SetPantry(
         val ingredientId: String,
@@ -443,6 +451,9 @@ internal fun QueuedMutation.key(): String = when (this) {
     is QueuedMutation.UpsertPantryLot ->
         "pantry-lot:${transactionId}"
 
+    is QueuedMutation.ConsumePantryLots ->
+        "pantry-consumption:$transactionId:$ingredientId"
+
     is QueuedMutation.SetWeekState ->
         "week:$weeklyPlanId"
 
@@ -479,6 +490,7 @@ internal fun QueuedMutation.priority(): Int = when (this) {
 
     is QueuedMutation.SetPantry,
     is QueuedMutation.UpsertPantryLot,
+    is QueuedMutation.ConsumePantryLots,
     is QueuedMutation.SetWeekState,
     is QueuedMutation.SetHouseholdSandwich,
     is QueuedMutation.SetDayPrep,
@@ -523,7 +535,8 @@ internal fun QueuedMutation.domains(): Set<CloudSyncDomain> = when (this) {
         setOf(CloudSyncDomain.RECIPES)
 
     is QueuedMutation.SetPantry,
-    is QueuedMutation.UpsertPantryLot ->
+    is QueuedMutation.UpsertPantryLot,
+    is QueuedMutation.ConsumePantryLots ->
         setOf(CloudSyncDomain.PANTRY)
 
     is QueuedMutation.SetWeekState,
@@ -565,7 +578,8 @@ internal fun QueuedMutation.domainMask(): Int = when (this) {
         domainMask(CloudSyncDomain.RECIPES)
 
     is QueuedMutation.SetPantry,
-    is QueuedMutation.UpsertPantryLot ->
+    is QueuedMutation.UpsertPantryLot,
+    is QueuedMutation.ConsumePantryLots ->
         domainMask(CloudSyncDomain.PANTRY)
 
     is QueuedMutation.SetWeekState,
@@ -1008,6 +1022,12 @@ private suspend fun applyQueuedMutation(
         is QueuedMutation.UpsertPantryLot -> {
             repository.upsertPantryLot(
                 mutation.lot, mutation.expectedVersion, mutation.transactionId
+            )
+        }
+
+        is QueuedMutation.ConsumePantryLots -> {
+            repository.consumePantryLotsOnce(
+                mutation.ingredientId, mutation.amountBase, mutation.transactionId
             )
         }
 
