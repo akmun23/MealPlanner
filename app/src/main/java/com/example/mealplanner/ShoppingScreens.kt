@@ -28,6 +28,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -124,6 +125,69 @@ fun ShoppingScreen(state: MealPlannerState) {
     var allowManualAfterError by remember(weekId) { mutableStateOf(false) }
     var editPantryItem by remember {
         mutableStateOf<ShoppingItem?>(null)
+    }
+    var showAddIngredient by rememberSaveable { mutableStateOf(false) }
+    var shoppingName by rememberSaveable { mutableStateOf("") }
+    var shoppingType by rememberSaveable { mutableStateOf(QuantityType.MASS) }
+
+    if (showAddIngredient) {
+        val existing = state.ingredients.firstOrNull {
+            it.name.trim().equals(shoppingName.trim(), ignoreCase = true)
+        }
+        AlertDialog(
+            onDismissRequest = { showAddIngredient = false },
+            title = { Text("Tilføj til fælles indkøb") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    OutlinedTextField(
+                        value = shoppingName,
+                        onValueChange = { shoppingName = it.take(120) },
+                        label = { Text("Vare, fx skyr") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    if (existing != null) {
+                        Text(
+                            "Bruger eksisterende ingrediens: ${existing.name}.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    } else {
+                        Text(
+                            "Ny ingrediens oprettes og deles med husstanden.",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        SimpleSelector(
+                            label = "Enhedstype: ${shoppingType.danishName()}",
+                            options = QuantityType.entries,
+                            optionText = { it.danishName() },
+                            onSelected = { shoppingType = it }
+                        )
+                    }
+                    Text(
+                        "Varen vises på denne uges indkøbsliste hos begge. " +
+                            "I kan sætte flueben, når den er købt.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    enabled = shoppingName.isNotBlank() && !state.isWeekChanging,
+                    onClick = {
+                        val type = existing?.quantityType ?: shoppingType
+                        if (state.addShoppingIngredient(shoppingName, type)) {
+                            shoppingName = ""
+                            showAddIngredient = false
+                        }
+                    }
+                ) { Text("Tilføj til indkøb") }
+            },
+            dismissButton = {
+                TextButton(onClick = { showAddIngredient = false }) {
+                    Text("Annuller")
+                }
+            }
+        )
     }
 
     editPantryItem?.let { item ->
@@ -270,11 +334,26 @@ fun ShoppingScreen(state: MealPlannerState) {
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         item {
-            Text(
-                "Indkøb",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
-            )
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    "Indkøb",
+                    style = MaterialTheme.typography.headlineMedium,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.weight(1f)
+                )
+                OutlinedButton(
+                    onClick = { showAddIngredient = true },
+                    enabled = state.weeklyPlanId != null && !state.isWeekChanging
+                ) {
+                    Icon(Icons.Filled.Add, contentDescription = null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Tilføj vare")
+                }
+            }
         }
 
         if (!state.isLocalMode && bilkaLoading) {
@@ -350,7 +429,7 @@ fun ShoppingScreen(state: MealPlannerState) {
             item {
                 EmptyCard(
                     title = "Indkøbslisten er tom",
-                    text = "Der er ingen varer at købe lige nu. Tilføj en madplan eller retter for at se ingredienser her.",
+                    text = "Indkøbslisten er tom. Tilføj en vare manuelt, eller vælg retter til madplanen.",
                     icon = Icons.Filled.ShoppingCart
                 )
             }
@@ -549,18 +628,26 @@ private fun ShoppingItemCard(
                         textDecoration = if (checked) TextDecoration.LineThrough
                         else TextDecoration.None
                     )
-                    Text(
-                        "Mangler ${state.formatBaseAmount(ingredient, missingBase)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    Text(
-                        "Behov ${state.formatBaseAmount(ingredient, item.requiredBase)} · " +
+                    if (item.manualOnly) {
+                        Text(
+                            "Tilføjet manuelt · fælles indkøb",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    } else {
+                        Text(
+                            "Mangler ${state.formatBaseAmount(ingredient, missingBase)}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Text(
+                            "Behov ${state.formatBaseAmount(ingredient, item.requiredBase)} · " +
                                 "Lager ${state.formatBaseAmount(ingredient, item.pantryBase)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        maxLines = 2
-                    )
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2
+                        )
+                    }
                     bilkaInfo?.let { info ->
                         Text(
                             info,
@@ -608,7 +695,13 @@ private fun ShoppingItemCard(
                     },
                     modifier = Modifier.heightIn(min = 48.dp)
                 ) {
-                    Text(if (included) "Køb ikke" else "Tilføj til indkøb")
+                    Text(
+                        when {
+                            item.manualOnly -> "Fjern fra indkøb"
+                            included -> "Køb ikke"
+                            else -> "Tilføj til indkøb"
+                        }
+                    )
                 }
             }
         }
