@@ -200,4 +200,27 @@ class QueuedMutationTest {
         assertEquals(setOf(CloudSyncDomain.PANTRY), consume.domains())
     }
 
+    @Test
+    fun dinnerCompletionOutboxKeepsAllDeductionsInOneHistoryAndPantryEvent() {
+        val completed = QueuedMutation.CompleteMealWithLots(
+            eatenOn = "2026-10-12",
+            recipeId = "dinner",
+            deductions = mapOf("ham" to 200.0, "rice" to 100.0),
+            transactionId = "meal-event-uuid"
+        )
+        assertEquals(
+            completed,
+            QueuedMutationCodec.decode(QueuedMutationCodec.encode(completed))
+        )
+        assertEquals(
+            setOf(CloudSyncDomain.PANTRY, CloudSyncDomain.HISTORY),
+            completed.domains()
+        )
+        assertEquals("complete-meal:meal-event-uuid", completed.key())
+        assertEquals(
+            completed.priority(),
+            QueuedMutation.ConsumePantryLots("ham", 200.0, "consumption").priority()
+        )
+    }
+
 }
