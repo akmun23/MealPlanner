@@ -738,7 +738,7 @@ private fun DraggedDayPreview(
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
             .offset {
-                IntOffset(0, (pointerY.value - fingerCenterPx).roundToInt())
+                IntOffset(0, (pointerY.floatValue - fingerCenterPx).roundToInt())
             }
             .graphicsLayer {
                 alpha = 0.86f
