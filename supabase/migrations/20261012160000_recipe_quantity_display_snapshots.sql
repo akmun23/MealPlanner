@@ -240,6 +240,11 @@ begin
     if pg_trigger_depth() > 1 then return null; end if;
     h := case when tg_op = 'DELETE' then old.household_id else new.household_id end;
     i := case when tg_op = 'DELETE' then old.ingredient_id else new.ingredient_id end;
+    -- Ingredient cascade deletion must not recreate its pantry_items row.
+    if not exists (
+        select 1 from public.ingredients
+        where household_id = h and id = i
+    ) then return null; end if;
     select coalesce(sum(remaining_amount_base), 0) into total
         from public.pantry_lots
         where household_id = h and ingredient_id = i;
