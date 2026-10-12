@@ -84,27 +84,34 @@ fun ShoppingScreen(state: MealPlannerState) {
         }
         bilkaLoading = true
         bilkaLoadError = false
-        val (catalog, weekly) = coroutineScope {
-            val catalogJob = async {
-                BilkaPrejClient.catalog(
-                    state.householdIdentifier,
-                    requestedIngredientIds
-                )
+        try {
+            val (catalog, weekly) = coroutineScope {
+                val catalogJob = async {
+                    BilkaPrejClient.catalog(
+                        state.householdIdentifier,
+                        requestedIngredientIds
+                    )
+                }
+                val weeklyJob = async {
+                    BilkaPrejClient.shoppingContext(state.householdIdentifier, weekId)
+                }
+                catalogJob.await() to weeklyJob.await()
             }
-            val weeklyJob = async {
-                BilkaPrejClient.shoppingContext(state.householdIdentifier, weekId)
-            }
-            catalogJob.await() to weeklyJob.await()
+            // Preserve successful responses independently; a failed catalogue
+            // must never erase known prior purchase overrides.
+            val result = decodeBilkaShoppingLoad(catalog, weekly)
+            result.catalog?.let { bilkaCatalog = it }
+            result.context?.let { bilkaContext = it }
+            bilkaLoadError = result.hasError
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Never leave all Add buttons hidden behind a permanent loading
+            // state on an unexpected network/JSON exception.
+            bilkaLoadError = true
+        } finally {
+            bilkaLoading = false
         }
-        // Preserve any successfully fetched portion of this week's Bilka
-        // information. A failing catalogue request must not also erase the
-        // shopping context (including already registered purchases), or vice
-        // versa. Purchases are still guarded whenever either fetch fails.
-        val result = decodeBilkaShoppingLoad(catalog, weekly)
-        result.catalog?.let { bilkaCatalog = it }
-        result.context?.let { bilkaContext = it }
-        bilkaLoadError = result.hasError
-        bilkaLoading = false
     }
 
     LaunchedEffect(weekId, state.householdIdentifier, requestedIngredientIds) {
@@ -159,16 +166,25 @@ fun ShoppingScreen(state: MealPlannerState) {
                     }
                 }
             )
-        } else if (!state.isLocalMode && weekId != null && catalog != null && selection != null &&
-            (catalog.productsFor(item.ingredient.id).isNotEmpty() ||
-                    selection.default(item.ingredient.id) != null)
-        ) {
+        } else if (!state.isLocalMode && weekId != null) {
+            // All cloud purchases, including a manually named item and cases
+            // where Bilka's catalogue/context lookup failed, must go through
+            // the server's atomic per-week purchase transaction. Never use
+            // local addPantryAmount as a cloud fallback: retry could double
+            // credit the same ingredient after a network timeout.
             BilkaPurchaseDialog(
                 weekId = weekId,
                 item = item,
                 state = state,
-                catalog = catalog,
-                shopping = selection,
+                catalog = catalog ?: BilkaProductCatalog(
+                    candidates = emptyList(),
+                    defaults = emptyList(),
+                    products = emptyList()
+                ),
+                shopping = selection ?: BilkaShoppingContext(
+                    defaults = emptyList(),
+                    purchases = emptyList()
+                ),
                 onDismiss = {
                     addToPantryItem = null
                     allowManualAfterError = false
@@ -179,13 +195,22 @@ fun ShoppingScreen(state: MealPlannerState) {
                     scope.launch { refreshBilkaChoices() }
                 }
             )
-        } else {
+        } else if (state.isLocalMode) {
             AddPurchasedToPantryDialog(
                 item = item,
                 state = state,
                 onDismiss = {
                     addToPantryItem = null
                     allowManualAfterError = false
+                }
+            )
+        } else {
+            AlertDialog(
+                onDismissRequest = { addToPantryItem = null },
+                title = { Text("Ugen er ikke klar") },
+                text = { Text("Købet kan ikke registreres sikkert uden en gyldig uge. Opdatér madplanen og prøv igen.") },
+                confirmButton = {
+                    TextButton(onClick = { addToPantryItem = null }) { Text("OK") }
                 }
             )
         }
@@ -601,10 +626,11 @@ private fun AddPurchasedToPantryDialog(
         mutableStateOf(ingredient.preferredUnit)
     }
 
-    val suggestedBase =
-        (item.requiredBase - item.pantryBase)
-            .takeIf { it > 0.0 }
-            ?: item.requiredBase
+    val suggestedBase = PurchaseDialogRules.suggestedPurchasedBase(
+        requiredBase = item.requiredBase,
+        pantryBase = item.pantryBase,
+        preferredUnit = ingredient.preferredUnit
+    )
 
     var amountText by remember(ingredient.id, item.pantryBase) {
         mutableStateOf(
@@ -613,6 +639,8 @@ private fun AddPurchasedToPantryDialog(
             )
         )
     }
+
+    val purchasedBase = PurchaseDialogRules.validPurchasedAmount(amountText, unit)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -635,8 +663,16 @@ private fun AddPurchasedToPantryDialog(
                     },
                     label = { Text("Købt mængde") },
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
+                    singleLine = true,
+                    isError = purchasedBase == null
                 )
+                if (purchasedBase == null) {
+                    Text(
+                        "Angiv en positiv købt mængde (maks. 10.000.000 grundenheder).",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
 
                 SimpleSelector(
                     label = unit.selectorLabel(),
@@ -658,19 +694,17 @@ private fun AddPurchasedToPantryDialog(
             }
         },
         confirmButton = {
-            val validAmount = parseDanishDecimal(amountText)
-                ?.takeIf { it.isFinite() && it > 0.0 }
             Button(
                 onClick = {
-                    val amount = validAmount ?: return@Button
+                    val amount = purchasedBase ?: return@Button
                     state.addPantryAmount(
                         ingredientId = ingredient.id,
-                        amount = amount,
+                        amount = unit.fromBase(amount),
                         unit = unit
                     )
                     onDismiss()
                 },
-                enabled = validAmount != null
+                enabled = purchasedBase != null
             ) {
                 Text("Tilføj")
             }

@@ -88,6 +88,20 @@ class BilkaWireParsingTest {
     }
 
     @Test
+    fun parsesCountAndPackageProductsForCheckoutCompatibility() {
+        val catalog = parseBilkaCatalog(
+            obj(
+                """{"candidates":[],"defaults":[],"products":[
+                     {"id":"count","name":"Avocado","quantity_kind":"COUNT"},
+                     {"id":"package","name":"Dåsetomat","quantity_kind":"PACKAGE"}
+                   ]}"""
+            )
+        )
+        assertEquals(BilkaQuantityKind.COUNT, catalog.product("count")?.quantityKind)
+        assertEquals(BilkaQuantityKind.PACKAGE, catalog.product("package")?.quantityKind)
+    }
+
+    @Test
     fun unsupportedEnumDoesNotRemoveOtherwiseValidProduct() {
         val catalog = parseBilkaCatalog(
             obj(
