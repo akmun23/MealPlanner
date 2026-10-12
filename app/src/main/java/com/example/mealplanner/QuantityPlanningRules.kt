@@ -91,7 +91,16 @@ internal object QuantityPlanningRules {
             ingredient, packageUnit, rules
         ) ?: return null
         val missing = max(0.0, requiredBase - pantryBase)
-        val rawCount = ceil(missing / packBase)
+        val ratio = missing / packBase
+        if (!ratio.isFinite() || ratio < 0.0) return null
+        // Avoid a phantom extra package when binary floating point represents
+        // an exact boundary as e.g. 3.0000000000000004 packages.
+        // Use a few ULPs rather than a fixed tolerance that could hide a
+        // genuine small shortfall for a small physical package.
+        val nearest = kotlin.math.round(ratio)
+        val nearWholePackage = kotlin.math.abs(ratio - nearest) <=
+            8.0 * java.lang.Math.ulp(nearest)
+        val rawCount = if (nearWholePackage) nearest else ceil(ratio)
         if (!rawCount.isFinite() || rawCount < 0.0 || rawCount > Int.MAX_VALUE) return null
 
         val count = rawCount.toInt()
