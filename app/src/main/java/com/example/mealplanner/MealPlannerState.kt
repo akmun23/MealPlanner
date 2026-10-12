@@ -2056,18 +2056,33 @@ class MealPlannerState(
 
         if (updates.isEmpty()) return
 
+        var projectedLots = pantryLots.toList()
+        val operations = mutableListOf<QueuedMutation>()
+        val transactionId = UUID.randomUUID().toString()
+        for ((ingredientId, amountBase) in updates) {
+            val previous = pantry[ingredientId] ?: 0.0
+            val deducted = (previous - amountBase).coerceAtLeast(0.0)
+            if (deducted <= 0.0) continue
+            if (projectedLots.any { it.ingredientId == ingredientId &&
+                    it.remainingBase > 0.0 }) {
+                val after = PantryLotRules.consume(projectedLots, ingredientId, deducted)
+                if (after == null) {
+                    lastError = "Opdatér Lager: pakkerne stemmer ikke med den viste beholdning."
+                    return
+                }
+                projectedLots = after
+                operations += QueuedMutation.ConsumePantryLots(
+                    ingredientId, deducted, transactionId
+                )
+            } else {
+                operations += QueuedMutation.SetPantry(ingredientId, amountBase)
+            }
+        }
+        syncListByKey(pantryLots, projectedLots, PantryLot::id)
         updates.forEach { (ingredientId, amountBase) ->
             pantry[ingredientId] = amountBase
         }
-
-        enqueueMutations(
-            updates.map { (ingredientId, amountBase) ->
-                QueuedMutation.SetPantry(
-                    ingredientId = ingredientId,
-                    amountBase = amountBase
-                )
-            }
-        )
+        enqueueMutations(operations)
     }
 
     /**
