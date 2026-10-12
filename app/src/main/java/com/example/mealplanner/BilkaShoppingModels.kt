@@ -39,3 +39,23 @@ internal fun decodeBilkaShoppingContext(raw: JsonObject): BilkaShoppingContext {
         purchases = json.decodeFromJsonElement(raw.getValue("overrides").jsonArray)
     )
 }
+
+/** Preserve a successful catalogue or weekly context when the other fails. */
+internal data class BilkaShoppingLoad(
+    val catalog: BilkaProductCatalog?,
+    val context: BilkaShoppingContext?,
+    val hasError: Boolean
+)
+
+internal fun decodeBilkaShoppingLoad(
+    catalogResponse: Result<JsonObject>,
+    contextResponse: Result<JsonObject>
+): BilkaShoppingLoad {
+    val catalog = catalogResponse.mapCatching(::parseBilkaCatalog)
+    val context = contextResponse.mapCatching(::decodeBilkaShoppingContext)
+    return BilkaShoppingLoad(
+        catalog = catalog.getOrNull(),
+        context = context.getOrNull(),
+        hasError = catalog.isFailure || context.isFailure
+    )
+}
