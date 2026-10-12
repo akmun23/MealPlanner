@@ -960,6 +960,13 @@ internal fun RecipeEditorScreen(
                     excludingId = existing?.id
                 )
 
+    // Track intentional amount/unit changes separately from metadata edits.
+    // Otherwise saving a title could rewrite a frozen "1 pakke" as "200 g",
+    // while choosing "0,2 kg" explicitly should replace that old display.
+    var explicitlyEditedIngredientIds by rememberSaveable(recipeId) {
+        mutableStateOf(arrayListOf<String>())
+    }
+
     val drafts = rememberSaveable(recipeId, saver = recipeDraftSaver) {
         mutableStateListOf<DraftRequirement>().apply {
             existing?.ingredients?.forEach { requirement ->
@@ -1172,7 +1179,8 @@ internal fun RecipeEditorScreen(
                     } else {
                         emptyList()
                     },
-                requirements = drafts.toList()
+                requirements = drafts.toList(),
+                explicitlyEditedRequirementIds = explicitlyEditedIngredientIds.toSet()
             )
             if (saved) {
                 onSaved(existing.id)
@@ -1527,6 +1535,11 @@ internal fun RecipeEditorScreen(
                         ingredient = ingredient,
                         draft = draft,
                         onChange = {
+                            if (it != draft) {
+                                explicitlyEditedIngredientIds = ArrayList(
+                                    explicitlyEditedIngredientIds + draft.ingredientId
+                                )
+                            }
                             drafts[indexed.index] = it
                         },
                         onRemove = {
