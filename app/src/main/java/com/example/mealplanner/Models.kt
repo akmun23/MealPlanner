@@ -18,6 +18,14 @@ fun QuantityType.danishName(): String = when (this) {
     QuantityType.PACKAGE -> "pakke/dåse"
 }
 
+/** Canonical physical storage unit, NOT the preferred unit shown to users. */
+fun QuantityType.baseMeasurementUnit(): MeasurementUnit = when (this) {
+    QuantityType.MASS -> MeasurementUnit.GRAM
+    QuantityType.VOLUME -> MeasurementUnit.MILLILITRE
+    QuantityType.COUNT -> MeasurementUnit.PIECE
+    QuantityType.PACKAGE -> MeasurementUnit.PACK
+}
+
 enum class MeasurementUnit(
     val symbol: String,
     val quantityType: QuantityType,
@@ -105,7 +113,11 @@ data class Ingredient(
     val isProtein: Boolean = false,
     val neverBuy: Boolean = false,
     val imageUri: String? = null,
-    val imagePath: String? = null
+    val imagePath: String? = null,
+    // Household-approved conversions are synced separately from ingredients,
+    // cached with the ingredient and keyed by ingredient UUID on the server.
+    val unitConversions: List<IngredientUnitConversion> = emptyList(),
+    val unitConversionRevision: Long = 0L
 )
 
 /**
@@ -128,7 +140,15 @@ internal fun canChangeIngredientQuantityType(
 @Serializable
 data class RecipeIngredient(
     val ingredientId: String,
-    val amountBase: Double
+    /** Physical requirement in this ingredient's stored base dimension. */
+    val amountBase: Double,
+    /** User-authored recipe display, frozen at save time. Null for legacy rows. */
+    val displayAmount: Double? = null,
+    val displayUnitCode: String? = null,
+    /** Snapshot, NOT a live lookup of the current product packaging. */
+    val basePerDisplayUnit: Double? = null,
+    /** True if the saved conversion was a household estimate. */
+    val conversionApproximate: Boolean = false
 )
 
 /** An ordered recipe instruction: level 0 is a numbered main step, level 1 a lettered substep. */
@@ -180,7 +200,30 @@ enum class DayMode {
 data class DraftRequirement(
     val ingredientId: String,
     val amount: Double,
-    val unit: MeasurementUnit
+    // Physical native unit used for legacy pantry requirements.
+    val unit: MeasurementUnit,
+    // A frozen recipe display can also use a confirmed cross-dimension unit.
+    // Keeping this separate avoids reinterpreting old PACKAGE pantry numbers.
+    val displayUnit: QuantityUnit? = null,
+    val displayFactor: Double? = null,
+    val displayApproximate: Boolean = false
+)
+
+/** One real-world package or a legacy amount with unknown packaging.
+ * Physical amounts remain in the ingredient's existing base dimension. */
+@Serializable
+data class PantryLot(
+    val id: String = UUID.randomUUID().toString(),
+    val ingredientId: String,
+    val originalBase: Double,
+    val remainingBase: Double,
+    val opened: Boolean = false,
+    val legacyUnknown: Boolean = false,
+    val productId: String? = null,
+    val purchaseEventKey: String? = null,
+    val bestBefore: String? = null,
+    val version: Long = 1L,
+    val createdAt: String = ""
 )
 
 data class ShoppingItem(

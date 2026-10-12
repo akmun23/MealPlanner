@@ -313,7 +313,9 @@ private data class CachedIngredient(
     val isProtein: Boolean,
     val neverBuy: Boolean = false,
     val imageUri: String?,
-    val imagePath: String?
+    val imagePath: String?,
+    val unitConversions: List<IngredientUnitConversion> = emptyList(),
+    val unitConversionRevision: Long = 0L
 )
 
 @Serializable
@@ -326,7 +328,11 @@ private data class CachedCategory(
 @Serializable
 private data class CachedRecipeIngredient(
     val ingredientId: String,
-    val amountBase: Double
+    val amountBase: Double,
+    val displayAmount: Double? = null,
+    val displayUnitCode: String? = null,
+    val basePerDisplayUnit: Double? = null,
+    val conversionApproximate: Boolean = false
 )
 
 @Serializable
@@ -366,6 +372,7 @@ private data class CachedCloudSnapshot(
     val recipeCategories: List<CachedCategory>,
     val recipes: List<CachedRecipe>,
     val pantry: Map<String, Double>,
+    val pantryLots: List<PantryLot> = emptyList(),
     val dayModes: Map<String, String>,
     val dayMaxPrepMinutes: Map<String, Int?>,
     val plan: Map<String, String?>,
@@ -436,7 +443,9 @@ internal object RoomSnapshotCodec {
                 isProtein = it.isProtein,
                 neverBuy = it.neverBuy,
                 imageUri = it.imageUri,
-                imagePath = it.imagePath
+                imagePath = it.imagePath,
+                unitConversions = it.unitConversions,
+                unitConversionRevision = it.unitConversionRevision
             )
         },
         ingredientCategories = ingredientCategories.map {
@@ -469,7 +478,11 @@ internal object RoomSnapshotCodec {
                 ingredients = recipe.ingredients.map {
                     CachedRecipeIngredient(
                         ingredientId = it.ingredientId,
-                        amountBase = it.amountBase
+                        amountBase = it.amountBase,
+                        displayAmount = it.displayAmount,
+                        displayUnitCode = it.displayUnitCode,
+                        basePerDisplayUnit = it.basePerDisplayUnit,
+                        conversionApproximate = it.conversionApproximate
                     )
                 },
                 pantryPrerequisites = recipe.pantryPrerequisites.map {
@@ -481,6 +494,7 @@ internal object RoomSnapshotCodec {
             )
         },
         pantry = pantry,
+        pantryLots = pantryLots,
         dayModes = dayModes.mapKeys { it.key.name }
             .mapValues { it.value.name },
         dayMaxPrepMinutes =
@@ -515,7 +529,9 @@ internal object RoomSnapshotCodec {
                     isProtein = it.isProtein,
                     neverBuy = it.neverBuy,
                     imageUri = it.imageUri,
-                    imagePath = it.imagePath
+                    imagePath = it.imagePath,
+                    unitConversions = it.unitConversions,
+                unitConversionRevision = it.unitConversionRevision
                 )
             },
             ingredientCategories = ingredientCategories.map {
@@ -549,7 +565,11 @@ internal object RoomSnapshotCodec {
                     ingredients = recipe.ingredients.map {
                         RecipeIngredient(
                             ingredientId = it.ingredientId,
-                            amountBase = it.amountBase
+                            amountBase = it.amountBase,
+                            displayAmount = it.displayAmount,
+                            displayUnitCode = it.displayUnitCode,
+                            basePerDisplayUnit = it.basePerDisplayUnit,
+                            conversionApproximate = it.conversionApproximate
                         )
                     },
                     pantryPrerequisites =
@@ -562,6 +582,7 @@ internal object RoomSnapshotCodec {
                 )
             },
             pantry = pantry,
+            pantryLots = pantryLots,
             dayModes = dayModes.mapKeys {
                 DayOfWeek.valueOf(it.key)
             }.mapValues {

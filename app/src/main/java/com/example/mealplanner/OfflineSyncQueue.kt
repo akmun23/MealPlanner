@@ -322,6 +322,40 @@ internal sealed interface QueuedMutation {
     ) : QueuedMutation
 
     @Serializable
+    @SerialName("save_ingredient_conversions")
+    data class SaveIngredientConversions(
+        val ingredientId: String,
+        val conversions: List<IngredientUnitConversion>,
+        val expectedRevision: Long,
+        val transactionId: String = UUID.randomUUID().toString()
+    ) : QueuedMutation
+
+    @Serializable
+    @SerialName("upsert_pantry_lot")
+    data class UpsertPantryLot(
+        val lot: PantryLot,
+        val expectedVersion: Long = 0L,
+        val transactionId: String = UUID.randomUUID().toString()
+    ) : QueuedMutation
+
+    @Serializable
+    @SerialName("complete_meal_with_lots_once")
+    data class CompleteMealWithLots(
+        val eatenOn: String,
+        val recipeId: String,
+        val deductions: Map<String, Double>,
+        val transactionId: String
+    ) : QueuedMutation
+
+    @Serializable
+    @SerialName("consume_pantry_lots_once")
+    data class ConsumePantryLots(
+        val ingredientId: String,
+        val amountBase: Double,
+        val transactionId: String
+    ) : QueuedMutation
+
+    @Serializable
     @SerialName("set_pantry")
     data class SetPantry(
         val ingredientId: String,
@@ -408,6 +442,9 @@ internal fun QueuedMutation.key(): String = when (this) {
     is QueuedMutation.UpsertIngredient ->
         "ingredient:${ingredient.id}"
 
+    is QueuedMutation.SaveIngredientConversions ->
+        "ingredient-conversion:$transactionId"
+
     is QueuedMutation.DeleteIngredient ->
         "ingredient:$ingredientId"
 
@@ -431,6 +468,15 @@ internal fun QueuedMutation.key(): String = when (this) {
 
     is QueuedMutation.SetPantry ->
         "pantry:$ingredientId"
+
+    is QueuedMutation.UpsertPantryLot ->
+        "pantry-lot:${transactionId}"
+
+    is QueuedMutation.ConsumePantryLots ->
+        "pantry-consumption:$transactionId:$ingredientId"
+
+    is QueuedMutation.CompleteMealWithLots ->
+        "complete-meal:$transactionId"
 
     is QueuedMutation.SetWeekState ->
         "week:$weeklyPlanId"
@@ -464,9 +510,13 @@ internal fun QueuedMutation.priority(): Int = when (this) {
     is QueuedMutation.DeleteRecipeCategory -> 10
 
     is QueuedMutation.UpsertIngredient -> 20
+    is QueuedMutation.SaveIngredientConversions -> 25
     is QueuedMutation.UpsertRecipe -> 30
 
     is QueuedMutation.SetPantry,
+    is QueuedMutation.UpsertPantryLot,
+    is QueuedMutation.ConsumePantryLots,
+    is QueuedMutation.CompleteMealWithLots,
     is QueuedMutation.SetWeekState,
     is QueuedMutation.SetHouseholdSandwich,
     is QueuedMutation.SetDayPrep,
@@ -489,6 +539,7 @@ private fun domainMask(vararg domains: CloudSyncDomain): Int =
 
 internal fun QueuedMutation.domains(): Set<CloudSyncDomain> = when (this) {
     is QueuedMutation.UpsertIngredient,
+    is QueuedMutation.SaveIngredientConversions,
     is QueuedMutation.UpsertIngredientCategory ->
         setOf(CloudSyncDomain.INGREDIENTS)
 
@@ -510,7 +561,9 @@ internal fun QueuedMutation.domains(): Set<CloudSyncDomain> = when (this) {
     is QueuedMutation.DeleteRecipeCategory ->
         setOf(CloudSyncDomain.RECIPES)
 
-    is QueuedMutation.SetPantry ->
+    is QueuedMutation.SetPantry,
+    is QueuedMutation.UpsertPantryLot,
+    is QueuedMutation.ConsumePantryLots ->
         setOf(CloudSyncDomain.PANTRY)
 
     is QueuedMutation.SetWeekState,
@@ -526,10 +579,14 @@ internal fun QueuedMutation.domains(): Set<CloudSyncDomain> = when (this) {
 
     is QueuedMutation.SetMealEaten ->
         setOf(CloudSyncDomain.HISTORY)
+
+    is QueuedMutation.CompleteMealWithLots ->
+        setOf(CloudSyncDomain.PANTRY, CloudSyncDomain.HISTORY)
 }
 
 internal fun QueuedMutation.domainMask(): Int = when (this) {
     is QueuedMutation.UpsertIngredient,
+    is QueuedMutation.SaveIngredientConversions,
     is QueuedMutation.UpsertIngredientCategory ->
         domainMask(CloudSyncDomain.INGREDIENTS)
 
@@ -551,7 +608,9 @@ internal fun QueuedMutation.domainMask(): Int = when (this) {
     is QueuedMutation.DeleteRecipeCategory ->
         domainMask(CloudSyncDomain.RECIPES)
 
-    is QueuedMutation.SetPantry ->
+    is QueuedMutation.SetPantry,
+    is QueuedMutation.UpsertPantryLot,
+    is QueuedMutation.ConsumePantryLots ->
         domainMask(CloudSyncDomain.PANTRY)
 
     is QueuedMutation.SetWeekState,
@@ -567,6 +626,9 @@ internal fun QueuedMutation.domainMask(): Int = when (this) {
 
     is QueuedMutation.SetMealEaten ->
         domainMask(CloudSyncDomain.HISTORY)
+
+    is QueuedMutation.CompleteMealWithLots ->
+        domainMask(CloudSyncDomain.PANTRY, CloudSyncDomain.HISTORY)
 }
 
 internal val OFFLINE_SYNC_WORK_POLICY =
@@ -942,6 +1004,13 @@ private suspend fun applyQueuedMutation(
             repository.upsertIngredient(mutation.ingredient)
         }
 
+        is QueuedMutation.SaveIngredientConversions -> {
+            repository.saveIngredientConversionsOnce(
+                mutation.ingredientId, mutation.expectedRevision,
+                mutation.conversions, mutation.transactionId
+            )
+        }
+
         is QueuedMutation.DeleteIngredient -> {
             repository.deleteIngredient(
                 id = mutation.ingredientId,
@@ -988,6 +1057,25 @@ private suspend fun applyQueuedMutation(
             repository.setMealEaten(
                 eatenOn = java.time.LocalDate.parse(mutation.eatenOn),
                 recipeId = mutation.recipeId
+            )
+        }
+
+        is QueuedMutation.UpsertPantryLot -> {
+            repository.upsertPantryLot(
+                mutation.lot, mutation.expectedVersion, mutation.transactionId
+            )
+        }
+
+        is QueuedMutation.ConsumePantryLots -> {
+            repository.consumePantryLotsOnce(
+                mutation.ingredientId, mutation.amountBase, mutation.transactionId
+            )
+        }
+
+        is QueuedMutation.CompleteMealWithLots -> {
+            repository.completeMealWithLotsOnce(
+                java.time.LocalDate.parse(mutation.eatenOn),
+                mutation.recipeId, mutation.deductions, mutation.transactionId
             )
         }
 

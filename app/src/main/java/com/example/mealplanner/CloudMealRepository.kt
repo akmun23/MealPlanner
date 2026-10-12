@@ -7,6 +7,7 @@ import android.net.Uri
 import androidx.core.net.toUri
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.realtime.HasOldRecord
 import io.github.jan.supabase.realtime.HasRecord
@@ -29,6 +30,10 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.add
+import kotlinx.serialization.json.put
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
@@ -50,6 +55,24 @@ private data class IngredientRow(
     @SerialName("never_buy") val neverBuy: Boolean = false,
     @SerialName("shopping_category_id") val shoppingCategoryId: String? = null,
     @SerialName("image_path") val imagePath: String? = null
+)
+
+@Serializable
+private data class IngredientConversionVersionRow(
+    @SerialName("household_id") val householdId: String,
+    @SerialName("ingredient_id") val ingredientId: String,
+    val revision: Long = 0L
+)
+
+@Serializable
+private data class IngredientConversionProfileRow(
+    @SerialName("household_id") val householdId: String,
+    @SerialName("ingredient_id") val ingredientId: String,
+    @SerialName("unit_code") val unitCode: String,
+    @SerialName("base_amount_per_unit") val baseAmountPerUnit: Double,
+    val approximate: Boolean = false,
+    val source: String = "household-confirmed",
+    val revision: Long = 1
 )
 
 @Serializable
@@ -145,7 +168,11 @@ private data class RecipeIngredientRow(
     @SerialName("household_id") val householdId: String,
     @SerialName("recipe_id") val recipeId: String,
     @SerialName("ingredient_id") val ingredientId: String,
-    @SerialName("amount_base") val amountBase: Double
+    @SerialName("amount_base") val amountBase: Double,
+    @SerialName("display_amount") val displayAmount: Double? = null,
+    @SerialName("display_unit_code") val displayUnitCode: String? = null,
+    @SerialName("base_per_display_unit") val basePerDisplayUnit: Double? = null,
+    @SerialName("conversion_approximate") val conversionApproximate: Boolean = false
 )
 
 @Serializable
@@ -161,6 +188,22 @@ private data class PantryRow(
     @SerialName("household_id") val householdId: String,
     @SerialName("ingredient_id") val ingredientId: String,
     @SerialName("amount_base") val amountBase: Double
+)
+
+@Serializable
+private data class PantryLotRow(
+    val id: String,
+    @SerialName("household_id") val householdId: String,
+    @SerialName("ingredient_id") val ingredientId: String,
+    @SerialName("original_amount_base") val originalBase: Double,
+    @SerialName("remaining_amount_base") val remainingBase: Double,
+    val opened: Boolean = false,
+    @SerialName("legacy_unknown") val legacyUnknown: Boolean = false,
+    @SerialName("product_id") val productId: String? = null,
+    @SerialName("purchase_event_key") val purchaseEventKey: String? = null,
+    @SerialName("best_before") val bestBefore: String? = null,
+    @SerialName("lot_version") val version: Long = 1L,
+    @SerialName("created_at") val createdAt: String? = null
 )
 
 @Serializable
@@ -238,6 +281,7 @@ data class CloudSnapshot(
     val recipeCategories: List<RecipeCategoryOption>,
     val recipes: List<Recipe>,
     val pantry: Map<String, Double>,
+    val pantryLots: List<PantryLot> = emptyList(),
     val dayModes: Map<DayOfWeek, DayMode>,
     val dayMaxPrepMinutes: Map<DayOfWeek, Int?>,
     val plan: Map<DayOfWeek, String?>,
@@ -286,7 +330,8 @@ internal enum class CloudSyncDomain {
 internal fun syncDomainForTable(table: String): CloudSyncDomain? =
     when (table) {
         "ingredients",
-        "ingredient_protein_flags",
+        "ingredient_protein_flags", "ingredient_unit_conversions",
+        "ingredient_conversion_versions",
         "shopping_categories" -> CloudSyncDomain.INGREDIENTS
 
         "recipe_categories",
@@ -297,7 +342,7 @@ internal fun syncDomainForTable(table: String): CloudSyncDomain? =
         "recipe_ingredients",
         "recipe_pantry_prerequisites" -> CloudSyncDomain.RECIPES
 
-        "pantry_items" -> CloudSyncDomain.PANTRY
+        "pantry_items", "pantry_lots" -> CloudSyncDomain.PANTRY
 
         "household_settings",
         "weekly_plans",
@@ -482,6 +527,9 @@ class CloudMealRepository(
             val pantryDeferred = async {
                 loadPantrySnapshot()
             }
+            val pantryLotsDeferred = async {
+                loadPantryLotsSnapshot()
+            }
             val weekDeferred = async {
                 loadWeekSnapshot(weekStart)
             }
@@ -496,6 +544,7 @@ class CloudMealRepository(
             val ingredients = ingredientsDeferred.await()
             val recipes = recipesDeferred.await()
             val pantry = pantryDeferred.await()
+            val pantryLots = pantryLotsDeferred.await()
             val week = weekDeferred.await()
             val history = historyDeferred.await()
             val shopping = loadShoppingSnapshot(
@@ -510,6 +559,7 @@ class CloudMealRepository(
                     recipes.recipeCategories,
                 recipes = recipes.recipes,
                 pantry = pantry,
+                pantryLots = pantryLots,
                 dayModes = week.dayModes,
                 dayMaxPrepMinutes =
                     week.dayMaxPrepMinutes,
@@ -536,6 +586,16 @@ class CloudMealRepository(
                     supabase.from("ingredients").select {
                         filter { eq("household_id", householdId) }
                     }.decodeList<IngredientRow>()
+                }
+                val conversionsDeferred = async {
+                    supabase.from("ingredient_unit_conversions").select {
+                        filter { eq("household_id", householdId) }
+                    }.decodeList<IngredientConversionProfileRow>()
+                }
+                val versionsDeferred = async {
+                    supabase.from("ingredient_conversion_versions").select {
+                        filter { eq("household_id", householdId) }
+                    }.decodeList<IngredientConversionVersionRow>()
                 }
                 val categoriesDeferred = async {
                     supabase.from("shopping_categories").select {
@@ -585,6 +645,10 @@ class CloudMealRepository(
                 val categoryRows = categoriesDeferred.await()
                 val proteinRows = proteinFlagsDeferred.await()
                 val bilkaImages = bilkaImagesDeferred.await()
+                val conversionsByIngredient = conversionsDeferred.await()
+                    .groupBy { it.ingredientId }
+                val revisionsByIngredient = versionsDeferred.await()
+                    .associate { it.ingredientId to it.revision }
                 val proteinByIngredient =
                     proteinRows.associateBy { it.ingredientId }
 
@@ -606,6 +670,24 @@ class CloudMealRepository(
                             isProtein =
                                 proteinByIngredient[row.id]?.isProtein == true,
                             neverBuy = row.neverBuy,
+                            unitConversionRevision = revisionsByIngredient[row.id] ?: 0L,
+                            unitConversions = conversionsByIngredient[row.id].orEmpty()
+                                .mapNotNull { conversion ->
+                                    val unit = QuantityUnit.entries.firstOrNull {
+                                        it.name == conversion.unitCode
+                                    } ?: return@mapNotNull null
+                                    val factor = conversion.baseAmountPerUnit
+                                    if (!factor.isFinite() || factor <= 0.0 || factor > 1e9) {
+                                        return@mapNotNull null
+                                    }
+                                    IngredientUnitConversion(
+                                        unit = unit,
+                                        baseAmountPerUnit = factor,
+                                        approximate = conversion.approximate,
+                                        source = conversion.source,
+                                        revision = conversion.revision
+                                    )
+                                },
                             imageUri = PantryImageRules.displayImage(
                                 manualImageUri = row.imagePath?.let(MealImageReference::forPath),
                                 bilkaImageUrl = bilkaImages[row.id]
@@ -730,7 +812,11 @@ class CloudMealRepository(
                                 requirements[row.id].orEmpty().map {
                                     RecipeIngredient(
                                         ingredientId = it.ingredientId,
-                                        amountBase = it.amountBase
+                                        amountBase = it.amountBase,
+                                        displayAmount = it.displayAmount,
+                                        displayUnitCode = it.displayUnitCode,
+                                        basePerDisplayUnit = it.basePerDisplayUnit,
+                                        conversionApproximate = it.conversionApproximate
                                     )
                                 },
                             pantryPrerequisites =
@@ -753,6 +839,94 @@ class CloudMealRepository(
             }.decodeList<PantryRow>()
                 .associate { it.ingredientId to it.amountBase }
         }
+
+    internal suspend fun loadPantryLotsSnapshot(): List<PantryLot> =
+        withContext(Dispatchers.IO) {
+            supabase.from("pantry_lots").select {
+                filter { eq("household_id", householdId) }
+            }.decodeList<PantryLotRow>().map { row ->
+                PantryLot(
+                    id = row.id,
+                    ingredientId = row.ingredientId,
+                    originalBase = row.originalBase,
+                    remainingBase = row.remainingBase,
+                    opened = row.opened,
+                    legacyUnknown = row.legacyUnknown,
+                    productId = row.productId,
+                    purchaseEventKey = row.purchaseEventKey,
+                    bestBefore = row.bestBefore,
+                    version = row.version,
+                    createdAt = row.createdAt.orEmpty()
+                )
+            }
+        }
+
+    suspend fun upsertPantryLot(
+        lot: PantryLot, expectedVersion: Long, transactionId: String
+    ) = withContext(Dispatchers.IO) {
+        require(lot.remainingBase.isFinite() && lot.remainingBase >= 0.0 &&
+            lot.originalBase.isFinite() && lot.originalBase > 0.0 &&
+            lot.remainingBase <= lot.originalBase && lot.originalBase <= 1e10)
+        require(expectedVersion >= 0L)
+        // The receipt is written atomically with the conditional versioned
+        // update. Retrying an already-applied WorkManager job is a no-op.
+        supabase.postgrest.rpc(
+            function = "upsert_pantry_lot_once",
+            parameters = buildJsonObject {
+                put("p_household_id", householdId)
+                put("p_lot_id", lot.id)
+                put("p_ingredient_id", lot.ingredientId)
+                put("p_original_amount_base", lot.originalBase)
+                put("p_remaining_amount_base", lot.remainingBase)
+                put("p_opened", lot.opened)
+                put("p_legacy_unknown", lot.legacyUnknown)
+                put("p_product_id", lot.productId ?: "")
+                put("p_best_before", lot.bestBefore ?: "")
+                put("p_expected_version", expectedVersion)
+                put("p_event_id", transactionId)
+            }
+        )
+    }
+
+    suspend fun completeMealWithLotsOnce(
+        eatenOn: LocalDate,
+        recipeId: String,
+        deductions: Map<String, Double>,
+        transactionId: String
+    ) = withContext(Dispatchers.IO) {
+        require(deductions.size <= 200 && deductions.values.all {
+            it.isFinite() && it > 0.0 && it <= 1e10
+        })
+        supabase.postgrest.rpc(
+            function = "complete_meal_with_lots_once",
+            parameters = buildJsonObject {
+                put("p_household_id", householdId)
+                put("p_eaten_on", eatenOn.toString())
+                put("p_recipe_id", recipeId)
+                put("p_event_id", transactionId)
+                put("p_deductions", buildJsonObject {
+                    deductions.forEach { (ingredientId, amount) ->
+                        put(ingredientId, amount)
+                    }
+                })
+            }
+        )
+    }
+
+    suspend fun consumePantryLotsOnce(
+        ingredientId: String, amountBase: Double, transactionId: String
+    ) = withContext(Dispatchers.IO) {
+        require(amountBase.isFinite() && amountBase > 0.0 && amountBase <= 1e10)
+        supabase.postgrest.rpc(
+            function = "consume_pantry_lots_once",
+            parameters = buildJsonObject {
+                put("p_household_id", householdId)
+                put("p_ingredient_id", ingredientId)
+                put("p_amount_base", amountBase)
+                put("p_transaction_key", transactionId)
+            }
+        )
+    }
 
     internal suspend fun loadWeekSnapshot(weekStart: LocalDate = currentWeekStart()): CloudWeekSnapshot =
         withContext(Dispatchers.IO) {
@@ -946,6 +1120,10 @@ class CloudMealRepository(
             onConflict = "id"
         }
 
+        // Conversion profiles have their own versioned write path. An
+        // unrelated ingredient-name/image change must never delete or
+        // overwrite a profile edited on another phone.
+
         supabase.from("ingredient_protein_flags").upsert(
             IngredientProteinRow(
                 householdId = householdId,
@@ -959,6 +1137,40 @@ class CloudMealRepository(
         ingredient.copy(
             imagePath = finalImage.first,
             imageUri = finalImage.second
+        )
+    }
+
+    suspend fun saveIngredientConversionsOnce(
+        ingredientId: String,
+        expectedRevision: Long,
+        conversions: List<IngredientUnitConversion>,
+        transactionId: String
+    ) = withContext(Dispatchers.IO) {
+        require(expectedRevision >= 0L && conversions.size <= 30)
+        require(conversions.map { it.unit }.distinct().size == conversions.size)
+        require(conversions.all {
+            it.baseAmountPerUnit.isFinite() &&
+                it.baseAmountPerUnit > 0.0 && it.baseAmountPerUnit <= 1e9 &&
+                it.source.isNotBlank() && it.source.length <= 120
+        })
+        supabase.postgrest.rpc(
+            function = "save_ingredient_conversions_once",
+            parameters = buildJsonObject {
+                put("p_household_id", householdId)
+                put("p_ingredient_id", ingredientId)
+                put("p_expected_revision", expectedRevision)
+                put("p_event_id", transactionId)
+                put("p_profiles", buildJsonArray {
+                    conversions.forEach { profile ->
+                        add(buildJsonObject {
+                            put("unit_code", profile.unit.name)
+                            put("base_amount_per_unit", profile.baseAmountPerUnit)
+                            put("approximate", profile.approximate)
+                            put("source", profile.source)
+                        })
+                    }
+                })
+            }
         )
     }
 
@@ -1065,7 +1277,11 @@ class CloudMealRepository(
                         householdId = householdId,
                         recipeId = recipe.id,
                         ingredientId = it.ingredientId,
-                        amountBase = it.amountBase
+                        amountBase = it.amountBase,
+                        displayAmount = it.displayAmount,
+                        displayUnitCode = it.displayUnitCode,
+                        basePerDisplayUnit = it.basePerDisplayUnit,
+                        conversionApproximate = it.conversionApproximate
                     )
                 }
             ) {
@@ -1321,6 +1537,8 @@ class CloudMealRepository(
         val watchedTables = listOf(
             "ingredients",
             "ingredient_protein_flags",
+            "ingredient_unit_conversions",
+            "ingredient_conversion_versions",
             "shopping_categories",
             "recipe_categories",
             "recipe_category_assignments",
@@ -1330,6 +1548,7 @@ class CloudMealRepository(
             "recipe_ingredients",
             "recipe_pantry_prerequisites",
             "pantry_items",
+            "pantry_lots",
             "household_settings",
             "weekly_plans",
             "planned_meals",
