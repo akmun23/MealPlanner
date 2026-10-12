@@ -1933,13 +1933,18 @@ class MealPlannerState(
         packageCount: Int,
         amountPerPackage: Double,
         unit: MeasurementUnit,
-        opened: Boolean = false
+        opened: Boolean = false,
+        bestBefore: String? = null
     ): Boolean {
         val ingredient = ingredients.firstOrNull { it.id == ingredientId } ?: return false
         if (packageCount !in 1..100 || ingredient.quantityType == QuantityType.PACKAGE ||
             unit.quantityType != ingredient.quantityType || !amountPerPackage.isFinite() ||
             amountPerPackage <= 0.0
         ) return false
+
+        if (bestBefore != null && runCatching {
+            LocalDate.parse(bestBefore)
+        }.isFailure) return false
 
         val base = unit.toBase(amountPerPackage)
         val total = base * packageCount
@@ -1954,6 +1959,7 @@ class MealPlannerState(
                 remainingBase = base,
                 opened = opened,
                 legacyUnknown = false,
+                bestBefore = bestBefore,
                 createdAt = java.time.Instant.now().toString()
             )
         }
