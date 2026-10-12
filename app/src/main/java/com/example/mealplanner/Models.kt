@@ -200,6 +200,22 @@ data class DraftRequirement(
     val displayApproximate: Boolean = false
 )
 
+/** One real-world package or a legacy amount with unknown packaging.
+ * Physical amounts remain in the ingredient's existing base dimension. */
+@Serializable
+data class PantryLot(
+    val id: String = UUID.randomUUID().toString(),
+    val ingredientId: String,
+    val originalBase: Double,
+    val remainingBase: Double,
+    val opened: Boolean = false,
+    val legacyUnknown: Boolean = false,
+    val productId: String? = null,
+    val purchaseEventKey: String? = null,
+    val bestBefore: String? = null,
+    val version: Long = 1L
+)
+
 data class ShoppingItem(
     val ingredient: Ingredient,
     val requiredBase: Double,
