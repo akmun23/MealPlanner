@@ -315,7 +315,7 @@ internal fun PantryAmountDialog(
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
-                    if (amountText.isBlank() ||
+                    if (amountText.isNotBlank() &&
                         parseDanishDecimal(amountText)?.let {
                             !it.isFinite() || it < 0.0
                         } != false
@@ -450,8 +450,8 @@ internal fun PantryAmountDialog(
                                         it.isDigit() || it == ',' || it == '.'
                                     }
                                 },
-                                label = { Text("Pr. pakke (${physicalUnit.symbol})") },
-                                modifier = Modifier.weight(1f),
+                                label = { Text("Størrelse (${physicalUnit.symbol})") },
+                                modifier = Modifier.weight(1.6f),
                                 singleLine = true
                             )
                             OutlinedTextField(
@@ -460,7 +460,7 @@ internal fun PantryAmountDialog(
                                     newPackageCountText = value.filter(Char::isDigit).take(3)
                                 },
                                 label = { Text("Antal") },
-                                modifier = Modifier.weight(1f),
+                                modifier = Modifier.weight(0.8f),
                                 singleLine = true
                             )
                         }
