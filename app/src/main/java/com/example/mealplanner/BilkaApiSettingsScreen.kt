@@ -34,8 +34,6 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
-
-
 private fun JsonObject?.bilkaNumber(field: String): Int =
     this?.get(field)?.jsonPrimitive?.content?.toIntOrNull() ?: 0
 
@@ -46,26 +44,26 @@ private fun JsonObject?.bilkaText(field: String): String? =
 internal fun BilkaApiSettingsScreen(
     householdId: String,
     onBack: () -> Unit,
-    onViewProducts: () -> Unit
+    onViewProducts: () -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     var apiKey by remember { mutableStateOf("") }
-    var keyInputOpen by remember { mutableStateOf(false) }
-    var connected by remember { mutableStateOf(false) }
-    var keyStatusLoaded by remember { mutableStateOf(false) }
-    var verified by remember { mutableStateOf(false) }
+    var keyInputOpen by remember { mutableStateOf(value = false) }
+    var connected by remember { mutableStateOf(value = false) }
+    var keyStatusLoaded by remember { mutableStateOf(value = false) }
+    var verified by remember { mutableStateOf(value = false) }
     var suffix by remember { mutableStateOf<String?>(null) }
     var localUsed by remember { androidx.compose.runtime.mutableIntStateOf(0) }
     var localBudget by remember { androidx.compose.runtime.mutableIntStateOf(20) }
     var providerRemaining by remember { mutableStateOf<String?>(null) }
-    var nightlyEnabled by remember(householdId) { mutableStateOf(false) }
+    var nightlyEnabled by remember(householdId) { mutableStateOf(value = false) }
     var nightlyLastRun by remember(householdId) { mutableStateOf<String?>(null) }
-    var nightlyLoaded by remember(householdId) { mutableStateOf(false) }
-    var schedulerReady by remember(householdId) { mutableStateOf(false) }
+    var nightlyLoaded by remember(householdId) { mutableStateOf(value = false) }
+    var schedulerReady by remember(householdId) { mutableStateOf(value = false) }
     var importStatus by remember { mutableStateOf<JsonObject?>(null) }
-    var busy by remember { mutableStateOf(false) }
+    var busy by remember { mutableStateOf(value = false) }
     var message by remember { mutableStateOf<String?>(null) }
-    var confirmRemove by remember { mutableStateOf(false) }
+    var confirmRemove by remember { mutableStateOf(value = false) }
 
     fun applyStatus(info: JsonObject) {
         connected = info.bilkaText("connected") == "true"
@@ -137,7 +135,7 @@ internal fun BilkaApiSettingsScreen(
     val incomplete = importStatus.bilkaNumber("incomplete")
     // Automatic discovery reserves no more than 18 daily requests, even
     // though the full account budget (including price checks) is 20.
-    val discoveryQuotaExhausted = connected && localUsed >= minOf(localBudget, 18)
+    val discoveryQuotaExhausted = connected && (localUsed >= minOf(localBudget, 18))
 
     SubpageScaffold(title = "BilkaToGo · Indstillinger", onBack = onBack) { padding ->
         LazyColumn(
@@ -148,7 +146,7 @@ internal fun BilkaApiSettingsScreen(
             item {
                 Text(
                     "Her kan du tilføje eller udskifte din personlige Prej-nøgle, kontrollere søgekvoten og styre prisopdateringer for BilkaToGo.",
-                    style = MaterialTheme.typography.bodyMedium
+                    style = MaterialTheme.typography.bodyMedium,
                 )
             }
 
@@ -203,7 +201,7 @@ internal fun BilkaApiSettingsScreen(
                             Text(
                                 "Kontrollen bruger ét API-kald. Du behøver ikke skrive nøglen igen.",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
                         }
                     }
@@ -309,15 +307,21 @@ internal fun BilkaApiSettingsScreen(
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Column {
-                                Text("$ready", style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    ready.toString(),
+                                    style = MaterialTheme.typography.titleMedium
+                                )
                                 Text("Klar til valg", style = MaterialTheme.typography.bodySmall)
                             }
                             Column {
-                                Text("$pending", style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    pending.toString(),
+                                    style = MaterialTheme.typography.titleMedium
+                                )
                                 Text("Mangler søgning", style = MaterialTheme.typography.bodySmall)
                             }
                         }
-                        if (discoveryQuotaExhausted && pending > 0) {
+                        if (discoveryQuotaExhausted && (pending > 0)) {
                             Text(
                                 "Søgningen er sat på pause: dagens Prej-kvote til " +
                                         "produktimport er brugt. $pending ingredienser er " +
@@ -327,7 +331,7 @@ internal fun BilkaApiSettingsScreen(
                                 style = MaterialTheme.typography.bodyMedium
                             )
                         }
-                        if (noMatch > 0 || incomplete > 0) {
+                        if ((noMatch > 0) || (incomplete > 0)) {
                             Text(
                                 "$noMatch uden match · $incomplete kræver præcisering.",
                                 style = MaterialTheme.typography.bodySmall,
@@ -357,7 +361,7 @@ internal fun BilkaApiSettingsScreen(
                             importStatus != null && pending == 0 && ready > 0 ->
                                 "Du kan nu vælge mærke og størrelse i produktoversigten."
 
-                            importStatus != null && pending == 0 ->
+                            (importStatus != null) && (pending == 0) ->
                                 "Der mangler ingen automatiske søgninger lige nu."
 
                             else ->
@@ -389,7 +393,7 @@ internal fun BilkaApiSettingsScreen(
                     SectionCard("Automatisk opdatering af priser") {
                         Text(
                             "Opdatér priser på valgte varer, uden at skifte mærke eller størrelse.",
-                            style = MaterialTheme.typography.bodySmall
+                            style = MaterialTheme.typography.bodySmall,
                         )
                         Row(
                             modifier = Modifier.fillMaxWidth(),

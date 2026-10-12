@@ -100,13 +100,13 @@ build, Bilka Prej Edge checks, Startup release smoke) med `failure` efter ca. 2�
 rapporterede **ingen runner, ingen jobtrin og ingen brugbare logs**. Dette er ikke en
 kompilatorfejl, der kan udlæses af denne kørsel. **Sammenligning:** Workflows var grønne på `master`
 
-11. oktober ca. kl. 13:07 UTC, men alle tre stoppede før runnerstart på `master` efter merge #81/#82
-    ca. kl. 13:15 UTC. Der er ingen ændringer i de tre workflowfiler i PR #83. Ejeren har bekræftet,
-    at GitHub Actions-minutterne er opbrugt. Derfor blev PR'en gennemgået statisk og merges med
-    udtrykkelig accept af, at Android-build og enhedstest ikke kunne køres. Når der igen er
-    tilgængelige minutter, bør alle workflows køres, og APK'en testes fysisk, før en ny version
-    distribueres. Ejerens kontobilling kan ikke ændres via repository-kode. Hvis betaling/kvoter er
-    i orden, kontaktes GitHub Support med run-id. Ingen workflow-ændring kan garantere runnerstart,
-    når GitHub stopper jobbet før første step. Når runnerproblemet er rettet, genkør workflows og
-    udled først derefter eventuelle konkrete Kotlin-/Deno-fejl. CI og fysisk enhedstest er altså
-    fortsat **ikke** bestået.
+1. oktober ca. kl. 13:07 UTC, men alle tre stoppede før runnerstart på `master` efter merge #81/#82
+   ca. kl. 13:15 UTC. Der er ingen ændringer i de tre workflowfiler i PR #83. Ejeren har bekræftet,
+   at GitHub Actions-minutterne er opbrugt. Derfor blev PR'en gennemgået statisk og merges med
+   udtrykkelig accept af, at Android-build og enhedstest ikke kunne køres. Når der igen er
+   tilgængelige minutter, bør alle workflows køres, og APK'en testes fysisk, før en ny version
+   distribueres. Ejerens kontobilling kan ikke ændres via repository-kode. Hvis betaling/kvoter er
+   i orden, kontaktes GitHub Support med run-id. Ingen workflow-ændring kan garantere runnerstart,
+   når GitHub stopper jobbet før første step. Når runnerproblemet er rettet, genkør workflows og
+   udled først derefter eventuelle konkrete Kotlin-/Deno-fejl. CI og fysisk enhedstest er altså
+   fortsat **ikke** bestået.

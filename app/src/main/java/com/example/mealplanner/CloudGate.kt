@@ -122,11 +122,11 @@ data class HouseholdMemberDto(
 
 @Serializable
 data class HouseholdDto(
-    val id: String,
-    val name: String,
+    val id: String = "",
+    val name: String = "Mit Hjem",
 
     @SerialName("join_code")
-    val joinCode: String
+    val joinCode: String = ""
 )
 
 class CloudAccountRepository(context: Context) {

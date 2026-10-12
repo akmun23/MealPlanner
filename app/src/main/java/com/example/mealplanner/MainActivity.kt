@@ -163,7 +163,7 @@ internal val DarkAppColors = darkColorScheme(
     error = Color(0xFFFFB4AB),
     onError = Color(0xFF690005),
     errorContainer = Color(0xFF93000A),
-    onErrorContainer = Color(0xFFFFDAD6)
+    onErrorContainer = Color(0xFFFFDAD6),
 )
 
 class MainActivity : ComponentActivity() {
@@ -186,7 +186,7 @@ class MainActivity : ComponentActivity() {
                         onThemeModeChange = { selected ->
                             themePreferences.save(selected)
                             themeMode = selected
-                        }
+                        },
                     )
                 }
             }
@@ -270,7 +270,9 @@ fun MealPlannerApp(
     var bilkaSettingsReturnPage by remember { mutableStateOf<AppPage>(AppPage.Settings) }
     fun openBilkaSettings(from: AppPage) {
         bilkaSettingsReturnPage = from
-        page = AppPage.BilkaApiSettings
+        scope.launch {
+            page = AppPage.BilkaApiSettings
+        }
     }
 
     var showSyncConflictDialog by remember {
@@ -299,23 +301,25 @@ fun MealPlannerApp(
     }
 
     fun navigateBack() {
-        page = when (val current = page) {
-            AppPage.Settings -> null
-            AppPage.MealHistory -> null
-            AppPage.PlannerSettings -> AppPage.Settings
-            AppPage.BilkaApiSettings -> bilkaSettingsReturnPage
-            AppPage.BilkaProducts -> AppPage.Settings
-            is AppPage.BilkaProductPicker -> AppPage.BilkaProducts
-            AppPage.SyncStatus -> AppPage.Settings
-            AppPage.DataBackup -> AppPage.Settings
-            AppPage.IngredientCategories -> AppPage.Settings
-            AppPage.RecipeCategories -> AppPage.Settings
-            is AppPage.IngredientEditor -> null
-            is AppPage.RecipeDetail -> null
-            is AppPage.RecipeEditor ->
-                current.recipeId?.let { AppPage.RecipeDetail(it) }
+        scope.launch {
+            page = when (val current = page) {
+                AppPage.Settings -> null
+                AppPage.MealHistory -> null
+                AppPage.PlannerSettings -> AppPage.Settings
+                AppPage.BilkaApiSettings -> bilkaSettingsReturnPage
+                AppPage.BilkaProducts -> AppPage.Settings
+                is AppPage.BilkaProductPicker -> AppPage.BilkaProducts
+                AppPage.SyncStatus -> AppPage.Settings
+                AppPage.DataBackup -> AppPage.Settings
+                AppPage.IngredientCategories -> AppPage.Settings
+                AppPage.RecipeCategories -> AppPage.Settings
+                is AppPage.IngredientEditor -> null
+                is AppPage.RecipeDetail -> null
+                is AppPage.RecipeEditor ->
+                    current.recipeId?.let { AppPage.RecipeDetail(it) }
 
-            null -> null
+                null -> null
+            }
         }
     }
 
@@ -390,13 +394,13 @@ fun MealPlannerApp(
                 state = state,
                 onBack = { navigateBack() },
                 onRenameHousehold = onRenameHousehold,
-                onIngredientCategories = { page = AppPage.IngredientCategories },
-                onRecipeCategories = { page = AppPage.RecipeCategories },
-                onPlannerSettings = { page = AppPage.PlannerSettings },
+                onIngredientCategories = { scope.launch { page = AppPage.IngredientCategories } },
+                onRecipeCategories = { scope.launch { page = AppPage.RecipeCategories } },
+                onPlannerSettings = { scope.launch { page = AppPage.PlannerSettings } },
                 onBilkaApiSettings = { openBilkaSettings(AppPage.Settings) },
-                onBilkaProducts = { page = AppPage.BilkaProducts },
-                onSyncStatus = { page = AppPage.SyncStatus },
-                onDataBackup = { page = AppPage.DataBackup },
+                onBilkaProducts = { scope.launch { page = AppPage.BilkaProducts } },
+                onSyncStatus = { scope.launch { page = AppPage.SyncStatus } },
+                onDataBackup = { scope.launch { page = AppPage.DataBackup } },
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 onLogout = onLogout
@@ -483,7 +487,11 @@ fun MealPlannerApp(
                     containerColor = MaterialTheme.colorScheme.background,
                     topBar = {
                         AppHeader(
-                            onSettings = { page = AppPage.Settings }
+                            onSettings = {
+                                scope.launch {
+                                    page = AppPage.Settings
+                                }
+                            }
                         )
                     },
                     bottomBar = {
@@ -725,7 +733,7 @@ private fun RecipeCategoriesScreen(
     state: MealPlannerState,
     onBack: () -> Unit
 ) {
-    var showAdd by remember { mutableStateOf(false) }
+    var showAdd by remember { mutableStateOf(value = false) }
     var editing by remember { mutableStateOf<RecipeCategoryOption?>(null) }
     var categoryName by remember { mutableStateOf("") }
     val recipeCategoryNameAvailable =
@@ -1095,8 +1103,11 @@ private fun SettingsScreen(
     var feedbackError by remember {
         mutableStateOf<String?>(null)
     }
-    var homeName by remember(household.name) {
-        mutableStateOf(household.name)
+    val safeHouseholdName = household.name.ifBlank { "Mit Hjem" }
+    val safeJoinCode = household.joinCode.ifBlank { "---" }
+
+    var homeName by remember(safeHouseholdName) {
+        mutableStateOf(safeHouseholdName)
     }
 
     if (showRenameHome) {
@@ -1139,7 +1150,7 @@ private fun SettingsScreen(
                     enabled =
                         !renameBusy &&
                                 homeName.trim().isNotBlank() &&
-                                homeName.trim() != household.name
+                                homeName.trim() != safeHouseholdName
                 ) {
                     Text("Gem")
                 }
@@ -1227,7 +1238,7 @@ private fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            household.name,
+                            safeHouseholdName,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.weight(1f)
@@ -1235,7 +1246,7 @@ private fun SettingsScreen(
 
                         IconButton(
                             onClick = {
-                                homeName = household.name
+                                homeName = safeHouseholdName
                                 showRenameHome = true
                             }
                         ) {
@@ -1329,7 +1340,8 @@ private fun SettingsScreen(
                     )
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ThemeMode.entries.forEach { choice ->
+                        @Suppress("EnumValuesSoftDeprecate")
+                        ThemeMode.values().forEach { choice ->
                             FilterChip(
                                 selected = themeMode == choice,
                                 onClick = { onThemeModeChange(choice) },
@@ -1347,7 +1359,7 @@ private fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            household.joinCode,
+                            safeJoinCode,
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.weight(1f)
@@ -1358,9 +1370,12 @@ private fun SettingsScreen(
                                 val clipboard = context.getSystemService(
                                     Context.CLIPBOARD_SERVICE
                                 ) as ClipboardManager
-                                clipboard.primaryClip = ClipData.newPlainText(
-                                    "Invitationskode",
-                                    household.joinCode
+                                @Suppress("UsePropertyAccessSyntax")
+                                clipboard.setPrimaryClip(
+                                    ClipData.newPlainText(
+                                        "Invitationskode",
+                                        safeJoinCode
+                                    )
                                 )
                                 Toast.makeText(
                                     context,
