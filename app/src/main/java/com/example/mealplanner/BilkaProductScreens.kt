@@ -50,6 +50,8 @@ import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
 import java.text.NumberFormat
 import java.util.Locale
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
@@ -82,7 +84,8 @@ internal data class BilkaListDefault(
 internal data class BilkaProductCatalog(
     val candidates: List<BilkaListCandidate>,
     val defaults: List<BilkaListDefault>,
-    val products: List<BilkaProduct>
+    val products: List<BilkaProduct>,
+    val parseWarnings: List<String> = emptyList()
 ) {
     // Preindex once when the catalog arrives; rows should not repeatedly scan
     // every suggestion and product during fast scrolling or recomposition.
@@ -105,19 +108,99 @@ internal data class BilkaProductCatalog(
 }
 
 private val bilkaParser = Json { ignoreUnknownKeys = true }
-internal fun parseBilkaCatalog(value: JsonObject) = BilkaProductCatalog(
-    candidates = bilkaParser.decodeFromJsonElement(
-        value.getValue("candidates").jsonArray
-    ),
-    defaults = bilkaParser.decodeFromJsonElement(
-        value.getValue("defaults").jsonArray
-    ),
-    products = bilkaParser.decodeFromJsonElement(
-        value.getValue("products").jsonArray
-    )
+/**
+ * A single malformed/pre-stripped API row must not blank the full catalogue.
+ * Missing top-level arrays still fail clearly instead of appearing as empty.
+ */
+private data class BilkaParsedRows<T>(
+    val rows: List<T>,
+    val rejected: Int
 )
+
+private inline fun <reified T> decodeBilkaRows(
+    raw: JsonObject,
+    field: String
+): BilkaParsedRows<T> {
+    val source = raw.getValue(field).jsonArray
+    val decoded = source.mapNotNull { element ->
+        runCatching {
+            bilkaParser.decodeFromJsonElement<T>(element)
+        }.getOrNull()
+    }
+    return BilkaParsedRows(decoded, source.size - decoded.size)
+}
+
+internal fun parseBilkaCatalog(value: JsonObject): BilkaProductCatalog {
+    val candidates = decodeBilkaRows<BilkaListCandidate>(value, "candidates")
+    val defaults = decodeBilkaRows<BilkaListDefault>(value, "defaults")
+    val products = decodeBilkaRows<BilkaProduct>(value, "products")
+    return BilkaProductCatalog(
+        candidates = candidates.rows,
+        defaults = defaults.rows,
+        products = products.rows,
+        parseWarnings = buildList {
+            if (candidates.rejected > 0) add("${candidates.rejected} produktforslag")
+            if (defaults.rejected > 0) add("${defaults.rejected} faste varevalg")
+            if (products.rejected > 0) add("${products.rejected} varer")
+        }
+    )
+}
+
 internal fun parseBilkaIngredients(value: JsonObject): List<BilkaListIngredient> =
-    bilkaParser.decodeFromJsonElement(value.getValue("items").jsonArray)
+    decodeBilkaRows<BilkaListIngredient>(value, "items").rows
+
+/**
+ * The overview's ingredient list and product catalog are independent.
+ * Losing one response must not hide data retrieved from the other.
+ */
+internal data class BilkaOverviewLoad(
+    val rows: List<BilkaListIngredient>?,
+    val catalog: BilkaProductCatalog?,
+    val error: String?
+)
+
+internal fun decodeBilkaOverview(
+    status: Result<JsonObject>,
+    products: Result<JsonObject>
+): BilkaOverviewLoad {
+    val errors = mutableListOf<String>()
+    val rows = status.fold(
+        onSuccess = { raw ->
+            runCatching {
+                val parsed = decodeBilkaRows<BilkaListIngredient>(raw, "items")
+                if (parsed.rejected > 0) {
+                    errors += "${parsed.rejected} ingredienser kunne ikke læses. De øvrige vises."
+                }
+                parsed.rows
+            }.onFailure {
+                errors += "Ingrediensoversigten mangler feltet 'items' eller har ugyldigt format."
+            }.getOrNull()
+        },
+        onFailure = {
+            errors += "Ingredienser kunne ikke hentes. ${it.message ?: "Prøv igen."}"
+            null
+        }
+    )
+    val catalog = products.fold(
+        onSuccess = { raw ->
+            runCatching { parseBilkaCatalog(raw) }
+                .onSuccess { catalog ->
+                    if (catalog.parseWarnings.isNotEmpty()) {
+                        errors += "Ugyldige Bilka-poster: ${catalog.parseWarnings.joinToString()}. De øvrige vises."
+                    }
+                }
+                .onFailure {
+                    errors += "Produktkatalogets felter mangler eller har ugyldigt format."
+                }
+                .getOrNull()
+        },
+        onFailure = {
+            errors += "Bilka-varer kunne ikke hentes. ${it.message ?: "Prøv igen."}"
+            null
+        }
+    )
+    return BilkaOverviewLoad(rows, catalog, errors.takeIf { it.isNotEmpty() }?.joinToString(" "))
+}
 
 private val danish = Locale.forLanguageTag("da-DK")
 private fun money(ore: Number?): String =
@@ -204,15 +287,21 @@ internal fun BilkaProductsScreen(
     suspend fun reload() {
         busy = true
         error = null
-        val status = BilkaPrejClient.discoveryStatus(householdId)
-        val products = BilkaPrejClient.catalog(householdId)
-        if (status.isSuccess && products.isSuccess) {
-            runCatching {
-                rows = parseBilkaIngredients(status.getOrThrow())
-                catalog = parseBilkaCatalog(products.getOrThrow())
-            }.onFailure { error = "Produktoversigten kunne ikke læses." }
-        } else error = "Kunne ikke hente Bilka-produkter. Kontrollér forbindelsen."
-        busy = false
+        try {
+            // Both independent requests run together. A failed catalogue
+            // lookup must not hide the ingredient list or its saved choices.
+            val (status, products) = coroutineScope {
+                val statusJob = async { BilkaPrejClient.discoveryStatus(householdId) }
+                val productsJob = async { BilkaPrejClient.catalog(householdId) }
+                statusJob.await() to productsJob.await()
+            }
+            val result = decodeBilkaOverview(status, products)
+            result.rows?.let { rows = it }
+            result.catalog?.let { catalog = it }
+            error = result.error
+        } finally {
+            busy = false
+        }
     }
     LaunchedEffect(householdId) { reload() }
     val visible = rows.filter {
@@ -344,23 +433,25 @@ internal fun BilkaProductsScreen(
                 }
             }
             if (busy) item { CircularProgressIndicator() }
-            else if (error != null) {
-                item {
-                    EmptyCard(error ?: "Fejl")
-                    OutlinedButton(onClick = { scope.launch { reload() } }) {
-                        Text("Prøv igen")
+            else {
+                if (error != null) {
+                    item {
+                        EmptyCard(error ?: "Fejl")
+                        OutlinedButton(onClick = { scope.launch { reload() } }) {
+                            Text("Prøv igen")
+                        }
                     }
                 }
-            } else if (visible.isEmpty()) {
-                item {
-                    EmptyCard(
-                        if (rows.isEmpty())
-                            "Ingen ingredienser at vælge endnu. Du kan kontrollere din Prej-nøgle i søgeindstillingerne."
-                        else "Ingen ingredienser matcher søgningen."
-                    )
-                }
-            } else {
-                items(visible, key = { it.ingredientId }) { item ->
+                if (visible.isEmpty()) {
+                    if (error == null) item {
+                        EmptyCard(
+                            if (rows.isEmpty())
+                                "Ingen ingredienser at vælge endnu. Du kan kontrollere din Prej-nøgle i søgeindstillingerne."
+                            else "Ingen ingredienser matcher søgningen."
+                        )
+                    }
+                } else {
+                    items(visible, key = { it.ingredientId }) { item ->
                     Card(
                         onClick = { onPick(item.ingredientId, item.name) },
                         modifier = Modifier.fillMaxWidth(),
@@ -409,6 +500,7 @@ internal fun BilkaProductsScreen(
                         }
                     }
                 }
+                }
             }
             item {
                 OutlinedButton(
@@ -456,11 +548,16 @@ internal fun BilkaProductPickerScreen(
         BilkaPrejClient.catalog(householdId, listOf(ingredientId))
             .onSuccess { raw ->
                 runCatching {
-                    data = parseBilkaCatalog(raw)
-                    selected = data?.defaultId(ingredientId)
-                }.onFailure { error = "Kunne ikke læse varerne." }
+                    val parsed = parseBilkaCatalog(raw)
+                    data = parsed
+                    selected = parsed.defaultId(ingredientId)
+                    if (parsed.parseWarnings.isNotEmpty()) {
+                        error = "Nogle vareposter kunne ikke læses: " +
+                            parsed.parseWarnings.joinToString() + ". Øvrige varer vises."
+                    }
+                }.onFailure { error = "Bilka-svaret mangler de forventede varefelter." }
             }
-            .onFailure { error = "Kunne ikke hente varerne." }
+            .onFailure { error = "Kunne ikke hente varerne. ${it.message ?: "Prøv igen."}" }
         busy = false
     }
     LaunchedEffect(householdId, ingredientId) { reload() }
@@ -498,7 +595,7 @@ internal fun BilkaProductPickerScreen(
                     Text("Prej API-nøgle og søgeindstillinger")
                 }
             }
-            if (!busy && data != null) {
+            if (!busy) {
                 item {
                     TextButton(onClick = { searchOtherBrand = !searchOtherBrand }) {
                         Text(if (searchOtherBrand) "Skjul varesøgning" else "Mangler dit mærke? Søg i BilkaToGo")
@@ -628,8 +725,20 @@ internal fun BilkaProductPickerScreen(
                     }
                 }
             }
+            if (!busy && data != null && error != null) {
+                item {
+                    Text(
+                        error ?: "",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    OutlinedButton(onClick = { scope.launch { reload() } }) {
+                        Text("Opdatér Bilka-varer")
+                    }
+                }
+            }
             if (busy) item { CircularProgressIndicator() }
-            else if (error != null) {
+            else if (error != null && data == null) {
                 item {
                     EmptyCard(error ?: "Fejl")
                     OutlinedButton(onClick = { scope.launch { reload() } }) { Text("Prøv igen") }
