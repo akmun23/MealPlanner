@@ -132,6 +132,86 @@ class MealPlannerBenchmark {
     )
 
     /**
+     * Read-only navigation smoke covering existing recipe and ingredient
+     * subpages. Requires a prepared household with at least one of each.
+     * Never saves or deletes anything.
+     */
+    @Test
+    fun existingItemSubpagesSmoke() = rule.measureRepeated(
+        packageName = PACKAGE_NAME,
+        metrics = listOf(FrameTimingMetric()),
+        compilationMode = CompilationMode.None(),
+        startupMode = StartupMode.WARM,
+        iterations = 1,
+        setupBlock = {
+            val device = UiDevice.getInstance(
+                InstrumentationRegistry.getInstrumentation()
+            )
+            check(device.wait(Until.hasObject(By.text("Opskrifter")), 10_000)) {
+                "Sign in and prepare recipes and pantry ingredients first."
+            }
+        },
+        measureBlock = {
+            val device = UiDevice.getInstance(
+                InstrumentationRegistry.getInstrumentation()
+            )
+
+            device.findObject(By.text("Opskrifter")).click()
+            device.waitForIdle()
+            var recipeCard = device.findObject(By.descStartsWith("Åbn opskrift: "))
+            if (recipeCard == null) {
+                device.swipe(
+                    device.displayWidth / 2, device.displayHeight * 3 / 4,
+                    device.displayWidth / 2, device.displayHeight / 3, 25
+                )
+                recipeCard = device.findObject(By.descStartsWith("Åbn opskrift: "))
+            }
+            check(recipeCard != null) {
+                "At least one visible recipe is needed for existing-item navigation."
+            }
+            recipeCard.click()
+            check(device.wait(Until.hasObject(By.text("Rediger")), 8_000)) {
+                "Recipe details crashed or failed to render."
+            }
+
+            device.findObject(By.text("Rediger")).click()
+            check(device.wait(Until.hasObject(By.text("Rediger opskrift")), 8_000)) {
+                "Recipe editor crashed or failed to render."
+            }
+            device.pressBack()
+            check(device.wait(Until.hasObject(By.text("Rediger")), 8_000)) {
+                "Returning from the recipe editor failed."
+            }
+            device.pressBack()
+            check(device.wait(Until.hasObject(By.text("Lager")), 8_000)) {
+                "Returning from recipe details failed."
+            }
+
+            device.findObject(By.text("Lager")).click()
+            device.waitForIdle()
+            var ingredientEdit = device.findObject(By.desc("Rediger ingrediens"))
+            if (ingredientEdit == null) {
+                device.swipe(
+                    device.displayWidth / 2, device.displayHeight * 3 / 4,
+                    device.displayWidth / 2, device.displayHeight / 3, 25
+                )
+                ingredientEdit = device.findObject(By.desc("Rediger ingrediens"))
+            }
+            check(ingredientEdit != null) {
+                "At least one visible ingredient is needed for existing-item navigation."
+            }
+            ingredientEdit.click()
+            check(device.wait(Until.hasObject(By.text("Rediger ingrediens")), 8_000)) {
+                "Ingredient editor crashed or failed to render."
+            }
+            device.pressBack()
+            check(device.wait(Until.hasObject(By.text("Lager")), 8_000)) {
+                "Returning from ingredient editor failed."
+            }
+        }
+    )
+
+    /**
      * Separate measurements for the two long lists, instead of only testing
      * tab transitions. Use a populated household with representative photos
      * so these tests reproduce the scrolling pauses reported on devices.
