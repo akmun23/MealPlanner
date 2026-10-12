@@ -28,7 +28,10 @@ begin
                 and display_unit_code is null
                 and base_per_display_unit is null
             ) or (
-                display_amount > 0 and display_amount <= 10000000000
+                display_amount is not null
+                and display_unit_code is not null
+                and base_per_display_unit is not null
+                and display_amount > 0 and display_amount <= 10000000000
                 and base_per_display_unit > 0
                 and base_per_display_unit <= 1000000000
                 and display_unit_code ~ '^[A-Z][A-Z0-9_]{0,39}$'
