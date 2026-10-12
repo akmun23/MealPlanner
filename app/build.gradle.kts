@@ -62,6 +62,7 @@ android {
 
     buildTypes {
         release {
+            signingConfig = signingConfigs.getByName("debug")
             // AGP 9.4: optimize code (R8) and resources for the actual
             // production APK/AAB. The benchmark variant inherits this.
             optimization {
