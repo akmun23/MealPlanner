@@ -23,8 +23,17 @@ skal undersøges.
   `SubpageScaffold`, titel, indhold og tilbageknap.
 - JVM-test forsøger eksplicit at linke pilikonet brugt i alle undermenuer.
 - R8-optimeret makrobenchmark `subpageNavigationSmoke` åbner Indstillinger,
-  Ny opskrift og Ny ingrediens, kontrollerer fælles topbar og går tilbage,
-  **uden at gemme, slette, registrere køb eller foretage ændringer**.
+  Ny opskrift og Ny ingrediens, kontrollerer fælles topbar og går tilbage.
+- R8-optimeret `existingItemSubpagesSmoke` åbner en eksisterende opskrift,
+  detaljevisningen, redigering og en eksisterende ingrediens i redigering.
+  Dette kræver en forberedt husstand med mindst én opskrift og ingrediens.
+  Tests gemmer, sletter og registrerer **ingen** data.
+- `RecipeDetailScreen` kalder ikke længere `onBack()` direkte under
+  Composition, hvis en opskrift er fjernet af synkronisering.
+- Editorskærme accepterer ikke en ikke-eksisterende opskrift/ingrediens som
+  stiltiende oprettelse af en ny post.
+- Opskriftskort har en eksplicit tilgængelighedsetiket for åbne-handlingen,
+  så både skærmlæsere og smoke-testen kan identificere handlingen.
 
 Dette er en reproduktions-/regressionstestramme og stabilitetsoprydning,
 **ikke dokumentation for et fjernet release-crash**.
@@ -60,9 +69,14 @@ Installér testbuilden med en forberedt husstand og kør:
 ```bash
 ./gradlew :macrobenchmark:connectedBenchmarkAndroidTest \
   -Pandroid.testInstrumentationRunnerArguments.class=com.example.mealplanner.macrobenchmark.MealPlannerBenchmark#subpageNavigationSmoke
+
+./gradlew :macrobenchmark:connectedBenchmarkAndroidTest \
+  -Pandroid.testInstrumentationRunnerArguments.class=com.example.mealplanner.macrobenchmark.MealPlannerBenchmark#existingItemSubpagesSmoke
 ```
 
-Den skal åbne alle tre nævnte skærme og returnere uden process crash.
+Den første skal åbne tre nævnte skærme, og den anden åbner eksisterende
+opskrift og ingrediens i visning/redigering; begge skal returnere uden process
+crash.
 Makrobenchmarken måler en anden undersøgelsestype end scrolling; dens
 hovedformål her er, at teste en release-lignende R8-variant på fysisk telefon.
 
