@@ -9,19 +9,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedCard
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -43,7 +36,6 @@ private data class PlannerOption(
     val updatedWeights: (Double) -> PlannerWeights
 )
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun PlannerSettingsScreen(
     state: MealPlannerState,
@@ -145,21 +137,7 @@ internal fun PlannerSettingsScreen(
         ) { w.copy(jitter = it) }
     )
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Tilpas madplan") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Tilbage"
-                        )
-                    }
-                }
-            )
-        }
-    ) { padding ->
+    SubpageScaffold(title = "Tilpas madplan", onBack = onBack) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(16.dp),
