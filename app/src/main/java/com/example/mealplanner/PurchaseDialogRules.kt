@@ -20,7 +20,7 @@ internal object PurchaseDialogRules {
         previousProductId: String?,
         defaultProductId: String?
     ): String? {
-        val ids = products.mapTo(HashSet()) { it.id }
+        val ids = products.mapTo(HashSet<String>()) { it.id }
         return listOfNotNull(previousProductId, defaultProductId)
             .firstOrNull { it in ids }
             ?: products.firstOrNull()?.id
