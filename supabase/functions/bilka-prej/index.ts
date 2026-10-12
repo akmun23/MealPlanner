@@ -2,7 +2,7 @@ import { discoverProducts, discoveryStatus, DiscoveryError } from "./discovery_s
 import { catalog, saveHouseholdDefault } from "./catalog_server.ts";
 import { manualProductSearch } from "./manual_search_server.ts";
 import { barcodeProductSearch } from "./barcode_server.ts";
-import { shoppingContext, recordPurchase, CheckoutError } from "./shopping_server.ts";
+import { shoppingContext, recordPurchase, purchaseConfirmed, CheckoutError } from "./shopping_server.ts";
 import { ALLOWED_BILKA_RPCS } from "./rpc_allowlist.ts";
 import { replacePrejCredential } from "./key_management.ts";
 import { priceOnlyUpdates } from "./price_updates.ts";
@@ -21,7 +21,7 @@ const PREJ_BASE = "https://api.prej.app";
 const DAILY_BUDGET = 20; // 25 free calls; keep 5 in reserve (including key checks).
 
 type Payload = {
-  action?: "status" | "set-key" | "verify-key" | "remove-key" | "refresh" | "discover" | "discovery-status" | "catalog" | "choose-product" | "manual-search" | "ean-lookup" | "bulk-search" | "nightly-status" | "set-nightly" | "shopping-context" | "record-purchase";
+  action?: "status" | "set-key" | "verify-key" | "remove-key" | "refresh" | "discover" | "discovery-status" | "catalog" | "choose-product" | "manual-search" | "ean-lookup" | "bulk-search" | "nightly-status" | "set-nightly" | "shopping-context" | "record-purchase" | "purchase-status";
   apiKey?: unknown;
   householdId?: unknown;
   ingredientId?: unknown;
@@ -384,6 +384,17 @@ Deno.serve(async (req) => {
         return json(await shoppingContext(
           { admin: adminRequest, rpc, householdId },
           typeof input.weekId === "string" ? input.weekId : ""
+        ));
+      }
+      case "purchase-status": {
+        const householdId = await verifiedHousehold(userId, input.householdId);
+        if (typeof input.weekId !== "string" ||
+            typeof input.purchaseId !== "string") {
+          return json({ error: "invalid_purchase" }, 400);
+        }
+        return json(await purchaseConfirmed(
+          { admin: adminRequest, rpc, householdId },
+          input.weekId, input.purchaseId
         ));
       }
       case "record-purchase": {
