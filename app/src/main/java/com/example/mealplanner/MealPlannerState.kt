@@ -2358,25 +2358,24 @@ class MealPlannerState(
             lastError = "${existing.name} står allerede på indkøbslisten."
             return false
         }
-        val ingredient = existing ?: run {
-            if (!addIngredient(
-                    name = normalized,
-                    type = type,
-                    shoppingCategoryId = null,
-                    isProtein = false
-                )
-            ) return false
-            ingredients.last()
-        }
+        val ingredient = existing ?: Ingredient(
+            id = UUID.randomUUID().toString(),
+            name = normalized,
+            quantityType = type,
+            preferredUnit = MeasurementUnit.defaultFor(type)
+        ).also { ingredients.add(it) }
 
         shoppingIncluded[ingredient.id] = true
         shoppingChecked[ingredient.id] = false
         val id = weeklyPlanId ?: return false
+        // One durable outbox batch guarantees that a newly created ingredient
+        // is synced before its shopping inclusion's foreign key is referenced.
         enqueueMutations(
-            listOf(
-                QueuedMutation.SetShoppingIncluded(id, ingredient.id, true),
-                QueuedMutation.SetShoppingChecked(id, ingredient.id, false)
-            )
+            buildList {
+                if (existing == null) add(QueuedMutation.UpsertIngredient(ingredient))
+                add(QueuedMutation.SetShoppingIncluded(id, ingredient.id, true))
+                add(QueuedMutation.SetShoppingChecked(id, ingredient.id, false))
+            }
         )
         return true
     }
