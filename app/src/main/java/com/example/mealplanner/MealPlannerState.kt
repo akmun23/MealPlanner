@@ -1927,6 +1927,65 @@ class MealPlannerState(
         )
     }
 
+    /** Add each confirmed retail package as its own durable lot. */
+    fun addPantryPackages(
+        ingredientId: String,
+        packageCount: Int,
+        amountPerPackage: Double,
+        unit: MeasurementUnit,
+        opened: Boolean = false
+    ): Boolean {
+        val ingredient = ingredients.firstOrNull { it.id == ingredientId } ?: return false
+        if (packageCount !in 1..100 || ingredient.quantityType == QuantityType.PACKAGE ||
+            unit.quantityType != ingredient.quantityType || !amountPerPackage.isFinite() ||
+            amountPerPackage <= 0.0
+        ) return false
+
+        val base = unit.toBase(amountPerPackage)
+        val total = base * packageCount
+        if (!base.isFinite() || base <= 0.0 || base > 1e10 ||
+            !total.isFinite() || total > 1e10
+        ) return false
+
+        val lots = (1..packageCount).map {
+            PantryLot(
+                ingredientId = ingredientId,
+                originalBase = base,
+                remainingBase = base,
+                opened = opened,
+                legacyUnknown = false,
+                createdAt = java.time.Instant.now().toString()
+            )
+        }
+        pantryLots.addAll(lots)
+        pantry[ingredientId] = (pantry[ingredientId] ?: 0.0) + total
+        enqueueMutations(lots.map {
+            QueuedMutation.UpsertPantryLot(lot = it, expectedVersion = 0L)
+        })
+        return true
+    }
+
+    fun updatePantryLot(
+        lotId: String, remainingBase: Double, opened: Boolean
+    ): Boolean {
+        val index = pantryLots.indexOfFirst { it.id == lotId }
+        if (index < 0 || !remainingBase.isFinite()) return false
+        val previous = pantryLots[index]
+        val next = previous.copy(
+            remainingBase = remainingBase, opened = opened,
+            version = previous.version + 1
+        )
+        if (!PantryLotRules.valid(next)) return false
+        pantryLots[index] = next
+        val current = pantry[previous.ingredientId] ?: 0.0
+        pantry[previous.ingredientId] =
+            (current + remainingBase - previous.remainingBase).coerceAtLeast(0.0)
+        enqueueMutation(QueuedMutation.UpsertPantryLot(
+            lot = next, expectedVersion = previous.version
+        ))
+        return true
+    }
+
     fun setPantry(
         ingredientId: String,
         amount: Double,
