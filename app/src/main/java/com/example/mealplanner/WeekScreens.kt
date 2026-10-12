@@ -96,11 +96,13 @@ fun WeekScreen(
     val weekListState = rememberLazyListState()
     val dragScope = rememberCoroutineScope()
     val edgeThresholdPx = with(LocalDensity.current) { 72.dp.toPx() }
-    var listRootTop by remember { mutableFloatStateOf(0f) }
+    // Layout positions are updated on every scroll frame: do not turn them
+    // into Compose state or the whole week would recompose during scrolling.
+    val listRootTop = remember { floatArrayOf(0f) }
     var dragPositionY by remember { mutableFloatStateOf(0f) }
     var draggingDay by remember { mutableStateOf<DayOfWeek?>(null) }
     var hoveredDay by remember { mutableStateOf<DayOfWeek?>(null) }
-    var scrollJob by remember { mutableStateOf<Job?>(null) }
+    val scrollJob = remember { arrayOfNulls<Job>(1) }
 
     fun hoverAt(y: Float): DayOfWeek? {
         val item = weekListState.layoutInfo.visibleItemsInfo.firstOrNull {
@@ -314,7 +316,7 @@ fun WeekScreen(
     LazyColumn(
         state = weekListState,
         modifier = Modifier.fillMaxSize()
-            .onGloballyPositioned { listRootTop = it.positionInRoot().y },
+            .onGloballyPositioned { listRootTop[0] = it.positionInRoot().y },
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -640,7 +642,7 @@ fun WeekScreen(
                 dragging = draggingDay == day,
                 onStartDrag = { source, rootY ->
                     draggingDay = source
-                    dragPositionY = rootY - listRootTop
+                    dragPositionY = rootY - listRootTop[0]
                     hoveredDay = null
                 },
                 onDrag = { deltaY ->
@@ -652,8 +654,8 @@ fun WeekScreen(
                         dragPositionY < edgeThresholdPx -> -24f
                         else -> 0f
                     }
-                    if (amount != 0f && scrollJob?.isActive != true) {
-                        scrollJob = dragScope.launch {
+                    if (amount != 0f && scrollJob[0]?.isActive != true) {
+                        scrollJob[0] = dragScope.launch {
                             weekListState.scrollBy(amount)
                             updateHover()
                         }
@@ -741,7 +743,8 @@ fun DayCard(
     val recipe = if (completedLocked && eatenId != null) {
         state.recipes.find { it.id == eatenId } ?: plannedRecipe
     } else plannedRecipe
-    val isSandwich = recipe?.id != null && recipe.id == state.weeklySandwichRecipeId
+    val isSandwich = day == state.sandwichDay &&
+        recipe?.id != null && recipe.id == state.weeklySandwichRecipeId
     val isLocked = state.isDayLocked(day)
     val maxPrepMinutes = state.dayMaxPrepMinutes[day]
     val recipeCategory = if (recipe != null) {
@@ -754,7 +757,7 @@ fun DayCard(
     val canDrag = !away && recipe != null &&
         !isLocked && state.weeklyPlanId != null &&
         !state.isWeekChanging && !state.isPlanning
-    var gripRootTop by remember { mutableFloatStateOf(0f) }
+    val gripRootTop = remember { floatArrayOf(0f) }
     var showMovePicker by remember(day, state.displayedWeekStart) {
         mutableStateOf(false)
     }
@@ -1025,12 +1028,12 @@ fun DayCard(
                         modifier = Modifier
                             .size(44.dp)
                             .onGloballyPositioned {
-                                gripRootTop = it.positionInRoot().y
+                                gripRootTop[0] = it.positionInRoot().y
                             }
                             .pointerInput(day, canDrag) {
                                 detectDragGesturesAfterLongPress(
                                     onDragStart = { offset: Offset ->
-                                        onStartDrag(day, gripRootTop + offset.y)
+                                        onStartDrag(day, gripRootTop[0] + offset.y)
                                     },
                                     onDrag = { change, amount ->
                                         change.consume()
