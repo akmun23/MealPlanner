@@ -29,6 +29,15 @@ class SharedShoppingAndWeekMoveTest {
     }
 
     @Test
+    fun draggingIntoAnEmptyDayMovesTheDinnerInsteadOfDuplicatingIt() {
+        val plan = mapOf(mon to null, fri to "burrito")
+        val moved = WeekMealMoveRules.swappedPlan(fri, mon, plan)
+        assertEquals("burrito", moved[mon])
+        assertEquals(null, moved[fri])
+        assertEquals(1, moved.values.count { it != null })
+    }
+
+    @Test
     fun lockedOrAwayDaysRejectDragAndDrop() {
         assertFalse(
             WeekMealMoveRules.allowed(fri, mon, dinners, home, setOf(mon), null, null)
