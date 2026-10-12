@@ -80,6 +80,7 @@ class MealPlannerState(
     val recipeCategories = mutableStateListOf<RecipeCategoryOption>()
     val recipes = mutableStateListOf<Recipe>()
     val pantry = mutableStateMapOf<String, Double>()
+    val pantryLots = mutableStateListOf<PantryLot>()
     val dayModes = mutableStateMapOf<DayOfWeek, DayMode>()
     val dayMaxPrepMinutes = mutableStateMapOf<DayOfWeek, Int?>()
     val plan = mutableStateMapOf<DayOfWeek, String?>()
@@ -541,6 +542,15 @@ class MealPlannerState(
                         target = pantry,
                         incoming = snapshot
                     )
+                    val lots = repository.loadPantryLotsSnapshot()
+                    if (!syncTracker.isCurrent(generationSnapshot)) {
+                        return@withLock
+                    }
+                    syncListByKey(
+                        target = pantryLots,
+                        incoming = lots,
+                        key = PantryLot::id
+                    )
                     applied = true
                 }
 
@@ -669,6 +679,11 @@ class MealPlannerState(
         syncMap(
             target = pantry,
             incoming = snapshot.pantry
+        )
+        syncListByKey(
+            target = pantryLots,
+            incoming = snapshot.pantryLots,
+            key = PantryLot::id
         )
         syncMap(
             target = dayModes,
@@ -810,6 +825,7 @@ class MealPlannerState(
             recipeCategories = recipeCategories.toList(),
             recipes = recipes.toList(),
             pantry = pantry.toMap(),
+            pantryLots = pantryLots.toList(),
             dayModes = dayModes.toMap(),
             dayMaxPrepMinutes = dayMaxPrepMinutes.toMap(),
             plan = plan.toMap(),
