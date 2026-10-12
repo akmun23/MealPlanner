@@ -99,9 +99,9 @@ internal object RecipeQuantityRules {
         displayAmount: Double,
         displayUnit: MeasurementUnit
     ): RecipeIngredient? {
-        if (!displayAmount.isFinite() || displayAmount <= 0.0) return null
+        if (!displayAmount.isFinite() || displayAmount <= 0.0 || displayAmount > 1e10) return null
         val base = displayUnit.toBase(displayAmount)
-        if (!base.isFinite() || base <= 0.0) return null
+        if (!base.isFinite() || base <= 0.0 || base > 1e10) return null
         return RecipeIngredient(
             ingredientId = ingredientId,
             amountBase = base,
