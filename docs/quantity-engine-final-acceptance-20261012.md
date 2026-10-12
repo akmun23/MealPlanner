@@ -48,3 +48,25 @@ Eksisterende ingredienser i `PACKAGE`-dimension kan ikke konverteres til MASS ud
 - Hvis migrationskontrakten fejler: ingen udrulning og ingen tvangs-merge af produktionsklient.
 - Hvis et Bilka-køb giver netværksfejl: kontrollér event-ID/kvittering før ny kredit; brug samme ID ved retry.
 - Hvis lagerpakker og total ikke stemmer: stop videre forbrug og sammenlign lot-rester, `pantry_items` og eventlog; ret ikke med et ekstra manuelt tillæg.
+
+## Nye tværgående sikkerhedstests
+
+1. **Konverteringskonflikt:** Telefon A gemmer pakkeprofil fra 200 til 150 g. Telefon B forsøger at gemme en forældet profil: ændringen skal afvises og genindlæses, ikke overskrive A. Offline-replay af samme event-ID må ikke øge revisionsnummeret flere gange.
+2. **Samlet aftensmadstransaktion:** Afslut en ret, der bruger to ingredienser. Begge pakkers rester og historik skal opdateres sammen; hvis ingrediens nr. 2 mangler på serveren, må ingrediens nr. 1 heller ikke trækkes. Et retry med samme transaktions-ID er en no-op.
+3. **Bilka-bekræftelse:** Registrér et køb, afbryd netværkssvaret, og kontrollér status på det **eksakte** nye købs-ID. Et tidligere køb af samme ingrediens må ikke få appen til at melde det nye køb som gennemført.
+4. **Offline-operationer:** Genstart mens både profilændring og lagerjustering ligger i kø. Køens event-ID, forventet revision og mængder skal overleve og blive anvendt højst én gang.
+5. **Database-sikkerhed:** Direkte INSERT/UPDATE/DELETE på `pantry_lots` og `ingredient_unit_conversions` fra en almindelig authenticated-klient skal afvises. Tilladte RPC-kald skal håndhæve medlemskab og revisionsnumre.
+
+### SQL-installationsrækkefølge
+
+1. `20261012160000_recipe_quantity_display_snapshots.sql` – opskriftssnapshots, profil- og lagergrundlag.
+2. `20261012163000_conversion_profile_cas.sql` – revisionslås, receipts, realtime og RPC-only writes.
+3. `20261012170000_atomic_meal_completion.sql` – alt-eller-intet-forbrug for måltider.
+
+### Rollback-tests i staging
+
+- `supabase/tests/quantity_engine_lots_contract.sql`
+- `supabase/tests/recipe_snapshot_old_client_contract.sql`
+- `supabase/tests/quantity_meal_atomic_contract.sql`
+
+**Status ved dokumentets sidste revision:** Migrationsfilerne ligger på GitHub, men er **ikke kørt** i Supabase-produktion. En fungerende Android-build og stagingkørsel er endnu ikke dokumenteret. Kildekode-merge er ikke det samme som en produktionsrelease.
