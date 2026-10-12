@@ -1674,11 +1674,21 @@ private fun RequirementEditor(
     ingredient: Ingredient,
     draft: DraftRequirement,
     onChange: (DraftRequirement) -> Unit,
-    onRemove: () -> Unit
+    onRemove: () -> Unit,
+    allowCrossDimension: Boolean = false
 ) {
-    var amountText by remember(draft.ingredientId) {
+    var amountText by remember(draft.ingredientId, allowCrossDimension) {
         mutableStateOf(formatDisplayNumber(draft.amount))
     }
+    val availableUnits = if (allowCrossDimension) {
+        (QuantityPlanningRules.selectableUnits(
+            ingredient, ingredient.unitConversions
+        ) + listOfNotNull(draft.displayUnit)).distinct()
+    } else {
+        MeasurementUnit.compatibleWith(ingredient.quantityType)
+            .map(QuantityUnit::fromLegacy)
+    }
+    val selectedUnit = draft.displayUnit ?: QuantityUnit.fromLegacy(draft.unit)
 
     OutlinedCard(
         modifier = Modifier.fillMaxWidth(),
@@ -1703,13 +1713,9 @@ private fun RequirementEditor(
                 OutlinedTextField(
                     value = amountText,
                     onValueChange = { value ->
-                        amountText = value
-                            .filter { it.isDigit() || it == ',' || it == '.' }
-
+                        amountText = value.filter { it.isDigit() || it == ',' || it == '.' }
                         val parsed = parseDanishDecimal(amountText)
                             ?.takeIf { it.isFinite() && it > 0.0 }
-                        // Never silently persist the last valid amount if
-                        // the visible field is currently empty or invalid.
                         onChange(draft.copy(amount = parsed ?: 0.0))
                     },
                     label = { Text("Mængde") },
@@ -1718,29 +1724,70 @@ private fun RequirementEditor(
                 )
 
                 SimpleSelector(
-                    label = draft.unit.selectorLabel(),
-                    options = MeasurementUnit.compatibleWith(
-                        ingredient.quantityType
-                    ),
-                    optionText = { it.selectorLabel() },
+                    label = selectedUnit.labelFor(draft.amount),
+                    options = availableUnits,
+                    optionText = { it.labelFor(1.0) },
                     minHeight = 56.dp,
                     onSelected = { selected ->
                         val entered = parseDanishDecimal(amountText)
                             ?.takeIf { it.isFinite() && it > 0.0 }
-                        val converted = entered?.let {
-                            draft.unit.convertAmountTo(it, selected)
-                        }
-                        if (converted != null) {
+                        val sourceFactor = draft.displayFactor ?: draft.unit.toBaseFactor
+                        val targetFactor = QuantityConversionEngine.basePerUnit(
+                            ingredient, selected, ingredient.unitConversions
+                        ) ?: if (selected == draft.displayUnit) draft.displayFactor else null
+                        val physicalBase = entered?.times(sourceFactor)
+                        val converted = if (
+                            physicalBase != null && physicalBase.isFinite() &&
+                            physicalBase > 0.0 && targetFactor != null &&
+                            targetFactor.isFinite() && targetFactor > 0.0
+                        ) physicalBase / targetFactor else null
+
+                        if (converted != null && converted.isFinite() &&
+                            converted > 0.0 && converted <= 1e10
+                        ) {
                             amountText = formatDisplayNumber(converted)
-                        }
-                        onChange(
-                            draft.copy(
-                                unit = selected,
-                                amount = converted ?: 0.0
+                            val profile = ingredient.unitConversions.singleOrNull {
+                                it.unit == selected
+                            }
+                            onChange(
+                                draft.copy(
+                                    amount = converted,
+                                    unit = selected.nativeUnit
+                                        ?.takeIf { it.quantityType == ingredient.quantityType }
+                                        ?: draft.unit,
+                                    displayUnit = selected,
+                                    displayFactor = targetFactor,
+                                    displayApproximate = draft.displayApproximate ||
+                                        profile?.approximate == true
+                                )
                             )
-                        )
+                        }
                     }
                 )
+            }
+            if (allowCrossDimension) {
+                val factor = draft.displayFactor ?: draft.unit.toBaseFactor
+                if (draft.displayUnit != null &&
+                    draft.displayUnit.nativeUnit?.quantityType != ingredient.quantityType
+                ) {
+                    Text(
+                        "1 ${selectedUnit.labelFor(1.0)} = ${formatDisplayNumber(factor)} " +
+                            MeasurementUnit.defaultFor(ingredient.quantityType).symbol +
+                            if (draft.displayApproximate) " (anslået)" else "",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                if (availableUnits.size <= MeasurementUnit.compatibleWith(
+                        ingredient.quantityType
+                    ).size
+                ) {
+                    Text(
+                        "Flere enheder kan tilføjes under redigering af ingrediensen.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
         }
     }
