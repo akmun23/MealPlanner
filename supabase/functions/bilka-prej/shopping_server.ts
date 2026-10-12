@@ -39,6 +39,26 @@ export async function shoppingContext(ctx: ShoppingService, weekId: string) {
   ]);
   return { defaults: list(defaults), overrides: list(overrides) };
 }
+/** Confirm only this exact idempotent checkout event; a prior purchase
+ * of the same ingredient is NOT evidence that the latest checkout succeeded. */
+export async function purchaseConfirmed(
+  ctx: ShoppingService, weekId: string, purchaseId: string
+) {
+  if (!uuid(purchaseId)) throw new CheckoutError("invalid_purchase_id", 400);
+  await checkedWeek(ctx, weekId);
+  const rows = list<{id: string; purchased_amount_base: number}>(await ctx.admin(
+    "/rest/v1/pantry_purchase_events?select=id,purchased_amount_base" +
+      "&household_id=eq." + encode(ctx.householdId) +
+      "&weekly_plan_id=eq." + encode(weekId) +
+      "&id=eq." + encode(purchaseId) + "&limit=1", "GET"
+  ));
+  return {
+    confirmed: rows.length === 1 && rows[0].id === purchaseId,
+    purchaseId,
+    purchasedAmountBase: rows.length === 1 ? Number(rows[0].purchased_amount_base) : null,
+  };
+}
+
 export interface CheckoutPayload {
   weekId: string;
   ingredientId: string;
