@@ -1540,7 +1540,7 @@ class MealPlannerState(
         }
 
         val existing = recipes[index]
-        val updated = buildRecipe(
+        val rebuilt = buildRecipe(
             id = id,
             name = name,
             mealType = mealType,
@@ -1555,6 +1555,18 @@ class MealPlannerState(
             instructionSteps = instructionSteps,
             sourceUrl = sourceUrl
         ) ?: return false
+
+        // The current editor can only edit the legacy measurement dimension.
+        // Retain frozen cross-dimension display text on metadata-only edits.
+        val previousRequirements = existing.ingredients.associateBy { it.ingredientId }
+        val updated = rebuilt.copy(
+            ingredients = rebuilt.ingredients.map { edited ->
+                val ingredient = ingredients.find { it.id == edited.ingredientId }
+                if (ingredient == null) edited else RecipeQuantityRules.retainUneditableSnapshot(
+                    previousRequirements[edited.ingredientId], edited, ingredient
+                )
+            }
+        )
 
         val retainedManual = manuallyAddedShoppingIds()
         recipes[index] = updated
