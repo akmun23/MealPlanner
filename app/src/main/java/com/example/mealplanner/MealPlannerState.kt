@@ -2244,20 +2244,12 @@ class MealPlannerState(
         // Existing shopping_inclusions already syncs across household members.
         // Explicitly included ingredient IDs that are not needed by recipes
         // appear as independent shopping-list rows (one row per ingredient).
-        val plannedIds = plannedItems.mapTo(mutableSetOf()) { it.ingredient.id }
-        val manualItems = shoppingIncluded.asSequence()
-            .filter { it.value && it.key !in plannedIds }
-            .mapNotNull { (id, _) ->
-                ingredientsById[id]?.let { ingredient ->
-                    ShoppingItem(
-                        ingredient = ingredient,
-                        requiredBase = 0.0,
-                        pantryBase = pantry[id] ?: 0.0,
-                        manualOnly = true
-                    )
-                }
-            }
-            .toList()
+        val manualItems = ManualShoppingRules.additionalItems(
+            planned = plannedItems,
+            ingredients = ingredients.toList(),
+            pantry = pantry.toMap(),
+            inclusion = shoppingIncluded.toMap()
+        )
         return (plannedItems + manualItems).sortedWith(
             compareBy(
                 {
