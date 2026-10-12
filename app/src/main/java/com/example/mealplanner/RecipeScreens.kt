@@ -1957,7 +1957,7 @@ internal fun IngredientEditorScreen(
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                     if (!typeChangeAllowed) {
                         Text(
-                            "Typen kan ikke ændres, mens ingrediensen er på lager eller bruges i opskrifter.",
+                            "Typen kræver sikker konvertering af lager og opskrifter.",
                             color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodySmall
                         )
@@ -2053,13 +2053,7 @@ internal fun IngredientEditorScreen(
                         conversionProfiles.clear()
                     }
                 )
-                if (!typeChangeAllowed) {
-                    Text(
-                        "Fjern beholdningen og opskriftsreferencerne før typen ændres.",
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
+
             }
 
             item {
