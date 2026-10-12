@@ -64,6 +64,20 @@ class BilkaPackageMathTest {
     }
 
     @Test
+    fun decimalBoundaryDoesNotAddAnExtraPack() {
+        assertEquals(3, BilkaPackageMath.packageCount(0.1 + 0.2, 0.0, 0.1))
+        assertEquals(4, BilkaPackageMath.packageCount(0.30000001, 0.0, 0.1))
+    }
+
+    @Test
+    fun invalidAndOverflowingAmountsNeverGeneratePurchaseCounts() {
+        assertNull(BilkaPackageMath.packageCount(Double.NaN, 0.0, 100.0))
+        assertNull(BilkaPackageMath.packageCount(Double.POSITIVE_INFINITY, 0.0, 100.0))
+        assertNull(BilkaPackageMath.packageCount(100.0, Double.NaN, 100.0))
+        assertNull(BilkaPackageMath.packageCount(Double.MAX_VALUE, 0.0, 0.1))
+    }
+
+    @Test
     fun priceOverflowDoesNotWrapNegative() {
         assertNull(BilkaPackageMath.estimatedCostOre(Long.MAX_VALUE, 2))
     }
