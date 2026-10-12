@@ -53,6 +53,17 @@ private data class IngredientRow(
 )
 
 @Serializable
+private data class IngredientConversionProfileRow(
+    @SerialName("household_id") val householdId: String,
+    @SerialName("ingredient_id") val ingredientId: String,
+    @SerialName("unit_code") val unitCode: String,
+    @SerialName("base_amount_per_unit") val baseAmountPerUnit: Double,
+    val approximate: Boolean = false,
+    val source: String = "household-confirmed",
+    val revision: Long = 1
+)
+
+@Serializable
 private data class BilkaDefaultImageRow(
     @SerialName("ingredient_id") val ingredientId: String,
     @SerialName("product_id") val productId: String
@@ -541,6 +552,11 @@ class CloudMealRepository(
                         filter { eq("household_id", householdId) }
                     }.decodeList<IngredientRow>()
                 }
+                val conversionsDeferred = async {
+                    supabase.from("ingredient_unit_conversions").select {
+                        filter { eq("household_id", householdId) }
+                    }.decodeList<IngredientConversionProfileRow>()
+                }
                 val categoriesDeferred = async {
                     supabase.from("shopping_categories").select {
                         filter { eq("household_id", householdId) }
@@ -589,6 +605,8 @@ class CloudMealRepository(
                 val categoryRows = categoriesDeferred.await()
                 val proteinRows = proteinFlagsDeferred.await()
                 val bilkaImages = bilkaImagesDeferred.await()
+                val conversionsByIngredient = conversionsDeferred.await()
+                    .groupBy { it.ingredientId }
                 val proteinByIngredient =
                     proteinRows.associateBy { it.ingredientId }
 
@@ -610,6 +628,23 @@ class CloudMealRepository(
                             isProtein =
                                 proteinByIngredient[row.id]?.isProtein == true,
                             neverBuy = row.neverBuy,
+                            unitConversions = conversionsByIngredient[row.id].orEmpty()
+                                .mapNotNull { conversion ->
+                                    val unit = QuantityUnit.entries.firstOrNull {
+                                        it.name == conversion.unitCode
+                                    } ?: return@mapNotNull null
+                                    val factor = conversion.baseAmountPerUnit
+                                    if (!factor.isFinite() || factor <= 0.0 || factor > 1e9) {
+                                        return@mapNotNull null
+                                    }
+                                    IngredientUnitConversion(
+                                        unit = unit,
+                                        baseAmountPerUnit = factor,
+                                        approximate = conversion.approximate,
+                                        source = conversion.source,
+                                        revision = conversion.revision
+                                    )
+                                },
                             imageUri = PantryImageRules.displayImage(
                                 manualImageUri = row.imagePath?.let(MealImageReference::forPath),
                                 bilkaImageUrl = bilkaImages[row.id]
@@ -952,6 +987,36 @@ class CloudMealRepository(
             )
         ) {
             onConflict = "id"
+        }
+
+        // The conversion profile is independent of the old ingredients row.
+        // Pre-upgrade clients keep working without touching these new rows.
+        require(ingredient.unitConversions.map { it.unit }.distinct().size ==
+            ingredient.unitConversions.size) { "Duplicate ingredient conversion unit" }
+        require(ingredient.unitConversions.all {
+            it.baseAmountPerUnit.isFinite() && it.baseAmountPerUnit > 0.0 &&
+                it.baseAmountPerUnit <= 1e9 && it.revision >= 1L
+        }) { "Invalid ingredient conversion" }
+        supabase.from("ingredient_unit_conversions").delete {
+            filter {
+                eq("household_id", householdId)
+                eq("ingredient_id", ingredient.id)
+            }
+        }
+        if (ingredient.unitConversions.isNotEmpty()) {
+            supabase.from("ingredient_unit_conversions").upsert(
+                ingredient.unitConversions.map { conversion ->
+                    IngredientConversionProfileRow(
+                        householdId = householdId,
+                        ingredientId = ingredient.id,
+                        unitCode = conversion.unit.name,
+                        baseAmountPerUnit = conversion.baseAmountPerUnit,
+                        approximate = conversion.approximate,
+                        source = conversion.source,
+                        revision = conversion.revision
+                    )
+                }
+            ) { onConflict = "household_id,ingredient_id,unit_code" }
         }
 
         supabase.from("ingredient_protein_flags").upsert(
