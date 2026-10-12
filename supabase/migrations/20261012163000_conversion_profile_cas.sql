@@ -147,3 +147,42 @@ revoke all on function public.save_ingredient_conversions_once(
 grant execute on function public.save_ingredient_conversions_once(
     uuid,uuid,bigint,jsonb,uuid
 ) to authenticated;
+
+-- Bypass direct modifications of the stock ledger. All writes go through
+-- versioned or idempotent RPCs; RLS SELECT still isolates households.
+revoke insert, update, delete on public.pantry_lots from authenticated;
+revoke execute on function public.consume_pantry_lots(uuid,uuid,numeric)
+    from authenticated;
+
+-- Required for fresh state on the second phone without full reload.
+-- Check publication membership first so reapplying the migration is safe.
+do $publication$
+begin
+    if exists (select 1 from pg_publication where pubname='supabase_realtime') then
+        if not exists (
+            select 1 from pg_publication_tables
+            where pubname='supabase_realtime' and schemaname='public'
+              and tablename='ingredient_unit_conversions'
+        ) then
+            alter publication supabase_realtime
+                add table public.ingredient_unit_conversions;
+        end if;
+        if not exists (
+            select 1 from pg_publication_tables
+            where pubname='supabase_realtime' and schemaname='public'
+              and tablename='ingredient_conversion_versions'
+        ) then
+            alter publication supabase_realtime
+                add table public.ingredient_conversion_versions;
+        end if;
+        if not exists (
+            select 1 from pg_publication_tables
+            where pubname='supabase_realtime' and schemaname='public'
+              and tablename='pantry_lots'
+        ) then
+            alter publication supabase_realtime
+                add table public.pantry_lots;
+        end if;
+    end if;
+end;
+$publication$;
