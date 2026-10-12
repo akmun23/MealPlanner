@@ -715,6 +715,7 @@ fun WeekScreen(
                     day = source,
                     recipeName = recipe.name,
                     targetDay = hoveredDay,
+                    targetHasMeal = hoveredDay?.let(state::recipeFor) != null,
                     pointerY = dragPositionY
                 )
             }
@@ -728,6 +729,7 @@ private fun DraggedDayPreview(
     day: DayOfWeek,
     recipeName: String,
     targetDay: DayOfWeek?,
+    targetHasMeal: Boolean,
     pointerY: FloatState
 ) {
     val fingerCenterPx = with(LocalDensity.current) { 36.dp.toPx() }
@@ -770,8 +772,11 @@ private fun DraggedDayPreview(
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    if (targetDay == null) "Træk til en anden ulåst dag"
-                    else "Slip for at bytte med ${targetDay.danishName()}",
+                    when {
+                        targetDay == null -> "Træk til en anden ulåst dag"
+                        targetHasMeal -> "Slip for at bytte med ${targetDay.danishName()}"
+                        else -> "Slip for at flytte til ${targetDay.danishName()}"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
