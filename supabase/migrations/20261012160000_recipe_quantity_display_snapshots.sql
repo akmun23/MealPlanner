@@ -631,6 +631,9 @@ begin
     'opened',p_opened,'legacy',p_legacy_unknown,'product',p_product_id,
     'best_before',p_best_before,'expected_version',p_expected_version
  )::text);
+ -- Serialize concurrent retries of the same event ID before inspecting
+ -- receipts; an interrupted retry must not report a false version conflict.
+ perform pg_advisory_xact_lock(hashtextextended('pantry-lot:' || p_event_id::text, 0));
  select * into previous from public.pantry_lot_mutation_receipts where event_id=p_event_id;
  if found then
     if previous.household_id <> p_household_id or previous.lot_id <> p_lot_id
@@ -642,6 +645,9 @@ begin
  end if;
 
  if p_expected_version = 0 then
+    if coalesce(p_legacy_unknown,false) then
+        raise exception 'legacy inventory can only be imported by migration';
+    end if;
     insert into public.pantry_lots(
         id, household_id, ingredient_id, original_amount_base,
         remaining_amount_base, opened, legacy_unknown, product_id, best_before
