@@ -474,7 +474,8 @@ fun ShoppingScreen(state: MealPlannerState) {
                                 state = state,
                                 included = true,
                                 checked = false,
-                                bilkaInfo = bilkaShoppingLine(item, bilkaContext, bilkaCatalog),
+                                bilkaInfo = if (item.manualOnly) null else
+                                    bilkaShoppingLine(item, bilkaContext, bilkaCatalog),
                                 onEditPantry = {
                                     editPantryItem = item
                                 }
@@ -510,7 +511,8 @@ fun ShoppingScreen(state: MealPlannerState) {
                             state = state,
                             included = true,
                             checked = false,
-                            bilkaInfo = bilkaShoppingLine(item, bilkaContext, bilkaCatalog),
+                            bilkaInfo = if (item.manualOnly) null else
+                            bilkaShoppingLine(item, bilkaContext, bilkaCatalog),
                             onEditPantry = {
                                 editPantryItem = item
                             }
