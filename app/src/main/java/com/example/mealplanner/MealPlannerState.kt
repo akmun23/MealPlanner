@@ -1255,6 +1255,22 @@ class MealPlannerState(
                 if (conversionChanged) 1L else 0L
         )
         ingredients[index] = updated
+        if (conversionChanged) {
+            // The cloud CAS RPC makes the same update atomically to all known
+            // recipe snapshots. Apply the projection locally for an immediate
+            // and consistent shopping-list calculation while offline.
+            val revisedRecipes = recipes.map { recipe ->
+                if (recipe.ingredients.none { it.ingredientId == id }) recipe
+                else recipe.copy(ingredients = recipe.ingredients.map { requirement ->
+                    if (requirement.ingredientId == id) {
+                        RecipeQuantityRules.correctedIngredientMeasure(
+                            requirement, previous.unitConversions, conversions
+                        )
+                    } else requirement
+                })
+            }
+            syncListByKey(recipes, revisedRecipes, Recipe::id)
+        }
         enqueueMutations(
             listOf(QueuedMutation.UpsertIngredient(updated)) +
                 if (!conversionChanged) emptyList() else listOf(
