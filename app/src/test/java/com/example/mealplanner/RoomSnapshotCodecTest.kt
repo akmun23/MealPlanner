@@ -52,7 +52,11 @@ class RoomSnapshotCodecTest {
                     ingredients = listOf(
                         RecipeIngredient(
                             ingredientId = "ingredient",
-                            amountBase = 400.0
+                            amountBase = 400.0,
+                            displayAmount = 2.0,
+                            displayUnitCode = "PACK",
+                            basePerDisplayUnit = 200.0,
+                            conversionApproximate = true
                         )
                     ),
                     pantryPrerequisites = listOf(
