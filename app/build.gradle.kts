@@ -43,8 +43,8 @@ android {
         applicationId = "com.mealplan.mealplanner"
         minSdk = 26
         targetSdk = 37
-        versionCode = 7
-        versionName = "1.2.3"
+        versionCode = 8
+        versionName = "1.3.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField(
@@ -67,10 +67,8 @@ android {
             optimization {
                 enable = true
             }
-            // Include available native .so debug metadata in the Play AAB.
-            // FULL gives native function names and source lines where the
-            // dependency ships unstripped symbols; stripped libraries may
-            // not provide enough information for AGP to extract symbols.
+            // Include available native debugging metadata in the Play AAB.
+            // Pre-stripped third-party libraries cannot regain missing symbols.
             ndk {
                 debugSymbolLevel = "FULL"
             }
@@ -111,6 +109,12 @@ android {
 
         // Required because we create BuildConfig.SUPABASE_URL etc.
         buildConfig = true
+    }
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    compilerOptions {
+        allWarningsAsErrors.set(true)
     }
 }
 
@@ -172,11 +176,11 @@ dependencies {
     testImplementation(libs.robolectric)
 
     androidTestImplementation(platform(libs.androidx.compose.bom))
-    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.runner)
 
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(
         libs.androidx.compose.ui.tooling
     )

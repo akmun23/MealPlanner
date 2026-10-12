@@ -76,7 +76,8 @@ fun WeekScreen(
     val sandwichDay = state.sandwichDay()
     val homeCount = orderedWeekDays.count { state.dayModes[it] != DayMode.AWAY }
     val selectedLunch = state.lunchRecipes()
-    val lunchOptions = state.recipes.filter { it.mealType == MealType.LUNCH }.sortedBy { it.name.lowercase() }
+    val lunchOptions =
+        state.recipes.filter { it.mealType == MealType.LUNCH }.sortedBy { it.name.lowercase() }
     var showLunchPicker by remember { mutableStateOf(false) }
     var showSandwichPicker by remember { mutableStateOf(false) }
     var showGenerateConfirmation by remember { mutableStateOf(false) }
@@ -101,8 +102,8 @@ fun WeekScreen(
             text = {
                 Text(
                     "Denne uge indeholder allerede spiste måltider. " +
-                        "Genplanlægning kan ændre øvrige dage, men færdigregistrerede dage " +
-                        "forbliver låst. Næste uge kan planlægges normalt."
+                            "Genplanlægning kan ændre øvrige dage, men færdigregistrerede dage " +
+                            "forbliver låst. Næste uge kan planlægges normalt."
                 )
             },
             dismissButton = {
@@ -126,8 +127,8 @@ fun WeekScreen(
             text = {
                 Text(
                     "En ny madplan erstatter retterne på dage, der ikke er låst. " +
-                        "Dine markeringer på indkøbslisten bliver nulstillet. " +
-                        "Låste retter bevares."
+                            "Dine markeringer på indkøbslisten bliver nulstillet. " +
+                            "Låste retter bevares."
                 )
             },
             dismissButton = {
@@ -280,211 +281,223 @@ fun WeekScreen(
                     fontWeight = FontWeight.Bold
                 )
 
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(20.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = MaterialTheme.colorScheme.surface
-            ),
-            elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-        ) {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(12.dp),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Row(
+                Card(
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
                 ) {
-                    IconButton(
-                        onClick = { state.changeDisplayedWeek(-1) },
-                        enabled = !state.isLocalMode && !state.isWeekChanging
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(12.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
                     ) {
-                        Icon(Icons.Filled.ChevronLeft, contentDescription = "Forrige uge")
-                    }
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Surface(
-                            shape = CircleShape,
-                            color = MaterialTheme.colorScheme.primaryContainer
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Text(
-                                "Uge $weekNumber · ${start.get(WeekFields.ISO.weekBasedYear())}",
-                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 4.dp),
-                                style = MaterialTheme.typography.labelMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
+                            IconButton(
+                                onClick = { state.changeDisplayedWeek(-1) },
+                                enabled = !state.isLocalMode && !state.isWeekChanging
+                            ) {
+                                Icon(Icons.Filled.ChevronLeft, contentDescription = "Forrige uge")
+                            }
+                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                Surface(
+                                    shape = CircleShape,
+                                    color = MaterialTheme.colorScheme.primaryContainer
+                                ) {
+                                    Text(
+                                        "Uge $weekNumber · ${start.get(WeekFields.ISO.weekBasedYear())}",
+                                        modifier = Modifier.padding(
+                                            horizontal = 12.dp,
+                                            vertical = 4.dp
+                                        ),
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onPrimaryContainer
+                                    )
+                                }
+                                Spacer(Modifier.height(4.dp))
+                                Text(
+                                    "${start.format(dateFormat)} – ${end.format(dateFormat)}",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            IconButton(
+                                onClick = { state.changeDisplayedWeek(1) },
+                                enabled = !state.isLocalMode && !state.isWeekChanging
+                            ) {
+                                Icon(Icons.Filled.ChevronRight, contentDescription = "Næste uge")
+                            }
                         }
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            "${start.format(dateFormat)} – ${end.format(dateFormat)}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                    IconButton(
-                        onClick = { state.changeDisplayedWeek(1) },
-                        enabled = !state.isLocalMode && !state.isWeekChanging
-                    ) {
-                        Icon(Icons.Filled.ChevronRight, contentDescription = "Næste uge")
-                    }
-                }
 
-                if (start != LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)) &&
-                    !state.isLocalMode
-                ) {
-                    Spacer(Modifier.height(8.dp))
-                    OutlinedButton(
-                        onClick = { state.showCurrentWeek() },
-                        enabled = !state.isWeekChanging,
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Icon(Icons.Filled.Today, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Tilbage til denne uge")
+                        if (start != LocalDate.now()
+                                .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)) &&
+                            !state.isLocalMode
+                        ) {
+                            Spacer(Modifier.height(8.dp))
+                            OutlinedButton(
+                                onClick = { state.showCurrentWeek() },
+                                enabled = !state.isWeekChanging,
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(
+                                    Icons.Filled.Today,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text("Tilbage til denne uge")
+                            }
+                        }
                     }
                 }
-            }
-        }
             }
         }
 
         if (today in start..end) {
             item(key = "week-today", contentType = "week-section") {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(Modifier.padding(12.dp)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(
-                                Icons.Filled.Today,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(Modifier.width(6.dp))
-                            Text(
-                                "I dag · Aftensmad",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onPrimaryContainer
-                            )
-                        }
-                        TextButton(onClick = onMealHistory) {
-                            Icon(Icons.Filled.History, contentDescription = null, modifier = Modifier.size(16.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("Historik")
-                        }
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        todayEaten?.recipeId?.let { eaten ->
-                            state.recipes.find { it.id == eaten }?.name
-                        } ?: todayRecipe?.name ?: "Ingen ret planlagt",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                    if (todayEaten == null) Spacer(Modifier.height(10.dp))
-                    if (todayEaten == null && todayRecipe != null) {
-                        Button(
-                            onClick = { finishingDinner = today to todayRecipe.id },
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                    ),
+                    elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                ) {
+                    Column(Modifier.padding(12.dp)) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            modifier = Modifier.fillMaxWidth()
                         ) {
-                            Text("Færdig – registrér dagens ret")
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Filled.Today,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    "I dag · Aftensmad",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                            TextButton(onClick = onMealHistory) {
+                                Icon(
+                                    Icons.Filled.History,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text("Historik")
+                            }
                         }
-                    } else if (todayEaten == null) {
-                        TextButton(onClick = onMealHistory) {
-                            Text("Registrér en anden ret")
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            todayEaten?.recipeId?.let { eaten ->
+                                state.recipes.find { it.id == eaten }?.name
+                            } ?: todayRecipe?.name ?: "Ingen ret planlagt",
+                            style = MaterialTheme.typography.titleLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        if (todayEaten == null) Spacer(Modifier.height(10.dp))
+                        if (todayEaten == null && todayRecipe != null) {
+                            Button(
+                                onClick = { finishingDinner = today to todayRecipe.id },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text("Færdig – registrér dagens ret")
+                            }
+                        } else if (todayEaten == null) {
+                            TextButton(onClick = onMealHistory) {
+                                Text("Registrér en anden ret")
+                            }
                         }
                     }
                 }
             }
-        }
         }
 
         item(key = "week-generate", contentType = "week-section") {
             Column {
-        Button(
-            onClick = {
-                if (WeekRules.needsRegenerationConfirmation(
-                        currentPlan = state.plan,
-                        sandwichRecipeId = state.weeklySandwichRecipeId
-                    )
+                Button(
+                    onClick = {
+                        if (WeekRules.needsRegenerationConfirmation(
+                                currentPlan = state.plan,
+                                sandwichRecipeId = state.weeklySandwichRecipeId
+                            )
+                        ) {
+                            showGenerateConfirmation = true
+                        } else {
+                            state.generateWeek()
+                        }
+                    },
+                    enabled = state.recipes.any { it.mealType == MealType.DINNER } &&
+                            homeCount > 0 &&
+                            !state.isPlanning &&
+                            !state.isWeekChanging &&
+                            !state.isWeekRegenerationLocked(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = RoundedCornerShape(14.dp)
                 ) {
-                    showGenerateConfirmation = true
-                } else {
-                    state.generateWeek()
+                    if (state.isPlanning) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(18.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Icon(Icons.Filled.Refresh, contentDescription = null)
+                    }
+                    Spacer(Modifier.width(8.dp))
+                    Text("Ny madplan", fontWeight = FontWeight.Bold)
                 }
-            },
-            enabled = state.recipes.any { it.mealType == MealType.DINNER } &&
-                homeCount > 0 &&
-                !state.isPlanning &&
-                !state.isWeekChanging &&
-                !state.isWeekRegenerationLocked(),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp),
-            shape = RoundedCornerShape(14.dp)
-        ) {
-            if (state.isPlanning) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(18.dp),
-                    strokeWidth = 2.dp
-                )
-            } else {
-                Icon(Icons.Filled.Refresh, contentDescription = null)
-            }
-            Spacer(Modifier.width(8.dp))
-            Text("Ny madplan", fontWeight = FontWeight.Bold)
-        }
-        if (state.isWeekRegenerationLocked()) {
-            Text(
-                "Ugen er låst efter registrering af spiste måltider. " +
-                    "Brug pilen til næste uge for at planlægge videre.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            OutlinedButton(
-                onClick = { showWeekUnlockConfirmation = true },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Lås ugens genplanlægning op")
-            }
-        }
-        if (state.recipes.none { it.mealType == MealType.DINNER }) {
-            Text(
-                "Tilføj mindst én aftensmadsopskrift for at generere en madplan.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        } else if (homeCount == 0) {
-            Text(
-                "Vælg mindst én dag, hvor du spiser hjemme.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+                if (state.isWeekRegenerationLocked()) {
+                    Text(
+                        "Ugen er låst efter registrering af spiste måltider. " +
+                                "Brug pilen til næste uge for at planlægge videre.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    OutlinedButton(
+                        onClick = { showWeekUnlockConfirmation = true },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Lås ugens genplanlægning op")
+                    }
+                }
+                if (state.recipes.none { it.mealType == MealType.DINNER }) {
+                    Text(
+                        "Tilføj mindst én aftensmadsopskrift for at generere en madplan.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else if (homeCount == 0) {
+                    Text(
+                        "Vælg mindst én dag, hvor du spiser hjemme.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
 
-        if (state.isWeekChanging) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(24.dp)
-            )
-        }
+                if (state.isWeekChanging) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
             }
         }
 
@@ -524,50 +537,50 @@ fun WeekScreen(
         }
 
         item(key = "week-lunch", contentType = "week-section") {
-        SectionCard("Frokost") {
-            selectedLunch.forEach { recipe ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 3.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        recipe.name,
-                        modifier = Modifier.weight(1f),
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    IconButton(
-                        onClick = { state.removeLunchRecipe(recipe.id) },
-                        modifier = Modifier.size(36.dp)
+            SectionCard("Frokost") {
+                selectedLunch.forEach { recipe ->
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 3.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            Icons.Filled.Clear,
-                            contentDescription = "Fjern frokost"
+                        Text(
+                            recipe.name,
+                            modifier = Modifier.weight(1f),
+                            fontWeight = FontWeight.SemiBold
                         )
+                        IconButton(
+                            onClick = { state.removeLunchRecipe(recipe.id) },
+                            modifier = Modifier.size(36.dp)
+                        ) {
+                            Icon(
+                                Icons.Filled.Clear,
+                                contentDescription = "Fjern frokost"
+                            )
+                        }
+                    }
+                }
+
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = { showLunchPicker = true },
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Vælg")
+                    }
+
+                    TextButton(
+                        onClick = onNewLunchRecipe,
+                        modifier = Modifier.weight(1f)
+                    ) {
+                        Text("Ny opskrift")
                     }
                 }
             }
-
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                OutlinedButton(
-                    onClick = { showLunchPicker = true },
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text("Vælg")
-                }
-
-                TextButton(
-                    onClick = onNewLunchRecipe,
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text("Ny opskrift")
-                }
-            }
-        }
         }
 
         items(
@@ -667,8 +680,8 @@ fun DayCard(
             text = {
                 Text(
                     "Retten er allerede registreret som spist. Du kan midlertidigt " +
-                        "ændre madplanen efter oplåsning, men måltidshistorik og " +
-                        "lagerforbrug ændres ikke automatisk."
+                            "ændre madplanen efter oplåsning, men måltidshistorik og " +
+                            "lagerforbrug ændres ikke automatisk."
                 )
             },
             dismissButton = {
@@ -691,7 +704,7 @@ fun DayCard(
         recipeSearch = ""
         if (recipe?.id == id && !away) return
         val hasShoppingSelections = state.shoppingChecked.any { it.value } ||
-            state.shoppingIncluded.any { !it.value }
+                state.shoppingIncluded.any { !it.value }
         if (hasShoppingSelections || isLocked) {
             pendingRecipeId = id
             showChangeConfirmation = true
@@ -707,8 +720,8 @@ fun DayCard(
             text = {
                 Text(
                     "Manuelle ændringer er også mulige på låste dage. " +
-                        "Købsmarkeringer bevares for ingredienser med uændret behov, " +
-                        "mens berørte mængder skal kontrolleres igen."
+                            "Købsmarkeringer bevares for ingredienser med uændret behov, " +
+                            "mens berørte mængder skal kontrolleres igen."
                 )
             },
             confirmButton = {
@@ -729,9 +742,9 @@ fun DayCard(
         val choices = state.recipes
             .filter {
                 it.mealType == MealType.DINNER &&
-                    it.id != state.weeklySandwichRecipeId &&
-                    (recipeSearch.isBlank() ||
-                        it.name.contains(recipeSearch.trim(), ignoreCase = true))
+                        it.id != state.weeklySandwichRecipeId &&
+                        (recipeSearch.isBlank() ||
+                                it.name.contains(recipeSearch.trim(), ignoreCase = true))
             }
             .sortedBy { it.name.lowercase() }
         AlertDialog(

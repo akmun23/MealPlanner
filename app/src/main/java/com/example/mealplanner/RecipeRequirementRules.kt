@@ -8,17 +8,17 @@ package com.example.mealplanner
 internal object RecipeRequirementRules {
     fun combineIngredients(rows: List<RecipeIngredient>): List<RecipeIngredient> {
         val amounts = linkedMapOf<String, Double>()
-        for (row in rows) {
-            amounts[row.ingredientId] = (amounts[row.ingredientId] ?: 0.0) + row.amountBase
+        for ((ingredientId, amountBase) in rows) {
+            amounts[ingredientId] = (amounts[ingredientId] ?: 0.0) + amountBase
         }
         return amounts.map { (id, amount) -> RecipeIngredient(id, amount) }
     }
 
     fun combinePrerequisites(rows: List<RecipePantryPrerequisite>): List<RecipePantryPrerequisite> {
         val minimums = linkedMapOf<String, Double>()
-        for (row in rows) {
-            minimums[row.ingredientId] =
-                maxOf(minimums[row.ingredientId] ?: 0.0, row.minimumAmountBase)
+        for ((ingredientId, minimumAmountBase) in rows) {
+            minimums[ingredientId] =
+                maxOf(minimums[ingredientId] ?: 0.0, minimumAmountBase)
         }
         return minimums.map { (id, amount) -> RecipePantryPrerequisite(id, amount) }
     }

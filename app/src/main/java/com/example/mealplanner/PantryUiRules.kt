@@ -13,7 +13,7 @@ internal fun filterPantryIngredients(
         .asSequence()
         .filter { ingredient ->
             selectedCategoryId == null ||
-                ingredient.shoppingCategoryId == selectedCategoryId
+                    ingredient.shoppingCategoryId == selectedCategoryId
         }
         .filter { ingredient ->
             if (query.isBlank()) {
@@ -24,7 +24,7 @@ internal fun filterPantryIngredients(
                     .orEmpty()
 
                 ingredient.name.contains(query, ignoreCase = true) ||
-                    categoryName.contains(query, ignoreCase = true)
+                        categoryName.contains(query, ignoreCase = true)
             }
         }
         .sortedBy { it.name.lowercase() }
@@ -75,6 +75,7 @@ internal fun visiblePantryIngredients(
             compareByDescending<Ingredient> { pantry[it.id] ?: 0.0 }
                 .thenBy { it.name.lowercase() }
         )
+
         PantrySortOrder.CATEGORY -> {
             val categoriesById = categories.associateBy { it.id }
             visible.sortedWith(

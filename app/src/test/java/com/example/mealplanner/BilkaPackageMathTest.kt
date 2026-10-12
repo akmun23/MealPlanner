@@ -53,7 +53,11 @@ class BilkaPackageMathTest {
 
     @Test
     fun manualCorrectionAndInvalidSizes() {
-        assertEquals(750.0, BilkaPackageMath.applicablePackBase(ingredient, oneLitre, 750.0)!!, 0.01)
+        assertEquals(
+            750.0,
+            BilkaPackageMath.applicablePackBase(ingredient, oneLitre, 750.0)!!,
+            0.01
+        )
         assertNull(BilkaPackageMath.purchasedBase(0.0, 2))
         assertNull(BilkaPackageMath.purchasedBase(1000.0, 0))
         assertNull(BilkaPackageMath.packageCount(1200.0, 0.0, -1.0))

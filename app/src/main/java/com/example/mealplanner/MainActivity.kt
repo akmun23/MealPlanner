@@ -14,26 +14,27 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.requiredSize
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -48,19 +49,19 @@ import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Badge
-import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -83,13 +84,12 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -108,9 +108,8 @@ import androidx.compose.ui.unit.dp
 import io.github.jan.supabase.auth.handleDeeplinks
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
-import java.util.Locale
+import kotlinx.coroutines.withContext
 
 private val AppColors = lightColorScheme(
     primary = Color(0xFF2F6B4F),
@@ -123,7 +122,7 @@ private val AppColors = lightColorScheme(
     surface = Color(0xFFFFFFFF),
     surfaceVariant = Color(0xFFE9EEE9),
     onSurfaceVariant = Color(0xFF4E5750),
-    outline = Color(0xFFBBC4BC)
+    outline = Color(0xFFBBC4BC),
 )
 
 internal val DarkAppColors = darkColorScheme(
@@ -164,7 +163,7 @@ internal val DarkAppColors = darkColorScheme(
     error = Color(0xFFFFB4AB),
     onError = Color(0xFF690005),
     errorContainer = Color(0xFF93000A),
-    onErrorContainer = Color(0xFFFFDAD6)
+    onErrorContainer = Color(0xFFFFDAD6),
 )
 
 class MainActivity : ComponentActivity() {
@@ -187,7 +186,7 @@ class MainActivity : ComponentActivity() {
                         onThemeModeChange = { selected ->
                             themePreferences.save(selected)
                             themeMode = selected
-                        }
+                        },
                     )
                 }
             }
@@ -271,10 +270,13 @@ fun MealPlannerApp(
     var bilkaSettingsReturnPage by remember { mutableStateOf<AppPage>(AppPage.Settings) }
     fun openBilkaSettings(from: AppPage) {
         bilkaSettingsReturnPage = from
-        page = AppPage.BilkaApiSettings
+        scope.launch {
+            page = AppPage.BilkaApiSettings
+        }
     }
+
     var showSyncConflictDialog by remember {
-        mutableStateOf(false)
+        mutableStateOf(value = false)
     }
     val pantryListState = rememberLazyListState()
     val tabStateHolder = rememberSaveableStateHolder()
@@ -284,7 +286,7 @@ fun MealPlannerApp(
         derivedStateOf {
             state.shoppingItems().count { item ->
                 state.isShoppingIncluded(item.ingredient.id) &&
-                    state.shoppingChecked[item.ingredient.id] != true
+                        state.shoppingChecked[item.ingredient.id] != true
             }
         }
     }
@@ -299,22 +301,25 @@ fun MealPlannerApp(
     }
 
     fun navigateBack() {
-        page = when (val current = page) {
-            AppPage.Settings -> null
-            AppPage.MealHistory -> null
-            AppPage.PlannerSettings -> AppPage.Settings
-            AppPage.BilkaApiSettings -> bilkaSettingsReturnPage
-            AppPage.BilkaProducts -> AppPage.Settings
-            is AppPage.BilkaProductPicker -> AppPage.BilkaProducts
-            AppPage.SyncStatus -> AppPage.Settings
-            AppPage.DataBackup -> AppPage.Settings
-            AppPage.IngredientCategories -> AppPage.Settings
-            AppPage.RecipeCategories -> AppPage.Settings
-            is AppPage.IngredientEditor -> null
-            is AppPage.RecipeDetail -> null
-            is AppPage.RecipeEditor ->
-                current.recipeId?.let { AppPage.RecipeDetail(it) }
-            null -> null
+        scope.launch {
+            page = when (val current = page) {
+                AppPage.Settings -> null
+                AppPage.MealHistory -> null
+                AppPage.PlannerSettings -> AppPage.Settings
+                AppPage.BilkaApiSettings -> bilkaSettingsReturnPage
+                AppPage.BilkaProducts -> AppPage.Settings
+                is AppPage.BilkaProductPicker -> AppPage.BilkaProducts
+                AppPage.SyncStatus -> AppPage.Settings
+                AppPage.DataBackup -> AppPage.Settings
+                AppPage.IngredientCategories -> AppPage.Settings
+                AppPage.RecipeCategories -> AppPage.Settings
+                is AppPage.IngredientEditor -> null
+                is AppPage.RecipeDetail -> null
+                is AppPage.RecipeEditor ->
+                    current.recipeId?.let { AppPage.RecipeDetail(it) }
+
+                null -> null
+            }
         }
     }
 
@@ -379,224 +384,231 @@ fun MealPlannerApp(
 
     Box(modifier = Modifier.fillMaxSize()) {
         when (val current = page) {
-        AppPage.MealHistory -> MealHistoryScreen(
-            state = state,
-            onBack = { navigateBack() }
-        )
+            AppPage.MealHistory -> MealHistoryScreen(
+                state = state,
+                onBack = { navigateBack() }
+            )
 
-        AppPage.Settings -> SettingsScreen(
-            household = household,
-            state = state,
-            onBack = { navigateBack() },
-            onRenameHousehold = onRenameHousehold,
-            onIngredientCategories = { page = AppPage.IngredientCategories },
-            onRecipeCategories = { page = AppPage.RecipeCategories },
-            onPlannerSettings = { page = AppPage.PlannerSettings },
-            onBilkaApiSettings = { openBilkaSettings(AppPage.Settings) },
-            onBilkaProducts = { page = AppPage.BilkaProducts },
-            onSyncStatus = { page = AppPage.SyncStatus },
-            onDataBackup = { page = AppPage.DataBackup },
-            themeMode = themeMode,
-            onThemeModeChange = onThemeModeChange,
-            onLogout = onLogout
-        )
+            AppPage.Settings -> SettingsScreen(
+                household = household,
+                state = state,
+                onBack = { navigateBack() },
+                onRenameHousehold = onRenameHousehold,
+                onIngredientCategories = { scope.launch { page = AppPage.IngredientCategories } },
+                onRecipeCategories = { scope.launch { page = AppPage.RecipeCategories } },
+                onPlannerSettings = { scope.launch { page = AppPage.PlannerSettings } },
+                onBilkaApiSettings = { openBilkaSettings(AppPage.Settings) },
+                onBilkaProducts = { scope.launch { page = AppPage.BilkaProducts } },
+                onSyncStatus = { scope.launch { page = AppPage.SyncStatus } },
+                onDataBackup = { scope.launch { page = AppPage.DataBackup } },
+                themeMode = themeMode,
+                onThemeModeChange = onThemeModeChange,
+                onLogout = onLogout
+            )
 
-        AppPage.BilkaProducts -> BilkaProductsScreen(
-            householdId = household.id,
-            onBack = { navigateBack() },
-            onImport = { openBilkaSettings(AppPage.BilkaProducts) },
-            onPick = { ingredientId, ingredientName ->
-                page = AppPage.BilkaProductPicker(ingredientId, ingredientName)
-            }
-        )
+            AppPage.BilkaProducts -> BilkaProductsScreen(
+                householdId = household.id,
+                onBack = { navigateBack() },
+                onImport = { openBilkaSettings(AppPage.BilkaProducts) },
+                onPick = { ingredientId, ingredientName ->
+                    page = AppPage.BilkaProductPicker(ingredientId, ingredientName)
+                }
+            )
 
-        is AppPage.BilkaProductPicker -> BilkaProductPickerScreen(
-            householdId = household.id,
-            ingredientId = current.ingredientId,
-            ingredientName = current.ingredientName,
-            onBack = { navigateBack() },
-            onSaved = {
-                state.refreshNow()
-                page = AppPage.BilkaProducts
-            },
-            onImport = { openBilkaSettings(current) }
-        )
-
-        AppPage.BilkaApiSettings -> BilkaApiSettingsScreen(
-            householdId = household.id,
-            onBack = { navigateBack() },
-            onViewProducts = { page = AppPage.BilkaProducts }
-        )
-
-        AppPage.PlannerSettings -> PlannerSettingsScreen(
-            state = state,
-            onBack = { navigateBack() }
-        )
-
-        AppPage.SyncStatus -> SyncStatusScreen(
-            state = state,
-            onBack = { navigateBack() }
-        )
-
-        AppPage.DataBackup -> DataBackupScreen(
-            state = state,
-            onBack = { navigateBack() }
-        )
-
-        AppPage.IngredientCategories -> IngredientCategoriesScreen(
-            state = state,
-            onBack = { navigateBack() }
-        )
-
-        AppPage.RecipeCategories -> RecipeCategoriesScreen(
-            state = state,
-            onBack = { navigateBack() }
-        )
-
-        is AppPage.IngredientEditor -> IngredientEditorScreen(
-            state = state,
-            ingredientId = current.ingredientId,
-            onBack = { navigateBack() },
-            onSaved = { page = null }
-        )
-
-        is AppPage.RecipeDetail -> RecipeDetailScreen(
-            state = state,
-            recipeId = current.recipeId,
-            onBack = { navigateBack() },
-            onEdit = { page = AppPage.RecipeEditor(current.recipeId) }
-        )
-
-        is AppPage.RecipeEditor -> RecipeEditorScreen(
-            state = state,
-            recipeId = current.recipeId,
-            initialMealType = current.initialMealType,
-            onBack = { navigateBack() },
-            onSaved = { savedId ->
-                page = savedId?.let { AppPage.RecipeDetail(it) }
-            }
-        )
-
-        null -> {
-            Scaffold(
-                containerColor = MaterialTheme.colorScheme.background,
-                topBar = {
-                    AppHeader(
-                        onSettings = { page = AppPage.Settings }
-                    )
+            is AppPage.BilkaProductPicker -> BilkaProductPickerScreen(
+                householdId = household.id,
+                ingredientId = current.ingredientId,
+                ingredientName = current.ingredientName,
+                onBack = { navigateBack() },
+                onSaved = {
+                    state.refreshNow()
+                    page = AppPage.BilkaProducts
                 },
-                bottomBar = {
-                    // Give the editor the full height when the keyboard is open.
-                    if (!WindowInsets.isImeVisible) {
-                    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                        AppTab.entries.forEach { item ->
-                            val isShopping = item == AppTab.SHOPPING
-                            NavigationBarItem(
-                                selected = item == tab,
-                                onClick = {
-                                    tab = item
-                                    scope.launch {
-                                        pagerState.scrollToPage(item.ordinal)
-                                    }
-                                },
-                                icon = {
-                                    if (isShopping && missingShoppingCount > 0) {
-                                        BadgedBox(
-                                            badge = {
-                                                Badge {
-                                                    Text(
-                                                        if (missingShoppingCount > 99) "99+" else missingShoppingCount.toString(),
-                                                        style = MaterialTheme.typography.labelSmall
+                onImport = { openBilkaSettings(current) }
+            )
+
+            AppPage.BilkaApiSettings -> BilkaApiSettingsScreen(
+                householdId = household.id,
+                onBack = { navigateBack() },
+                onViewProducts = { page = AppPage.BilkaProducts }
+            )
+
+            AppPage.PlannerSettings -> PlannerSettingsScreen(
+                state = state,
+                onBack = { navigateBack() }
+            )
+
+            AppPage.SyncStatus -> SyncStatusScreen(
+                state = state,
+                onBack = { navigateBack() }
+            )
+
+            AppPage.DataBackup -> DataBackupScreen(
+                state = state,
+                onBack = { navigateBack() }
+            )
+
+            AppPage.IngredientCategories -> IngredientCategoriesScreen(
+                state = state,
+                onBack = { navigateBack() }
+            )
+
+            AppPage.RecipeCategories -> RecipeCategoriesScreen(
+                state = state,
+                onBack = { navigateBack() }
+            )
+
+            is AppPage.IngredientEditor -> IngredientEditorScreen(
+                state = state,
+                ingredientId = current.ingredientId,
+                onBack = { navigateBack() },
+                onSaved = { page = null }
+            )
+
+            is AppPage.RecipeDetail -> RecipeDetailScreen(
+                state = state,
+                recipeId = current.recipeId,
+                onBack = { navigateBack() },
+                onEdit = { page = AppPage.RecipeEditor(current.recipeId) }
+            )
+
+            is AppPage.RecipeEditor -> RecipeEditorScreen(
+                state = state,
+                recipeId = current.recipeId,
+                initialMealType = current.initialMealType,
+                onBack = { navigateBack() },
+                onSaved = { savedId ->
+                    page = savedId?.let { AppPage.RecipeDetail(it) }
+                }
+            )
+
+            null -> {
+                Scaffold(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    topBar = {
+                        AppHeader(
+                            onSettings = {
+                                scope.launch {
+                                    page = AppPage.Settings
+                                }
+                            }
+                        )
+                    },
+                    bottomBar = {
+                        // Give the editor the full height when the keyboard is open.
+                        if (!WindowInsets.isImeVisible) {
+                            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                                AppTab.entries.forEach { item ->
+                                    val isShopping = item == AppTab.SHOPPING
+                                    NavigationBarItem(
+                                        selected = item == tab,
+                                        onClick = {
+                                            tab = item
+                                            scope.launch {
+                                                pagerState.scrollToPage(item.ordinal)
+                                            }
+                                        },
+                                        icon = {
+                                            if (isShopping && missingShoppingCount > 0) {
+                                                BadgedBox(
+                                                    badge = {
+                                                        Badge {
+                                                            Text(
+                                                                if (missingShoppingCount > 99) "99+" else missingShoppingCount.toString(),
+                                                                style = MaterialTheme.typography.labelSmall
+                                                            )
+                                                        }
+                                                    }
+                                                ) {
+                                                    Icon(
+                                                        item.icon,
+                                                        contentDescription = item.label
                                                     )
                                                 }
+                                            } else {
+                                                Icon(
+                                                    item.icon,
+                                                    contentDescription = item.label
+                                                )
                                             }
-                                        ) {
-                                            Icon(
-                                                item.icon,
-                                                contentDescription = item.label
+                                        },
+                                        label = {
+                                            Text(
+                                                item.label,
+                                                fontWeight = if (item == tab) FontWeight.Bold else FontWeight.Normal
                                             )
                                         }
-                                    } else {
-                                        Icon(
-                                            item.icon,
-                                            contentDescription = item.label
-                                        )
-                                    }
-                                },
-                                label = {
-                                    Text(
-                                        item.label,
-                                        fontWeight = if (item == tab) FontWeight.Bold else FontWeight.Normal
                                     )
                                 }
-                            )
+                            }
                         }
                     }
-                    }
-                }
-            ) { padding ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding)
-                ) {
-                    if (state.isLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.align(Alignment.Center)
-                        )
-                    } else {
-                        HorizontalPager(
-                            state = pagerState,
-                            // Only compose the visible tab; other lists build on demand.
-                            beyondViewportPageCount = 0,
-                            modifier = Modifier.fillMaxSize()
-                        ) { pageIndex ->
-                            val visibleTab = AppTab.entries[pageIndex]
-                            tabStateHolder.SaveableStateProvider(visibleTab.name) {
-                            when (visibleTab) {
-                                AppTab.WEEK -> WeekScreen(
-                                    state = state,
-                                    onMealHistory = { page = AppPage.MealHistory },
-                                    onOpenRecipe = {
-                                        page = AppPage.RecipeDetail(it)
-                                    },
-                                    onNewLunchRecipe = {
-                                        page = AppPage.RecipeEditor(
-                                            recipeId = null,
-                                            initialMealType = MealType.LUNCH
+                ) { padding ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(padding)
+                    ) {
+                        if (state.isLoading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.align(Alignment.Center)
+                            )
+                        } else {
+                            HorizontalPager(
+                                state = pagerState,
+                                // Only compose the visible tab; other lists build on demand.
+                                beyondViewportPageCount = 0,
+                                modifier = Modifier.fillMaxSize()
+                            ) { pageIndex ->
+                                val visibleTab = AppTab.entries[pageIndex]
+                                tabStateHolder.SaveableStateProvider(visibleTab.name) {
+                                    when (visibleTab) {
+                                        AppTab.WEEK -> WeekScreen(
+                                            state = state,
+                                            onMealHistory = { page = AppPage.MealHistory },
+                                            onOpenRecipe = {
+                                                page = AppPage.RecipeDetail(it)
+                                            },
+                                            onNewLunchRecipe = {
+                                                page = AppPage.RecipeEditor(
+                                                    recipeId = null,
+                                                    initialMealType = MealType.LUNCH
+                                                )
+                                            }
                                         )
+
+                                        AppTab.RECIPES -> RecipesScreen(
+                                            state = state,
+                                            onAddRecipe = { page = AppPage.RecipeEditor(null) },
+                                            onOpenRecipe = { page = AppPage.RecipeDetail(it) }
+                                        )
+
+                                        AppTab.PANTRY -> PantryScreen(
+                                            state = state,
+                                            listState = pantryListState,
+                                            onAddIngredient = {
+                                                page = AppPage.IngredientEditor(null)
+                                            },
+                                            onEditIngredient = {
+                                                page = AppPage.IngredientEditor(it)
+                                            }
+                                        )
+
+                                        AppTab.SHOPPING -> ShoppingScreen(state)
                                     }
-                                )
-                                AppTab.RECIPES -> RecipesScreen(
-                                    state = state,
-                                    onAddRecipe = { page = AppPage.RecipeEditor(null) },
-                                    onOpenRecipe = { page = AppPage.RecipeDetail(it) }
-                                )
-                                AppTab.PANTRY -> PantryScreen(
-                                    state = state,
-                                    listState = pantryListState,
-                                    onAddIngredient = {
-                                        page = AppPage.IngredientEditor(null)
-                                    },
-                                    onEditIngredient = {
-                                        page = AppPage.IngredientEditor(it)
-                                    }
-                                )
-                                AppTab.SHOPPING -> ShoppingScreen(state)
-                            }
+                                }
                             }
                         }
                     }
                 }
             }
-        }
         }
 
         // Keep transient feedback above the navigation bar (or the editor's
         // fixed save action), rather than at hard-coded screen coordinates.
-        val overlayBottom = when {
-            page is AppPage.RecipeEditor -> 84.dp
-            page == null && !WindowInsets.isImeVisible -> 86.dp
+        val overlayBottom = when (page) {
+            is AppPage.RecipeEditor -> 84.dp
+            null -> if (!WindowInsets.isImeVisible) 86.dp else 16.dp
             else -> 16.dp
         }
         val hasSyncStatus = state.syncIndicator != SyncIndicator.IDLE
@@ -721,15 +733,15 @@ private fun RecipeCategoriesScreen(
     state: MealPlannerState,
     onBack: () -> Unit
 ) {
-    var showAdd by remember { mutableStateOf(false) }
+    var showAdd by remember { mutableStateOf(value = false) }
     var editing by remember { mutableStateOf<RecipeCategoryOption?>(null) }
     var categoryName by remember { mutableStateOf("") }
     val recipeCategoryNameAvailable =
         categoryName.isBlank() ||
-            state.isRecipeCategoryNameAvailable(
-                name = categoryName,
-                excludingId = editing?.id
-            )
+                state.isRecipeCategoryNameAvailable(
+                    name = categoryName,
+                    excludingId = editing?.id
+                )
 
     if (showAdd || editing != null) {
         AlertDialog(
@@ -779,7 +791,7 @@ private fun RecipeCategoriesScreen(
                     },
                     enabled =
                         categoryName.trim().isNotBlank() &&
-                            recipeCategoryNameAvailable
+                                recipeCategoryNameAvailable
                 ) {
                     Text("Gem")
                 }
@@ -900,10 +912,10 @@ private fun IngredientCategoriesScreen(
 
     val ingredientCategoryNameAvailable =
         categoryName.isBlank() ||
-            state.isIngredientCategoryNameAvailable(
-                name = categoryName,
-                excludingId = editing?.id
-            )
+                state.isIngredientCategoryNameAvailable(
+                    name = categoryName,
+                    excludingId = editing?.id
+                )
 
     val activeDialog = showAdd || editing != null
     if (activeDialog) {
@@ -954,7 +966,7 @@ private fun IngredientCategoriesScreen(
                     },
                     enabled =
                         categoryName.trim().isNotBlank() &&
-                            ingredientCategoryNameAvailable
+                                ingredientCategoryNameAvailable
                 ) {
                     Text("Gem")
                 }
@@ -1091,8 +1103,11 @@ private fun SettingsScreen(
     var feedbackError by remember {
         mutableStateOf<String?>(null)
     }
-    var homeName by remember(household.name) {
-        mutableStateOf(household.name)
+    val safeHouseholdName = household.name.ifBlank { "Mit Hjem" }
+    val safeJoinCode = household.joinCode.ifBlank { "---" }
+
+    var homeName by remember(safeHouseholdName) {
+        mutableStateOf(safeHouseholdName)
     }
 
     if (showRenameHome) {
@@ -1134,8 +1149,8 @@ private fun SettingsScreen(
                     },
                     enabled =
                         !renameBusy &&
-                            homeName.trim().isNotBlank() &&
-                            homeName.trim() != household.name
+                                homeName.trim().isNotBlank() &&
+                                homeName.trim() != safeHouseholdName
                 ) {
                     Text("Gem")
                 }
@@ -1192,7 +1207,7 @@ private fun SettingsScreen(
                     },
                     enabled =
                         !feedbackBusy &&
-                            feedback.trim().length >= 3
+                                feedback.trim().length >= 3
                 ) {
                     Text("Send")
                 }
@@ -1223,7 +1238,7 @@ private fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            household.name,
+                            safeHouseholdName,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.weight(1f)
@@ -1231,7 +1246,7 @@ private fun SettingsScreen(
 
                         IconButton(
                             onClick = {
-                                homeName = household.name
+                                homeName = safeHouseholdName
                                 showRenameHome = true
                             }
                         ) {
@@ -1325,7 +1340,8 @@ private fun SettingsScreen(
                     )
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        ThemeMode.entries.forEach { choice ->
+                        @Suppress("EnumValuesSoftDeprecate")
+                        ThemeMode.values().forEach { choice ->
                             FilterChip(
                                 selected = themeMode == choice,
                                 onClick = { onThemeModeChange(choice) },
@@ -1343,7 +1359,7 @@ private fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            household.joinCode,
+                            safeJoinCode,
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.weight(1f)
@@ -1354,10 +1370,11 @@ private fun SettingsScreen(
                                 val clipboard = context.getSystemService(
                                     Context.CLIPBOARD_SERVICE
                                 ) as ClipboardManager
+                                @Suppress("UsePropertyAccessSyntax")
                                 clipboard.setPrimaryClip(
                                     ClipData.newPlainText(
                                         "Invitationskode",
-                                        household.joinCode
+                                        safeJoinCode
                                     )
                                 )
                                 Toast.makeText(

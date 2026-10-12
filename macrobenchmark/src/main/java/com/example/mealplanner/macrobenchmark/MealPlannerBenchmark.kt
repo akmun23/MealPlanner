@@ -20,7 +20,8 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class MealPlannerBenchmark {
-    @get:Rule val rule = MacrobenchmarkRule()
+    @get:Rule
+    val rule = MacrobenchmarkRule()
 
     @Test
     fun coldStartup() = rule.measureRepeated(
@@ -40,16 +41,18 @@ class MealPlannerBenchmark {
         compilationMode = CompilationMode.None(),
         startupMode = StartupMode.WARM,
         iterations = 8,
-        setupBlock = { startActivityAndWait() },
+        setupBlock = {
+            val device = UiDevice.getInstance(
+                InstrumentationRegistry.getInstrumentation()
+            )
+            check(device.wait(Until.hasObject(By.text("Opskrifter")), 10_000)) {
+                "Sign in and open your household before benchmarking tabs."
+            }
+        },
         measureBlock = {
             val device = UiDevice.getInstance(
                 InstrumentationRegistry.getInstrumentation()
             )
-            // Run after signing in; the benchmark APK replaces the installed
-            // app and the login state may need to be established again.
-            check(device.wait(Until.hasObject(By.text("Opskrifter")), 10_000)) {
-                "Sign in and open your household before benchmarking tabs."
-            }
             device.findObject(By.text("Opskrifter")).click()
             device.waitForIdle()
             device.findObject(By.text("Lager")).click()
@@ -85,7 +88,6 @@ class MealPlannerBenchmark {
         startupMode = StartupMode.WARM,
         iterations = 8,
         setupBlock = {
-            startActivityAndWait()
             val device = UiDevice.getInstance(
                 InstrumentationRegistry.getInstrumentation()
             )

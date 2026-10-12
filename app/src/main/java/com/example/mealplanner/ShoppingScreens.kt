@@ -25,7 +25,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -35,16 +34,13 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.rememberCoroutineScope
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.async
-import kotlinx.coroutines.coroutineScope
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
@@ -53,6 +49,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 
 private data class ShoppingSections(
     val all: List<ShoppingItem>,
@@ -97,20 +96,14 @@ fun ShoppingScreen(state: MealPlannerState) {
             }
             catalogJob.await() to weeklyJob.await()
         }
-        if (catalog.isSuccess && weekly.isSuccess) {
-            runCatching {
-                bilkaCatalog = parseBilkaCatalog(catalog.getOrThrow())
-                bilkaContext = decodeBilkaShoppingContext(weekly.getOrThrow())
-            }.onFailure {
-                bilkaCatalog = null
-                bilkaContext = null
-                bilkaLoadError = true
-            }
-        } else {
-            bilkaCatalog = null
-            bilkaContext = null
-            bilkaLoadError = true
-        }
+        // Preserve any successfully fetched portion of this week's Bilka
+        // information. A failing catalogue request must not also erase the
+        // shopping context (including already registered purchases), or vice
+        // versa. Purchases are still guarded whenever either fetch fails.
+        val result = decodeBilkaShoppingLoad(catalog, weekly)
+        result.catalog?.let { bilkaCatalog = it }
+        result.context?.let { bilkaContext = it }
+        bilkaLoadError = result.hasError
         bilkaLoading = false
     }
 
@@ -147,8 +140,8 @@ fun ShoppingScreen(state: MealPlannerState) {
                 text = {
                     Text(
                         "Købet kan allerede være lagt på Lager fra en anden enhed. " +
-                            "Prøv igen, eller brug manuel registrering, hvis du er sikker på, " +
-                            "at varen endnu ikke er registreret."
+                                "Prøv igen, eller brug manuel registrering, hvis du er sikker på, " +
+                                "at varen endnu ikke er registreret."
                     )
                 },
                 confirmButton = {
@@ -168,7 +161,7 @@ fun ShoppingScreen(state: MealPlannerState) {
             )
         } else if (!state.isLocalMode && weekId != null && catalog != null && selection != null &&
             (catalog.productsFor(item.ingredient.id).isNotEmpty() ||
-                selection.default(item.ingredient.id) != null)
+                    selection.default(item.ingredient.id) != null)
         ) {
             BilkaPurchaseDialog(
                 weekId = weekId,
@@ -406,7 +399,7 @@ fun ShoppingScreen(state: MealPlannerState) {
                     items(
                         items = uncategorized,
                         key = { "missing-${it.ingredient.id}" },
-                            contentType = { "shopping-line" }
+                        contentType = { "shopping-line" }
                     ) { item ->
                         ShoppingItemCard(
                             item = item,
@@ -529,7 +522,7 @@ private fun ShoppingItemCard(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         textDecoration = if (checked) TextDecoration.LineThrough
-                            else TextDecoration.None
+                        else TextDecoration.None
                     )
                     Text(
                         "Mangler ${state.formatBaseAmount(ingredient, missingBase)}",
@@ -538,7 +531,7 @@ private fun ShoppingItemCard(
                     )
                     Text(
                         "Behov ${state.formatBaseAmount(ingredient, item.requiredBase)} · " +
-                            "Lager ${state.formatBaseAmount(ingredient, item.pantryBase)}",
+                                "Lager ${state.formatBaseAmount(ingredient, item.pantryBase)}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2

@@ -29,7 +29,7 @@ internal class CachedHouseholdStore(context: Context) {
     }
 
     fun remove(userId: String) {
-        preferences.edit {remove(key(userId))}
+        preferences.edit { remove(key(userId)) }
     }
 
     private fun key(userId: String) = "account-household-$userId"

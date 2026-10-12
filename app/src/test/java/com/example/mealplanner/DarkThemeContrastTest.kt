@@ -18,8 +18,8 @@ class DarkThemeContrastTest {
             }
         }
         return 0.2126 * linear(color.red) +
-            0.7152 * linear(color.green) +
-            0.0722 * linear(color.blue)
+                0.7152 * linear(color.green) +
+                0.0722 * linear(color.blue)
     }
 
     private fun contrast(foreground: Color, background: Color): Double {

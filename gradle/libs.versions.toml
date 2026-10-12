@@ -16,6 +16,7 @@ kotlin = "2.4.21"
 composeBom = "2026.09.00"
 room = "2.8.5"
 runner = "1.7.0"
+uiautomator = "2.4.0"
 work = "2.12.0"
 androidxTestCore = "1.7.0"
 robolectric = "4.17"
@@ -23,9 +24,12 @@ ksp = "2.3.12"
 
 [libraries]
 androidx-benchmark-macro-junit4 = { module = "androidx.benchmark:benchmark-macro-junit4", version.ref = "benchmarkMacroJunit4" }
+androidx-compose-ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4" }
+androidx-compose-ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-runner = { module = "androidx.test:runner", version.ref = "runner" }
 androidx-junit = { module = "androidx.test.ext:junit", version.ref = "junitVersion" }
+androidx-uiautomator = { module = "androidx.test.uiautomator:uiautomator", version.ref = "uiautomator" }
 coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coilCompose" }
 bom = { module = "io.github.jan-tennert.supabase:bom", version.ref = "bom" }
 supabaseAuth = { module = "io.github.jan-tennert.supabase:auth-kt" }

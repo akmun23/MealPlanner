@@ -47,7 +47,7 @@ jobs:
       - name: Build R8-optimized production release APK and Play bundle
         run: bash ./gradlew :app:assembleRelease :app:bundleRelease --stacktrace
 
-      - name: Verify Play App Bundle includes R8 mapping and inspect native symbols
+      - name: Verify Play App Bundle R8 mapping and inspect native symbols
         run: |
           set -euo pipefail
           RELEASE_BUNDLE="$(find app/build/outputs/bundle/release -maxdepth 1 -name '*.aab' -print -quit)"
@@ -77,7 +77,7 @@ jobs:
           cat dex-optimization-report.json >> "$GITHUB_STEP_SUMMARY"
 
       # Emulator startup has proved unreliable on hosted runners and previously
-      # stalled until the workflow was cancelled. Keep build/R8 verification
+      # stalled until the workflow was canceled. Keep build/R8 verification
       # deterministic. Emulator runtime validation is a separate, explicitly
       # opt-in workflow (.github/workflows/r8-emulator-smoke.yml).
       - name: Check optional emulator smoke script syntax

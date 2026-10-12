@@ -179,13 +179,17 @@ private data class WeeklyPlanRow(
 )
 
 @Serializable
-private data class PlannedMealRow(
+internal data class PlannedMealRow(
     @SerialName("household_id") val householdId: String,
     @SerialName("weekly_plan_id") val weeklyPlanId: String,
     @SerialName("day_of_week") val dayOfWeek: Int,
     val mode: String,
     @SerialName("recipe_id") val recipeId: String? = null,
-    val locked: Boolean = false
+    // Required in database: DO NOT give this a Kotlin default.
+    // Kotlinx serialization omits default-valued properties by default,
+    // which made locked=false disappear from Supabase upserts and caused
+    // PostgreSQL's NOT NULL constraint to reject week sync repeatedly.
+    val locked: Boolean
 )
 
 @Serializable
@@ -245,7 +249,8 @@ data class CloudSnapshot(
     val weeklySandwichRecipeId: String?,
     val sandwichDay: DayOfWeek?,
     val history: List<MealHistoryEntry>,
-    val viewWeekStart: LocalDate = LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+    val viewWeekStart: LocalDate = LocalDate.now()
+        .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
 ) {
     companion object {
         val EMPTY = CloudSnapshot(
@@ -1302,6 +1307,7 @@ class CloudMealRepository(
         )
     }
 
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
     internal suspend fun startRealtime(
         scope: CoroutineScope,
         onEvent: suspend (CloudRealtimeEvent) -> Unit

@@ -407,36 +407,52 @@ internal object QueuedMutationCodec {
 internal fun QueuedMutation.key(): String = when (this) {
     is QueuedMutation.UpsertIngredient ->
         "ingredient:${ingredient.id}"
+
     is QueuedMutation.DeleteIngredient ->
         "ingredient:$ingredientId"
+
     is QueuedMutation.UpsertIngredientCategory ->
         "ingredient-category:${category.id}"
+
     is QueuedMutation.DeleteIngredientCategory ->
         "ingredient-category:$categoryId"
+
     is QueuedMutation.UpsertRecipe ->
         "recipe:${recipe.id}"
+
     is QueuedMutation.DeleteRecipe ->
         "recipe:$recipeId"
+
     is QueuedMutation.UpsertRecipeCategory ->
         "recipe-category:${category.id}"
+
     is QueuedMutation.DeleteRecipeCategory ->
         "recipe-category:$categoryId"
+
     is QueuedMutation.SetPantry ->
         "pantry:$ingredientId"
+
     is QueuedMutation.SetWeekState ->
         "week:$weeklyPlanId"
+
     is QueuedMutation.SetHouseholdSandwich ->
         "household-sandwich"
+
     is QueuedMutation.SetDayPrep ->
         "day-prep:$weeklyPlanId:$day"
+
     is QueuedMutation.ReplaceLunch ->
         "lunch:$weeklyPlanId"
+
     is QueuedMutation.SetShoppingIncluded ->
         "shopping-included:$weeklyPlanId:$ingredientId"
+
     is QueuedMutation.SetShoppingChecked ->
         "shopping-checked:$weeklyPlanId:$ingredientId"
+
     is QueuedMutation.ClearShopping ->
         "shopping-clear:$weeklyPlanId"
+
     is QueuedMutation.SetMealEaten ->
         "meal-eaten:$eatenOn"
 }
@@ -611,9 +627,8 @@ internal class OfflineSyncQueue(
                 existing?.conflict == true
             }
 
-        val entities = keyedMutations.mapIndexed {
-                index,
-                (mutation, id, existing) ->
+        val entities = keyedMutations.mapIndexed { index,
+                                                   (mutation, id, existing) ->
             PendingMutationEntity(
                 id = id,
                 revision = UUID.randomUUID().toString(),
@@ -664,7 +679,7 @@ internal class OfflineSyncQueue(
             .flatMap { entity ->
                 CloudSyncDomain.entries.filter { domain ->
                     entity.domainMask and
-                        (1 shl domain.ordinal) != 0
+                            (1 shl domain.ordinal) != 0
                 }
             }
             .toSet()
@@ -702,29 +717,30 @@ internal class OfflineSyncQueue(
         )
     }
 
-    suspend fun drainInApp(repository: CloudMealRepository): OfflineSyncDrainResult = withContext(Dispatchers.IO) {
-        val dao = database.pendingMutationDao()
+    suspend fun drainInApp(repository: CloudMealRepository): OfflineSyncDrainResult =
+        withContext(Dispatchers.IO) {
+            val dao = database.pendingMutationDao()
 
-        OfflineSyncDrain(
-            store = dao,
-            hasConflict = { pending, _ ->
-                pending.conflict
-            },
-            onSuperseded = { mutationId ->
-                val currentRemote = repository.loadCurrent()
-                dao.rebaseLatest(
-                    id = mutationId,
-                    baseSnapshotPayload = RoomSnapshotCodec.encode(currentRemote)
-                )
-            },
-            applyMutation = { mutation ->
-                applyQueuedMutation(
-                    repository = repository,
-                    mutation = mutation
-                )
-            }
-        ).drain(householdId)
-    }
+            OfflineSyncDrain(
+                store = dao,
+                hasConflict = { pending, _ ->
+                    pending.conflict
+                },
+                onSuperseded = { mutationId ->
+                    val currentRemote = repository.loadCurrent()
+                    dao.rebaseLatest(
+                        id = mutationId,
+                        baseSnapshotPayload = RoomSnapshotCodec.encode(currentRemote)
+                    )
+                },
+                applyMutation = { mutation ->
+                    applyQueuedMutation(
+                        repository = repository,
+                        mutation = mutation
+                    )
+                }
+            ).drain(householdId)
+        }
 }
 
 internal interface PendingMutationStore {

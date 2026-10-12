@@ -186,7 +186,7 @@ class OfflineSyncDrainTest {
             rows
                 .filter {
                     it.householdId == householdId &&
-                        !it.conflict
+                            !it.conflict
                 }
                 .sortedWith(
                     compareBy<PendingMutationEntity> {
@@ -205,7 +205,7 @@ class OfflineSyncDrainTest {
             rows
                 .filter {
                     it.batchId == batchId &&
-                        !it.conflict
+                            !it.conflict
                 }
                 .sortedWith(
                     compareBy<PendingMutationEntity> {
@@ -223,7 +223,7 @@ class OfflineSyncDrainTest {
         ): Int {
             val index = rows.indexOfFirst {
                 it.id == id &&
-                    it.revision == revision
+                        it.revision == revision
             }
             if (index < 0) return 0
             rows.removeAt(index)
@@ -269,7 +269,7 @@ class OfflineSyncDrainTest {
         ): PendingMutationEntity? =
             pending?.takeIf {
                 it.householdId == householdId &&
-                    !it.conflict
+                        !it.conflict
             }
 
         override suspend fun batch(
@@ -278,7 +278,7 @@ class OfflineSyncDrainTest {
             pending
                 ?.takeIf {
                     it.batchId == batchId &&
-                        !it.conflict
+                            !it.conflict
                 }
                 ?.let(::listOf)
                 .orEmpty()

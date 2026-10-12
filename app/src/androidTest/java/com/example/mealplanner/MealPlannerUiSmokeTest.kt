@@ -17,7 +17,8 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class MealPlannerUiSmokeTest {
-    @get:Rule val composeRule = createComposeRule()
+    @get:Rule
+    val composeRule = createComposeRule()
 
     @Test
     fun searchCanBeEnteredAndCleared() {
@@ -52,5 +53,22 @@ class MealPlannerUiSmokeTest {
         }
         composeRule.onNodeWithText("kg").performClick()
         composeRule.onNodeWithText("kg").assertIsSelected()
+    }
+
+    @Test
+    fun clickingSettingsButtonOpensSettingsScreen() {
+        composeRule.setContent {
+            MaterialTheme {
+                MealPlannerApp(
+                    household = HouseholdDto("test-id", "Test Husstand", "ABC123"),
+                    onRenameHousehold = { true },
+                    onLogout = {},
+                    themeMode = ThemeMode.SYSTEM,
+                    onThemeModeChange = {}
+                )
+            }
+        }
+        composeRule.onNodeWithContentDescription("Indstillinger").performClick()
+        composeRule.onNodeWithText("Indstillinger").assertExists()
     }
 }

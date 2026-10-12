@@ -28,7 +28,13 @@ class CompletedMealWeekLockTest {
         val history = listOf(MealHistoryEntry("recipe", monday.plusDays(2)))
         assertFalse(WeekRules.requiresRegenerationUnlock(monday, history, setOf(monday)))
         assertTrue(WeekRules.completedDayLocked(monday.plusDays(2), history, emptySet()))
-        assertFalse(WeekRules.completedDayLocked(monday.plusDays(2), history, setOf(monday.plusDays(2))))
+        assertFalse(
+            WeekRules.completedDayLocked(
+                monday.plusDays(2),
+                history,
+                setOf(monday.plusDays(2))
+            )
+        )
         assertFalse(WeekRules.completedDayLocked(monday.plusDays(3), history, emptySet()))
     }
 
@@ -50,6 +56,7 @@ class CompletedMealWeekLockTest {
         assertFalse(WeekRules.requiresRegenerationUnlock(monday, history, emptySet()))
         assertTrue(WeekRules.completedDaysForWeek(monday, history).isEmpty())
     }
+
     @Test
     fun regeneratedWeekPreservesRecordedDinner() {
         val completed = Recipe(id = "completed", name = "Completed", ingredients = emptyList())

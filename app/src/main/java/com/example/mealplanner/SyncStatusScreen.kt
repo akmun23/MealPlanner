@@ -96,7 +96,7 @@ internal fun SyncStatusScreen(
                 Button(
                     onClick = state::retryPendingSync,
                     enabled = state.pendingSyncCount > 0 &&
-                        state.syncConflictCount == 0,
+                            state.syncConflictCount == 0,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Prøv at synkronisere nu")

@@ -36,38 +36,56 @@ class MealCompletionRulesTest {
 
     @Test
     fun cannotConsumeMoreThanStockOrUnexpectedIngredients() {
-        assertNull(MealCompletionRules.remainingAfterMeal(
-            recipe, pantry, mapOf("milk" to 101.0)
-        ))
-        assertNull(MealCompletionRules.remainingAfterMeal(
-            recipe, pantry, mapOf("unknown" to 1.0)
-        ))
-        assertNull(MealCompletionRules.remainingAfterMeal(
-            recipe, pantry, mapOf("rice" to Double.NaN)
-        ))
-        assertNull(MealCompletionRules.remainingAfterMeal(
-            recipe, pantry, mapOf("rice" to -1.0)
-        ))
+        assertNull(
+            MealCompletionRules.remainingAfterMeal(
+                recipe, pantry, mapOf("milk" to 101.0)
+            )
+        )
+        assertNull(
+            MealCompletionRules.remainingAfterMeal(
+                recipe, pantry, mapOf("unknown" to 1.0)
+            )
+        )
+        assertNull(
+            MealCompletionRules.remainingAfterMeal(
+                recipe, pantry, mapOf("rice" to Double.NaN)
+            )
+        )
+        assertNull(
+            MealCompletionRules.remainingAfterMeal(
+                recipe, pantry, mapOf("rice" to -1.0)
+            )
+        )
     }
 
     @Test
     fun previousRegistrationPreventsDoubleConsumptionForSameDate() {
         val today = LocalDate.of(2026, 10, 11)
         assertTrue(MealCompletionRules.mayFinish(today, today, emptyList()))
-        assertTrue(MealCompletionRules.mayFinish(
-            today.minusDays(1), today, emptyList()
-        ))
-        assertFalse(MealCompletionRules.mayFinish(
-            today, today, listOf(MealHistoryEntry("dinner", today))
-        ))
-        assertFalse(MealCompletionRules.mayFinish(
-            today, today, listOf(MealHistoryEntry("other-recipe", today))
-        ))
-        assertFalse(MealCompletionRules.mayFinish(
-            today.plusDays(1), today, emptyList()
-        ))
-        assertFalse(MealCompletionRules.mayFinish(
-            today.minusDays(90), today, emptyList()
-        ))
+        assertTrue(
+            MealCompletionRules.mayFinish(
+                today.minusDays(1), today, emptyList()
+            )
+        )
+        assertFalse(
+            MealCompletionRules.mayFinish(
+                today, today, listOf(MealHistoryEntry("dinner", today))
+            )
+        )
+        assertFalse(
+            MealCompletionRules.mayFinish(
+                today, today, listOf(MealHistoryEntry("other-recipe", today))
+            )
+        )
+        assertFalse(
+            MealCompletionRules.mayFinish(
+                today.plusDays(1), today, emptyList()
+            )
+        )
+        assertFalse(
+            MealCompletionRules.mayFinish(
+                today.minusDays(90), today, emptyList()
+            )
+        )
     }
 }

@@ -28,6 +28,6 @@ internal object MealCompletionRules {
         today: java.time.LocalDate,
         history: List<MealHistoryEntry>,
     ): Boolean = !date.isAfter(today) &&
-        !date.isBefore(today.minusDays(89)) &&
-        history.none { it.eatenOn == date }
+            !date.isBefore(today.minusDays(89)) &&
+            history.none { it.eatenOn == date }
 }

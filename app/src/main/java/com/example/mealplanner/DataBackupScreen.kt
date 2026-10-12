@@ -105,8 +105,8 @@ internal fun DataBackupScreen(
                     SnapshotBackupCodec.decode(raw)
                 }
                 preview = "${snapshot.ingredients.size} ingredienser, " +
-                    "${snapshot.recipes.size} opskrifter og " +
-                    "${snapshot.pantry.size} lagervarer."
+                        "${snapshot.recipes.size} opskrifter og " +
+                        "${snapshot.pantry.size} lagervarer."
                 pendingImport = raw
             } catch (_: Exception) {
                 error = "Filen er ikke en gyldig MealPlanner-sikkerhedskopi."
@@ -123,9 +123,9 @@ internal fun DataBackupScreen(
             text = {
                 Text(
                     "Importen indeholder ${preview.orEmpty()} " +
-                        "Den erstatter alle opskrifter, ingredienser, lagervarer og " +
-                        "madplanen i denne lokale husstand. " +
-                        "Lav en sikkerhedskopi af dine nuværende data først."
+                            "Den erstatter alle opskrifter, ingredienser, lagervarer og " +
+                            "madplanen i denne lokale husstand. " +
+                            "Lav en sikkerhedskopi af dine nuværende data først."
                 )
             },
             confirmButton = {
@@ -190,12 +190,12 @@ internal fun DataBackupScreen(
                     )
                     Text(
                         "Eksportér ingredienser, opskrifter, lager, kategorier, " +
-                            "ugens madplan og madhistorik til en JSON-fil. " +
-                            "Filen indeholder ikke loginoplysninger."
+                                "ugens madplan og madhistorik til en JSON-fil. " +
+                                "Filen indeholder ikke loginoplysninger."
                     )
                     Text(
                         "JSON-filen kan åbnes og redigeres i en teksteditor. " +
-                            "Behold en kopi, før du foretager store ændringer.",
+                                "Behold en kopi, før du foretager store ændringer.",
                         style = MaterialTheme.typography.bodySmall
                     )
                 }
@@ -219,8 +219,8 @@ internal fun DataBackupScreen(
                         )
                         Text(
                             "I lokal tilstand kan du importere en tidligere sikkerhedskopi " +
-                                "eller en redigeret JSON-fil. Du ser indholdet og bekræfter, " +
-                                "før eksisterende data erstattes."
+                                    "eller en redigeret JSON-fil. Du ser indholdet og bekræfter, " +
+                                    "før eksisterende data erstattes."
                         )
                         OutlinedButton(
                             onClick = {
@@ -231,7 +231,7 @@ internal fun DataBackupScreen(
                         ) { Text("Importér data fra fil") }
                         Text(
                             "En madplan fra en tidligere uge nulstilles automatisk; " +
-                                "opskrifter og lager bevares.",
+                                    "opskrifter og lager bevares.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodySmall
                         )
@@ -241,8 +241,8 @@ internal fun DataBackupScreen(
                 item {
                     Text(
                         "Import er kun mulig i lokal tilstand. Direkte import " +
-                            "til en delt cloud-husstand kunne overskrive andre brugeres " +
-                            "ændringer og er derfor ikke tilladt.",
+                                "til en delt cloud-husstand kunne overskrive andre brugeres " +
+                                "ændringer og er derfor ikke tilladt.",
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.bodySmall
                     )

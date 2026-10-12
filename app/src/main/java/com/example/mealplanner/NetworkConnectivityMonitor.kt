@@ -12,7 +12,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 /**
  * Emits whether the app's default network is known to reach the internet.
  * Registering a callback avoids polling Supabase or waking the UI in a loop.
- * The callback is always unregistered when the household scope is cancelled.
+ * The callback is always unregistered when the household scope is canceled.
  */
 internal class NetworkConnectivityMonitor(context: Context) {
     private val manager = context.applicationContext.getSystemService(

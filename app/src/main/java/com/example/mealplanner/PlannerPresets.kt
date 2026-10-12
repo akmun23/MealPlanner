@@ -19,6 +19,7 @@ internal enum class PlannerPreset(val title: String, val description: String) {
             recency30Days = 55.0,
             previousPlanReuse = 65.0
         )
+
         PANTRY -> PlannerWeights().copy(
             pantryCoverage = 90.0,
             ingredientReuse = 70.0,

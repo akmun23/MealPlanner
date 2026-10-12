@@ -106,9 +106,9 @@ fun RecipesScreen(
     var canMakeOnly by rememberSaveable { mutableStateOf(false) }
 
     val mealOptions = listOf("Alle måltider") +
-        MealType.entries.map { it.danishName() }
+            MealType.entries.map { it.danishName() }
     val categoryOptions = listOf("Alle kategorier") +
-        state.recipeCategories.sortedBy { it.name.lowercase() }.map { it.name }
+            state.recipeCategories.sortedBy { it.name.lowercase() }.map { it.name }
 
     // Build recipe metadata only when recipes, ingredient protein flags, or
     // categories change. Search typing / pantry checkboxes only filter cached
@@ -157,21 +157,21 @@ fun RecipesScreen(
             recipeRows.filter { item ->
                 val recipe = item.recipe
                 (query.isBlank() ||
-                    recipe.name.contains(query, ignoreCase = true) ||
-                    item.categoryName.contains(query, ignoreCase = true) ||
-                    recipeCategoryDisplayName(
-                        item.categoryName, item.proteinNames
-                    ).contains(query, ignoreCase = true) ||
-                    recipeProteinLabel(item.proteinNames)
-                        .contains(query, ignoreCase = true) ||
-                    item.proteinNames.any {
-                        it.contains(query, ignoreCase = true)
-                    }) &&
-                    (mealFilter == "Alle måltider" ||
-                        recipe.mealType.danishName() == mealFilter) &&
-                    (categoryFilter == "Alle kategorier" ||
-                        item.categoryName == categoryFilter) &&
-                    (!canMakeOnly || recipe.id in makeableRecipeIds)
+                        recipe.name.contains(query, ignoreCase = true) ||
+                        item.categoryName.contains(query, ignoreCase = true) ||
+                        recipeCategoryDisplayName(
+                            item.categoryName, item.proteinNames
+                        ).contains(query, ignoreCase = true) ||
+                        recipeProteinLabel(item.proteinNames)
+                            .contains(query, ignoreCase = true) ||
+                        item.proteinNames.any {
+                            it.contains(query, ignoreCase = true)
+                        }) &&
+                        (mealFilter == "Alle måltider" ||
+                                recipe.mealType.danishName() == mealFilter) &&
+                        (categoryFilter == "Alle kategorier" ||
+                                item.categoryName == categoryFilter) &&
+                        (!canMakeOnly || recipe.id in makeableRecipeIds)
             }
         }
     }
@@ -245,8 +245,8 @@ fun RecipesScreen(
         if (filteredRecipes.isEmpty()) {
             item {
                 val isFiltered = searchQuery.isNotBlank() ||
-                    mealFilter != "Alle måltider" ||
-                    categoryFilter != "Alle kategorier" || canMakeOnly
+                        mealFilter != "Alle måltider" ||
+                        categoryFilter != "Alle kategorier" || canMakeOnly
 
                 EmptyCard(
                     title = if (state.recipes.isEmpty()) "Ingen opskrifter endnu" else "Ingen opskrifter fundet",
@@ -281,7 +281,7 @@ fun RecipesScreen(
                     proteinNames = item.proteinNames,
                     isSandwich =
                         state.weeklySandwichRecipeId ==
-                            item.recipe.id,
+                                item.recipe.id,
                     onClick = {
                         onOpenRecipe(item.recipe.id)
                     }
@@ -439,13 +439,24 @@ private fun ConsumeRecipeIngredientsDialog(
                                     Checkbox(
                                         checked = isChecked,
                                         onCheckedChange = { checked ->
-                                            ingredientSelection[ingredient.id] = Pair(checked, amountStr)
+                                            ingredientSelection[ingredient.id] =
+                                                Pair(checked, amountStr)
                                         }
                                     )
                                     Column(modifier = Modifier.weight(1f)) {
                                         Text(ingredient.name, fontWeight = FontWeight.Bold)
                                         Text(
-                                            "Krav: ${state.formatBaseAmount(ingredient, req.minimumAmountBase)} · Lager: ${state.formatBaseAmount(ingredient, availableBase)}",
+                                            "Krav: ${
+                                                state.formatBaseAmount(
+                                                    ingredient,
+                                                    req.minimumAmountBase
+                                                )
+                                            } · Lager: ${
+                                                state.formatBaseAmount(
+                                                    ingredient,
+                                                    availableBase
+                                                )
+                                            }",
                                             style = MaterialTheme.typography.bodySmall,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant
                                         )
@@ -459,12 +470,17 @@ private fun ConsumeRecipeIngredientsDialog(
                                             .fillMaxWidth()
                                             .padding(start = 36.dp, top = 2.dp)
                                     ) {
-                                        Text("Træk: ", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            "Træk: ",
+                                            style = MaterialTheme.typography.bodySmall,
+                                            fontWeight = FontWeight.Bold
+                                        )
                                         OutlinedTextField(
                                             value = amountStr,
                                             onValueChange = { newStr ->
                                                 val clean = newStr.replace(',', '.')
-                                                ingredientSelection[ingredient.id] = Pair(true, clean)
+                                                ingredientSelection[ingredient.id] =
+                                                    Pair(true, clean)
                                             },
                                             modifier = Modifier
                                                 .weight(1f)
@@ -472,7 +488,11 @@ private fun ConsumeRecipeIngredientsDialog(
                                             singleLine = true
                                         )
                                         Spacer(Modifier.width(6.dp))
-                                        Text(unit.symbol, style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+                                        Text(
+                                            unit.symbol,
+                                            style = MaterialTheme.typography.bodyMedium,
+                                            fontWeight = FontWeight.Bold
+                                        )
                                     }
                                 }
                             }
@@ -921,10 +941,10 @@ internal fun RecipeEditorScreen(
     var prerequisiteSearch by rememberSaveable(recipeId) { mutableStateOf("") }
     val recipeNameAvailable =
         name.isBlank() ||
-            state.isRecipeNameAvailable(
-                name,
-                excludingId = existing?.id
-            )
+                state.isRecipeNameAvailable(
+                    name,
+                    excludingId = existing?.id
+                )
 
     val drafts = rememberSaveable(recipeId, saver = recipeDraftSaver) {
         mutableStateListOf<DraftRequirement>().apply {
@@ -995,13 +1015,13 @@ internal fun RecipeEditorScreen(
                 items = state.ingredients
                     .filter { ingredient ->
                         prerequisiteSearch.isNotBlank() &&
-                            ingredient.name.contains(
-                                prerequisiteSearch,
-                                ignoreCase = true
-                            ) &&
-                            prerequisiteDrafts.none {
-                                it.ingredientId == ingredient.id
-                            }
+                                ingredient.name.contains(
+                                    prerequisiteSearch,
+                                    ignoreCase = true
+                                ) &&
+                                prerequisiteDrafts.none {
+                                    it.ingredientId == ingredient.id
+                                }
                     },
                 ingredientId = Ingredient::id,
                 ingredients = state.ingredients.toList(),
@@ -1016,13 +1036,13 @@ internal fun RecipeEditorScreen(
                 items = state.ingredients
                     .filter { ingredient ->
                         ingredientSearch.isNotBlank() &&
-                            ingredient.name.contains(
-                                ingredientSearch,
-                                ignoreCase = true
-                            ) &&
-                            drafts.none {
-                                it.ingredientId == ingredient.id
-                            }
+                                ingredient.name.contains(
+                                    ingredientSearch,
+                                    ignoreCase = true
+                                ) &&
+                                drafts.none {
+                                    it.ingredientId == ingredient.id
+                                }
                     },
                 ingredientId = Ingredient::id,
                 ingredients = state.ingredients.toList(),
@@ -1038,6 +1058,7 @@ internal fun RecipeEditorScreen(
         notes, sourceUrl, imageUri, instructionSteps.toList(), newMainStep, newSubStep,
         drafts.toList(), prerequisiteDrafts.toList()
     )
+
     val initialForm = remember(recipeId) { formSnapshot() }
     var changesSeen by rememberSaveable(recipeId) { mutableStateOf(false) }
     val hasUnsavedChanges = changesSeen || formSnapshot() != initialForm
@@ -1072,74 +1093,75 @@ internal fun RecipeEditorScreen(
     }
 
     val canSave = name.isNotBlank() &&
-                        recipeNameAvailable &&
-                        prepTimeValid &&
-                        drafts.isNotEmpty() &&
-                        drafts.all { it.amount > 0.0 } &&
-                        prerequisiteDrafts.all { it.amount > 0.0 }
+            recipeNameAvailable &&
+            prepTimeValid &&
+            drafts.isNotEmpty() &&
+            drafts.all { it.amount > 0.0 } &&
+            prerequisiteDrafts.all { it.amount > 0.0 }
     val saveHint = when {
         name.isBlank() -> "Angiv opskriftens navn."
         !recipeNameAvailable -> "Der findes allerede en opskrift med dette navn."
         !prepTimeValid -> "Tid skal være mellem 1 og 1440 minutter."
         drafts.isEmpty() -> "Tilføj mindst én ingrediens."
         drafts.any { it.amount <= 0.0 } ||
-            prerequisiteDrafts.any { it.amount <= 0.0 } ->
+                prerequisiteDrafts.any { it.amount <= 0.0 } ->
             "Ret de ugyldige ingrediensmængder."
+
         else -> null
     }
     val saveRecipe: () -> Unit = {
-                        // Text still in the "next step" field is part of the
-                        // draft too; Save must never silently discard it.
-                        val fullSteps = RecipeInstructionRules.withPendingText(
-                            instructionSteps.toList(), newMainStep, newSubStep
-                        )
-                        if (existing == null) {
-                            val savedId = state.addRecipe(
-                                name = name,
-                                mealType = mealType,
-                                autoRotationEnabled = autoRotationEnabled,
-                                prepMinutes = prepMinutes,
-                                categoryId = categoryId,
-                                notes = notes,
-                                instructionSteps = fullSteps,
-                                sourceUrl = sourceUrl,
-                                imageUri = imageUri,
-                                pantryPrerequisites =
-                                    if (mealType == MealType.DINNER) {
-                                        prerequisiteDrafts.toList()
-                                    } else {
-                                        emptyList()
-                                    },
-                                requirements = drafts.toList()
-                            )
+        // Text still in the "next step" field is part of the
+        // draft too; Save must never silently discard it.
+        val fullSteps = RecipeInstructionRules.withPendingText(
+            instructionSteps.toList(), newMainStep, newSubStep
+        )
+        if (existing == null) {
+            val savedId = state.addRecipe(
+                name = name,
+                mealType = mealType,
+                autoRotationEnabled = autoRotationEnabled,
+                prepMinutes = prepMinutes,
+                categoryId = categoryId,
+                notes = notes,
+                instructionSteps = fullSteps,
+                sourceUrl = sourceUrl,
+                imageUri = imageUri,
+                pantryPrerequisites =
+                    if (mealType == MealType.DINNER) {
+                        prerequisiteDrafts.toList()
+                    } else {
+                        emptyList()
+                    },
+                requirements = drafts.toList()
+            )
 
-                            if (savedId != null) {
-                                onSaved(savedId)
-                            }
-                        } else {
-                            val saved = state.updateRecipe(
-                                id = existing.id,
-                                name = name,
-                                mealType = mealType,
-                                autoRotationEnabled = autoRotationEnabled,
-                                prepMinutes = prepMinutes,
-                                categoryId = categoryId,
-                                notes = notes,
-                                instructionSteps = fullSteps,
-                                sourceUrl = sourceUrl,
-                                imageUri = imageUri,
-                                pantryPrerequisites =
-                                    if (mealType == MealType.DINNER) {
-                                        prerequisiteDrafts.toList()
-                                    } else {
-                                        emptyList()
-                                    },
-                                requirements = drafts.toList()
-                            )
-                            if (saved) {
-                                onSaved(existing.id)
-                            }
-                        }
+            if (savedId != null) {
+                onSaved(savedId)
+            }
+        } else {
+            val saved = state.updateRecipe(
+                id = existing.id,
+                name = name,
+                mealType = mealType,
+                autoRotationEnabled = autoRotationEnabled,
+                prepMinutes = prepMinutes,
+                categoryId = categoryId,
+                notes = notes,
+                instructionSteps = fullSteps,
+                sourceUrl = sourceUrl,
+                imageUri = imageUri,
+                pantryPrerequisites =
+                    if (mealType == MealType.DINNER) {
+                        prerequisiteDrafts.toList()
+                    } else {
+                        emptyList()
+                    },
+                requirements = drafts.toList()
+            )
+            if (saved) {
+                onSaved(existing.id)
+            }
+        }
     }
 
     SubpageScaffold(
@@ -1626,10 +1648,12 @@ private fun RequirementEditor(
                         if (converted != null) {
                             amountText = formatDisplayNumber(converted)
                         }
-                        onChange(draft.copy(
-                            unit = selected,
-                            amount = converted ?: 0.0
-                        ))
+                        onChange(
+                            draft.copy(
+                                unit = selected,
+                                amount = converted ?: 0.0
+                            )
+                        )
                     }
                 )
             }
@@ -1684,22 +1708,30 @@ internal fun IngredientEditorScreen(
 
     val ingredientNameAvailable =
         name.isBlank() ||
-            state.isIngredientNameAvailable(
-                name,
-                excludingId = existing?.id
-            )
+                state.isIngredientNameAvailable(
+                    name,
+                    excludingId = existing?.id
+                )
     var showDeleteConfirm by rememberSaveable(ingredientId) {
         mutableStateOf(false)
     }
 
     val typeChangeAllowed = existing == null ||
-        state.canChangeIngredientQuantityType(existing.id, type)
+            state.canChangeIngredientQuantityType(existing.id, type)
     val originalForm = remember(ingredientId) {
         listOf(name, type, preferredUnit, isProtein, neverBuy, shoppingCategoryId, imageUri)
     }
     var changesSeen by rememberSaveable(ingredientId) { mutableStateOf(false) }
     val hasUnsavedChanges = changesSeen ||
-        listOf(name, type, preferredUnit, isProtein, neverBuy, shoppingCategoryId, imageUri) != originalForm
+            listOf(
+                name,
+                type,
+                preferredUnit,
+                isProtein,
+                neverBuy,
+                shoppingCategoryId,
+                imageUri
+            ) != originalForm
     androidx.compose.runtime.LaunchedEffect(hasUnsavedChanges) {
         if (hasUnsavedChanges) changesSeen = true
     }
@@ -1784,41 +1816,41 @@ internal fun IngredientEditorScreen(
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
-                Button(
-                    onClick = {
-                        val saved = if (existing == null) {
-                            state.addIngredient(
-                                name = name,
-                                type = type,
-                                shoppingCategoryId = shoppingCategoryId,
-                                isProtein = isProtein,
-                                neverBuy = neverBuy,
-                                imageUri = imageUri,
-                                preferredUnit = preferredUnit
-                            )
-                        } else {
-                            state.updateIngredient(
-                                id = existing.id,
-                                name = name,
-                                type = type,
-                                shoppingCategoryId = shoppingCategoryId,
-                                isProtein = isProtein,
-                                neverBuy = neverBuy,
-                                preferredUnit = preferredUnit,
-                                imageUri = imageUri
-                            )
-                        }
+                    Button(
+                        onClick = {
+                            val saved = if (existing == null) {
+                                state.addIngredient(
+                                    name = name,
+                                    type = type,
+                                    shoppingCategoryId = shoppingCategoryId,
+                                    isProtein = isProtein,
+                                    neverBuy = neverBuy,
+                                    imageUri = imageUri,
+                                    preferredUnit = preferredUnit
+                                )
+                            } else {
+                                state.updateIngredient(
+                                    id = existing.id,
+                                    name = name,
+                                    type = type,
+                                    shoppingCategoryId = shoppingCategoryId,
+                                    isProtein = isProtein,
+                                    neverBuy = neverBuy,
+                                    preferredUnit = preferredUnit,
+                                    imageUri = imageUri
+                                )
+                            }
 
-                        if (saved) {
-                            onSaved()
-                        }
-                    },
-                    enabled = name.isNotBlank() && ingredientNameAvailable && typeChangeAllowed,
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
-                ) {
-                    Text("Gem")
-                }
+                            if (saved) {
+                                onSaved()
+                            }
+                        },
+                        enabled = name.isNotBlank() && ingredientNameAvailable && typeChangeAllowed,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp)
+                    ) {
+                        Text("Gem")
+                    }
 
                 }
             }

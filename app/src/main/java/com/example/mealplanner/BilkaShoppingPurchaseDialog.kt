@@ -24,7 +24,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -39,8 +40,8 @@ private fun kroner(ore: Long): String =
 
 private fun productLabel(product: BilkaProduct): String =
     product.brandLabel + " · " + product.name +
-        if (product.packageQuantity != null && product.packageUnit != null)
-            " · " + product.packageQuantity + " " + product.packageUnit else ""
+            if (product.packageQuantity != null && product.packageUnit != null)
+                " · " + product.packageQuantity + " " + product.packageUnit else ""
 
 internal fun bilkaShoppingLine(
     item: ShoppingItem,
@@ -51,9 +52,9 @@ internal fun bilkaShoppingLine(
     val recorded = context.purchase(item.ingredient.id)
     if (recorded?.purchasedAmountBase != null) {
         return "Allerede lagt på Lager: " +
-            (recorded.packageCount?.let { "$it pakker" }
-                ?: "registreret køb") +
-            (recorded.paidTotalOre?.let { " · Betalt: " + kroner(it) } ?: "")
+                (recorded.packageCount?.let { "$it pakker" }
+                    ?: "registreret køb") +
+                (recorded.paidTotalOre?.let { " · Betalt: " + kroner(it) } ?: "")
     }
     val standard = context.default(item.ingredient.id) ?: return null
     val product = catalog.product(standard.productId) ?: return null
@@ -61,15 +62,15 @@ internal fun bilkaShoppingLine(
         item.ingredient, product, standard.packageBaseAmountOverride
     )
     val packs = BilkaPackageMath.packageCount(item.requiredBase, item.pantryBase, amount)
-    return when {
-        packs == null -> "Bilka: " + product.brandLabel + " · pakkestørrelse skal bekræftes"
-        packs == 0 -> "Bilka: nok på Lager · " + product.brandLabel
+    return when (packs) {
+        null -> "Bilka: " + product.brandLabel + " · pakkestørrelse skal bekræftes"
+        0 -> "Bilka: nok på Lager · " + product.brandLabel
         else -> "Bilka: $packs × " + (product.packageQuantity?.let {
             formatDisplayNumber(it) + " " + (product.packageUnit ?: "")
         } ?: product.name) +
-            (BilkaPackageMath.estimatedCostOre(product.priceOre, packs)?.let {
-                " · ca. " + kroner(it)
-            } ?: "")
+                (BilkaPackageMath.estimatedCostOre(product.priceOre, packs)?.let {
+                    " · ca. " + kroner(it)
+                } ?: "")
     }
 }
 
@@ -88,7 +89,9 @@ internal fun BilkaPurchaseDialog(
     onDismiss: () -> Unit,
     onSaved: () -> Unit
 ) {
-    val maxDialogHeight = (LocalConfiguration.current.screenHeightDp.dp - 220.dp)
+    val windowInfo = LocalWindowInfo.current
+    val screenHeightDp = with(LocalDensity.current) { windowInfo.containerSize.height.toDp() }
+    val maxDialogHeight = (screenHeightDp - 220.dp)
         .coerceIn(180.dp, 460.dp)
     val ingredient = item.ingredient
     val defaultRow = shopping.default(ingredient.id)
@@ -98,7 +101,7 @@ internal fun BilkaPurchaseDialog(
             p.quantityKind == null || p.quantityKind.name == ingredient.quantityType.name
         }
     val initial = previous?.productId ?: defaultRow?.productId
-        ?: candidates.firstOrNull()?.id
+    ?: candidates.firstOrNull()?.id
 
     val scope = rememberCoroutineScope()
     var selectedId by remember(ingredient.id) { mutableStateOf(initial) }
@@ -124,12 +127,14 @@ internal fun BilkaPurchaseDialog(
         mutableStateOf(recommended.toString())
     }
     var amountText by remember(ingredient.id) {
-        mutableStateOf(formatDisplayNumber(
-            ingredient.preferredUnit.fromBase(
-                BilkaPackageMath.missing(item.requiredBase, item.pantryBase)
-                    .coerceAtLeast(1.0)
+        mutableStateOf(
+            formatDisplayNumber(
+                ingredient.preferredUnit.fromBase(
+                    BilkaPackageMath.missing(item.requiredBase, item.pantryBase)
+                        .coerceAtLeast(1.0)
+                )
             )
-        ))
+        )
     }
     var alternativesOpen by remember(ingredient.id) { mutableStateOf(false) }
     var paidText by remember(ingredient.id) { mutableStateOf("") }
@@ -155,10 +160,10 @@ internal fun BilkaPurchaseDialog(
         }
     }
     val valid = baseAmount != null &&
-        baseAmount <= 10_000_000.0 &&
-        (if (manual) manualName.trim().length >= 2
-         else currentProduct != null && count != null && count in 1..500) &&
-        (paidText.isBlank() || paidOre != null)
+            baseAmount <= 10_000_000.0 &&
+            (if (manual) manualName.trim().length >= 2
+            else currentProduct != null && count != null && count in 1..500) &&
+            (paidText.isBlank() || paidOre != null)
 
     AlertDialog(
         onDismissRequest = { if (!saving) onDismiss() },
@@ -221,10 +226,10 @@ internal fun BilkaPurchaseDialog(
                                                 defaultRow.packageBaseAmountOverride else null
                                         )
                                         packageCountText = (
-                                            BilkaPackageMath.packageCount(
-                                                item.requiredBase, item.pantryBase, size
-                                            )?.coerceAtLeast(1) ?: 1
-                                        ).toString()
+                                                BilkaPackageMath.packageCount(
+                                                    item.requiredBase, item.pantryBase, size
+                                                )?.coerceAtLeast(1) ?: 1
+                                                ).toString()
                                         if (!priceEdited) paidText = ""
                                         error = null
                                     }
@@ -261,7 +266,8 @@ internal fun BilkaPurchaseDialog(
                     OutlinedTextField(
                         value = amountText,
                         onValueChange = {
-                            amountText = it.filter { c -> c.isDigit() || c == ',' || c == '.' }.take(20)
+                            amountText =
+                                it.filter { c -> c.isDigit() || c == ',' || c == '.' }.take(20)
                         },
                         label = { Text("Faktisk købt mængde") },
                         modifier = Modifier.fillMaxWidth(),
@@ -283,7 +289,7 @@ internal fun BilkaPurchaseDialog(
                 if (baseAmount != null) {
                     Text(
                         "Til Lager: " +
-                            state.formatBaseAmount(ingredient, baseAmount),
+                                state.formatBaseAmount(ingredient, baseAmount),
                         fontWeight = FontWeight.SemiBold
                     )
                 }
@@ -339,7 +345,7 @@ internal fun BilkaPurchaseDialog(
                                     onSaved()
                                 } else {
                                     error = "Købet kunne ikke bekræftes. " +
-                                        "Opdatér indkøbslisten, før du prøver igen."
+                                            "Opdatér indkøbslisten, før du prøver igen."
                                 }
                             }
                         }

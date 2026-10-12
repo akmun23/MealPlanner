@@ -57,27 +57,28 @@ internal object BilkaSelectionRules {
             .mapNotNull { it.unitPriceBasis }
             .distinct()
         val comparable = byUnitPrice && bases.size == 1 &&
-            products.all { it.unitPriceOre == null || it.unitPriceBasis == bases.single() }
+                products.all { it.unitPriceOre == null || it.unitPriceBasis == bases.single() }
         // Computing a normalized score once per SKU keeps scrolling/recomposition
         // inexpensive even after many manually loaded result pages.
         val relevance = if (!byUnitPrice && ingredientName != null)
             products.associate { it.id to ingredientNameScore(ingredientName, it.name) }
         else emptyMap()
-        return products.sortedWith(compareBy<BilkaProduct>(
-            { if (it.id == chosenProductId) 0 else 1 },
-            {
-                if (!byUnitPrice && ingredientName != null)
-                    -(relevance[it.id] ?: 0)
-                else 0
-            },
-            { if (!byUnitPrice) it.priceOre == null else if (comparable) it.unitPriceOre == null else false },
-            {
-                if (comparable) it.unitPriceOre ?: Double.MAX_VALUE
-                else (rankById[it.id] ?: Int.MAX_VALUE).toDouble()
-            },
-            { it.brandLabel },
-            { it.name }
-        ))
+        return products.sortedWith(
+            compareBy(
+                { if (it.id == chosenProductId) 0 else 1 },
+                {
+                    if (!byUnitPrice && ingredientName != null)
+                        -(relevance[it.id] ?: 0)
+                    else 0
+                },
+                { if (!byUnitPrice) it.priceOre == null else if (comparable) it.unitPriceOre == null else false },
+                {
+                    if (comparable) it.unitPriceOre ?: Double.MAX_VALUE
+                    else (rankById[it.id] ?: Int.MAX_VALUE).toDouble()
+                },
+                { it.brandLabel },
+                { it.name }
+            ))
     }
 
     fun canConfirm(
@@ -86,6 +87,6 @@ internal object BilkaSelectionRules {
         currentDefaultId: String?
     ): Boolean =
         selectedProductId != null &&
-            selectedProductId in suggestedProductIds &&
-            selectedProductId != currentDefaultId
+                selectedProductId in suggestedProductIds &&
+                selectedProductId != currentDefaultId
 }

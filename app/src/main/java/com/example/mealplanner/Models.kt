@@ -118,12 +118,12 @@ internal fun canChangeIngredientQuantityType(
     pantryBase: Double,
     recipes: List<Recipe>
 ): Boolean = ingredient.quantityType == newType || (
-    pantryBase == 0.0 &&
-        recipes.none { recipe ->
-            recipe.ingredients.any { it.ingredientId == ingredient.id } ||
-                recipe.pantryPrerequisites.any { it.ingredientId == ingredient.id }
-        }
-)
+        pantryBase == 0.0 &&
+                recipes.none { recipe ->
+                    recipe.ingredients.any { it.ingredientId == ingredient.id } ||
+                            recipe.pantryPrerequisites.any { it.ingredientId == ingredient.id }
+                }
+        )
 
 @Serializable
 data class RecipeIngredient(

@@ -27,7 +27,8 @@ object WeekRules {
         weekStart: LocalDate,
         history: List<MealHistoryEntry>,
         unlockedWeeks: Set<LocalDate>
-    ): Boolean = weekStart !in unlockedWeeks && completedDaysForWeek(weekStart, history).isNotEmpty()
+    ): Boolean =
+        weekStart !in unlockedWeeks && completedDaysForWeek(weekStart, history).isNotEmpty()
 
     fun completedDayLocked(
         date: LocalDate,
