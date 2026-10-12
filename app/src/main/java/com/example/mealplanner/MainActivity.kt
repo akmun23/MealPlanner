@@ -300,23 +300,23 @@ fun MealPlannerApp(
 
     fun navigateBack() {
         page = when (val current = page) {
-                AppPage.Settings -> null
-                AppPage.MealHistory -> null
-                AppPage.PlannerSettings -> AppPage.Settings
-                AppPage.BilkaApiSettings -> bilkaSettingsReturnPage
-                AppPage.BilkaProducts -> AppPage.Settings
-                is AppPage.BilkaProductPicker -> AppPage.BilkaProducts
-                AppPage.SyncStatus -> AppPage.Settings
-                AppPage.DataBackup -> AppPage.Settings
-                AppPage.IngredientCategories -> AppPage.Settings
-                AppPage.RecipeCategories -> AppPage.Settings
-                is AppPage.IngredientEditor -> null
-                is AppPage.RecipeDetail -> null
-                is AppPage.RecipeEditor ->
-                    current.recipeId?.let { AppPage.RecipeDetail(it) }
+            AppPage.Settings -> null
+            AppPage.MealHistory -> null
+            AppPage.PlannerSettings -> AppPage.Settings
+            AppPage.BilkaApiSettings -> bilkaSettingsReturnPage
+            AppPage.BilkaProducts -> AppPage.Settings
+            is AppPage.BilkaProductPicker -> AppPage.BilkaProducts
+            AppPage.SyncStatus -> AppPage.Settings
+            AppPage.DataBackup -> AppPage.Settings
+            AppPage.IngredientCategories -> AppPage.Settings
+            AppPage.RecipeCategories -> AppPage.Settings
+            is AppPage.IngredientEditor -> null
+            is AppPage.RecipeDetail -> null
+            is AppPage.RecipeEditor ->
+                current.recipeId?.let { AppPage.RecipeDetail(it) }
 
-                null -> null
-            }
+            null -> null
+        }
     }
 
     BackHandler(enabled = page != null) {
