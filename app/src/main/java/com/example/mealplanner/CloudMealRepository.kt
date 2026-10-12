@@ -7,6 +7,7 @@ import android.net.Uri
 import androidx.core.net.toUri
 import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.postgrest.from
+import io.github.jan.supabase.postgrest.postgrest
 import io.github.jan.supabase.postgrest.query.Columns
 import io.github.jan.supabase.realtime.HasOldRecord
 import io.github.jan.supabase.realtime.HasRecord
@@ -29,6 +30,8 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
@@ -840,24 +843,46 @@ class CloudMealRepository(
             }
         }
 
-    suspend fun upsertPantryLot(lot: PantryLot) = withContext(Dispatchers.IO) {
-        require(lot.remainingBase >= 0.0 && lot.originalBase > 0.0 &&
+    suspend fun upsertPantryLot(
+        lot: PantryLot, expectedVersion: Long, transactionId: String
+    ) = withContext(Dispatchers.IO) {
+        require(lot.remainingBase.isFinite() && lot.remainingBase >= 0.0 &&
+            lot.originalBase.isFinite() && lot.originalBase > 0.0 &&
             lot.remainingBase <= lot.originalBase && lot.originalBase <= 1e10)
-        supabase.from("pantry_lots").upsert(
-            PantryLotRow(
-                id = lot.id,
-                householdId = householdId,
-                ingredientId = lot.ingredientId,
-                originalBase = lot.originalBase,
-                remainingBase = lot.remainingBase,
-                opened = lot.opened,
-                legacyUnknown = lot.legacyUnknown,
-                productId = lot.productId,
-                purchaseEventKey = lot.purchaseEventKey,
-                bestBefore = lot.bestBefore,
-                version = lot.version
-            )
-        ) { onConflict = "id" }
+        require(expectedVersion >= 0L)
+        // The receipt is written atomically with the conditional versioned
+        // update. Retrying an already-applied WorkManager job is a no-op.
+        supabase.postgrest.rpc(
+            function = "upsert_pantry_lot_once",
+            parameters = buildJsonObject {
+                put("p_household_id", householdId)
+                put("p_lot_id", lot.id)
+                put("p_ingredient_id", lot.ingredientId)
+                put("p_original_amount_base", lot.originalBase)
+                put("p_remaining_amount_base", lot.remainingBase)
+                put("p_opened", lot.opened)
+                put("p_legacy_unknown", lot.legacyUnknown)
+                put("p_product_id", lot.productId ?: "")
+                put("p_best_before", lot.bestBefore ?: "")
+                put("p_expected_version", expectedVersion)
+                put("p_event_id", transactionId)
+            }
+        )
+    }
+
+    suspend fun consumePantryLotsOnce(
+        ingredientId: String, amountBase: Double, transactionId: String
+    ) = withContext(Dispatchers.IO) {
+        require(amountBase.isFinite() && amountBase > 0.0 && amountBase <= 1e10)
+        supabase.postgrest.rpc(
+            function = "consume_pantry_lots_once",
+            parameters = buildJsonObject {
+                put("p_household_id", householdId)
+                put("p_ingredient_id", ingredientId)
+                put("p_amount_base", amountBase)
+                put("p_transaction_key", transactionId)
+            }
+        )
     }
 
     internal suspend fun loadWeekSnapshot(weekStart: LocalDate = currentWeekStart()): CloudWeekSnapshot =
