@@ -18,6 +18,14 @@ fun QuantityType.danishName(): String = when (this) {
     QuantityType.PACKAGE -> "pakke/dåse"
 }
 
+/** Canonical physical storage unit, NOT the preferred unit shown to users. */
+fun QuantityType.baseMeasurementUnit(): MeasurementUnit = when (this) {
+    QuantityType.MASS -> MeasurementUnit.GRAM
+    QuantityType.VOLUME -> MeasurementUnit.MILLILITRE
+    QuantityType.COUNT -> MeasurementUnit.PIECE
+    QuantityType.PACKAGE -> MeasurementUnit.PACK
+}
+
 enum class MeasurementUnit(
     val symbol: String,
     val quantityType: QuantityType,
