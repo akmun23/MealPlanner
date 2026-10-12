@@ -120,4 +120,23 @@ class QuantityPlanningRulesTest {
         assertEquals(0.0, plan.purchasedBase, 0.000001)
         assertEquals(0.0, plan.surplusBase, 0.000001)
     }
+    @Test
+    fun conflictingOfflineRulesMustFailClosed() {
+        val ham = ingredient("ham", QuantityType.MASS)
+        val duplicatePacks = listOf(
+            IngredientUnitConversion(QuantityUnit.PACK, 200.0),
+            IngredientUnitConversion(QuantityUnit.PACK, 150.0)
+        )
+        assertNull(QuantityConversionEngine.toBase(
+            ham, 1.0, QuantityUnit.PACK, duplicatePacks
+        ))
+        assertNull(QuantityPlanningRules.planPackages(
+            ham, 200.0, 0.0, QuantityUnit.PACK, duplicatePacks
+        ))
+        assertNull(QuantityPlanningRules.changeDisplayUnit(
+            RecipeQuantityRules.freeze("ham", 200.0, MeasurementUnit.GRAM)!!,
+            ham, QuantityUnit.PACK, duplicatePacks
+        ))
+    }
+
 }
