@@ -21,6 +21,14 @@ internal enum class QuantityUnit(val symbol: String, val nativeUnit: Measurement
     GARLIC_CLOVE("fed", null),
     GARLIC_HEAD("hvidløg", null);
 
+    fun labelFor(amount: Double): String = when (this) {
+        PACK -> if (amount == 1.0) "pakke" else "pakker"
+        CAN -> if (amount == 1.0) "dåse" else "dåser"
+        GARLIC_CLOVE -> if (amount == 1.0) "fed" else "fed"
+        GARLIC_HEAD -> "hvidløg"
+        else -> symbol
+    }
+
     companion object {
         fun fromLegacy(unit: MeasurementUnit): QuantityUnit =
             entries.first { it.name == unit.name }
@@ -103,6 +111,33 @@ internal object RecipeQuantityRules {
         )
     }
 
+    /** Used in the next editor phase once the household has confirmed a
+     *  package/weight or clove/head conversion for this ingredient. */
+    fun freeze(
+        ingredient: Ingredient,
+        displayAmount: Double,
+        displayUnit: QuantityUnit,
+        rules: List<IngredientUnitConversion>
+    ): RecipeIngredient? {
+        val factor = QuantityConversionEngine.basePerUnit(
+            ingredient, displayUnit, rules
+        ) ?: return null
+        val base = QuantityConversionEngine.toBase(
+            ingredient, displayAmount, displayUnit, rules
+        ) ?: return null
+        val estimated = if (displayUnit.nativeUnit?.quantityType == ingredient.quantityType) {
+            false
+        } else rules.firstOrNull { it.unit == displayUnit }?.approximate == true
+        return RecipeIngredient(
+            ingredientId = ingredient.id,
+            amountBase = base,
+            displayAmount = displayAmount,
+            displayUnitCode = displayUnit.name,
+            basePerDisplayUnit = factor,
+            conversionApproximate = estimated
+        )
+    }
+
     fun hasValidSnapshot(requirement: RecipeIngredient): Boolean {
         val amount = requirement.displayAmount ?: return false
         val factor = requirement.basePerDisplayUnit ?: return false
@@ -119,11 +154,12 @@ internal object RecipeQuantityRules {
 
     fun amountAndUnit(requirement: RecipeIngredient, ingredient: Ingredient): String {
         if (hasValidSnapshot(requirement)) {
-            val label = QuantityUnit.entries.firstOrNull {
+            val displayUnit = QuantityUnit.entries.firstOrNull {
                 it.name == requirement.displayUnitCode
-            }?.symbol ?: requirement.displayUnitCode.orEmpty()
-            if (label.isNotBlank()) {
-                return "${formatDisplayNumber(requirement.displayAmount!!)} $label"
+            }
+            if (displayUnit != null) {
+                val amount = requirement.displayAmount!!
+                return "${formatDisplayNumber(amount)} ${displayUnit.labelFor(amount)}"
             }
         }
         // Older recipes never recorded the chosen display unit.
