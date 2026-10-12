@@ -208,4 +208,56 @@ class QuantityConversionFoundationTest {
         )
         assertEquals(grams, RecipeRequirementRules.combineIngredients(listOf(grams)).single())
     }
+    @Test
+    fun correctingOneSpoonDefinitionRecalculatesAllKnownRecipeMeasures() {
+        val spice = ingredient("spice", QuantityType.MASS, MeasurementUnit.GRAM)
+        val before = listOf(
+            IngredientUnitConversion(QuantityUnit.TABLESPOON, 6.0, approximate = true),
+            IngredientUnitConversion(QuantityUnit.PACK, 200.0)
+        )
+        val after = listOf(
+            IngredientUnitConversion(QuantityUnit.TABLESPOON, 5.0),
+            IngredientUnitConversion(QuantityUnit.PACK, 150.0)
+        )
+        val original = RecipeQuantityRules.freeze(
+            spice, 2.0, QuantityUnit.TABLESPOON, before
+        )!!
+        val corrected = RecipeQuantityRules.correctedIngredientMeasure(original, before, after)
+        assertEquals(10.0, corrected.amountBase, 0.000001)
+        assertEquals(2.0, corrected.displayAmount!!, 0.000001)
+        assertEquals(5.0, corrected.basePerDisplayUnit!!, 0.000001)
+        assertFalse(corrected.conversionApproximate)
+        assertEquals("2 spsk.", RecipeQuantityRules.amountAndUnit(corrected, spice))
+        assertTrue(RecipeQuantityRules.hasValidSnapshot(corrected))
+
+        val historicPackage = RecipeQuantityRules.freeze(
+            spice, 1.0, QuantityUnit.PACK, before
+        )!!
+        assertEquals(
+            historicPackage,
+            RecipeQuantityRules.correctedIngredientMeasure(historicPackage, before, after)
+        )
+        val legacy = RecipeIngredient("spice", amountBase = 15.0)
+        assertEquals(legacy, RecipeQuantityRules.correctedIngredientMeasure(legacy, before, after))
+    }
+
+    @Test
+    fun changingAnUnrelatedOrStaleProfileCannotRewriteAnOldRecipe() {
+        val spice = ingredient("spice", QuantityType.MASS, MeasurementUnit.GRAM)
+        val before = listOf(IngredientUnitConversion(QuantityUnit.TABLESPOON, 6.0))
+        val after = listOf(IngredientUnitConversion(QuantityUnit.TABLESPOON, 5.0))
+        val original = RecipeQuantityRules.freeze(
+            spice, 1.0, QuantityUnit.TABLESPOON, before
+        )!!
+        val mismatched = original.copy(basePerDisplayUnit = 10.0, amountBase = 10.0)
+        assertEquals(
+            mismatched,
+            RecipeQuantityRules.correctedIngredientMeasure(mismatched, before, after)
+        )
+        assertEquals(
+            original,
+            RecipeQuantityRules.correctedIngredientMeasure(original, before, emptyList())
+        )
+    }
+
 }
