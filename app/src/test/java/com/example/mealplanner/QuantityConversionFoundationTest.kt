@@ -109,6 +109,28 @@ class QuantityConversionFoundationTest {
     }
 
     @Test
+    fun combiningRequirementsPreservesEstimatedConversionRegardlessOfRowOrder() {
+        val paprika = ingredient("paprika", QuantityType.MASS, MeasurementUnit.GRAM)
+        val measured = RecipeQuantityRules.freeze(
+            paprika, 1.0, QuantityUnit.TABLESPOON,
+            listOf(IngredientUnitConversion(QuantityUnit.TABLESPOON, 6.0))
+        )!!
+        val estimated = RecipeQuantityRules.freeze(
+            paprika, 1.0, QuantityUnit.TABLESPOON,
+            listOf(IngredientUnitConversion(QuantityUnit.TABLESPOON, 6.0, approximate = true))
+        )!!
+
+        for (rows in listOf(listOf(measured, estimated), listOf(estimated, measured))) {
+            val combined = RecipeRequirementRules.combineIngredients(rows).single()
+            assertEquals(12.0, combined.amountBase, 0.000001)
+            assertEquals(2.0, combined.displayAmount!!, 0.000001)
+            assertEquals("TABLESPOON", combined.displayUnitCode)
+            assertTrue("Combining a measured and estimated quantity must remain approximate",
+                combined.conversionApproximate)
+        }
+    }
+
+    @Test
     fun legacyRecipeIngredientSerializationRemainsCompatible() {
         val json = Json { ignoreUnknownKeys = true }
         val legacy = json.decodeFromString<RecipeIngredient>(
