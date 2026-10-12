@@ -131,6 +131,46 @@ class QuantityConversionFoundationTest {
     }
 
     @Test
+    fun editingRecipeMetadataDoesNotRewriteAnUneditablePackSnapshot() {
+        val ham = ingredient("ham", QuantityType.MASS, MeasurementUnit.GRAM)
+        val original = RecipeQuantityRules.freeze(
+            ham, 1.0, QuantityUnit.PACK,
+            listOf(IngredientUnitConversion(QuantityUnit.PACK, 200.0))
+        )!!
+        // The phase-1 editor must temporarily show 200 g, but a name/notes
+        // update must not replace the frozen recipe text "1 pakke".
+        val unchangedEditorQuantity =
+            RecipeQuantityRules.freeze("ham", 200.0, MeasurementUnit.GRAM)!!
+        assertEquals(
+            original,
+            RecipeQuantityRules.retainUneditableSnapshot(original, unchangedEditorQuantity, ham)
+        )
+
+        // Explicit quantity edits continue to update the physical requirement.
+        val changedQuantity = RecipeQuantityRules.freeze("ham", 250.0, MeasurementUnit.GRAM)!!
+        assertEquals(
+            changedQuantity,
+            RecipeQuantityRules.retainUneditableSnapshot(original, changedQuantity, ham)
+        )
+
+        // Normal same-dimension edits may change the visible unit.
+        val legacyNative = RecipeQuantityRules.freeze("ham", 0.2, MeasurementUnit.KILOGRAM)!!
+        assertEquals(
+            unchangedEditorQuantity,
+            RecipeQuantityRules.retainUneditableSnapshot(
+                legacyNative, unchangedEditorQuantity, ham
+            )
+        )
+
+        // Inconsistent snapshots from old-client edits are never resurrected.
+        val stale = original.copy(amountBase = 100.0)
+        assertEquals(
+            unchangedEditorQuantity,
+            RecipeQuantityRules.retainUneditableSnapshot(stale, unchangedEditorQuantity, ham)
+        )
+    }
+
+    @Test
     fun legacyRecipeIngredientSerializationRemainsCompatible() {
         val json = Json { ignoreUnknownKeys = true }
         val legacy = json.decodeFromString<RecipeIngredient>(
