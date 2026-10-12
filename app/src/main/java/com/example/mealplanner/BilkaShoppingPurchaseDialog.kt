@@ -57,12 +57,14 @@ internal fun confirmedProfilePurchaseHint(item: ShoppingItem): String? {
         ingredient, item.requiredBase, item.pantryBase,
         packaging, ingredient.unitConversions
     ) ?: return null
-    if (plan.packageCount == 0) return "Pakkeplan: nok på Lager"
-    return "Pakkeplan: ${plan.packageCount} × ${formatDisplayNumber(plan.basePerPackage)} " +
-        ingredient.quantityType.baseMeasurementUnit().symbol +
-        (if (plan.conversionApproximate) " (anslået)" else "") +
-        " · forventet overskud ${formatDisplayNumber(plan.surplusBase)} " +
-        ingredient.quantityType.baseMeasurementUnit().symbol
+    if (plan.packageCount == 0) return "Nok på lager"
+    val unit = ingredient.quantityType.baseMeasurementUnit().symbol
+    return "${plan.packageCount} × " +
+        (if (plan.conversionApproximate) "ca. " else "") +
+        "${formatDisplayNumber(plan.basePerPackage)} $unit" +
+        (if (plan.surplusBase > 0.0) {
+            " · ${formatDisplayNumber(plan.surplusBase)} $unit ekstra"
+        } else "")
 }
 
 internal fun bilkaShoppingLine(
@@ -74,11 +76,9 @@ internal fun bilkaShoppingLine(
     if (context == null || catalog == null) return householdHint
     val recorded = context.purchase(item.ingredient.id)
     if (recorded?.purchasedAmountBase != null) {
-        return "Seneste køb på Lager: " +
-                (recorded.packageCount?.let { "$it pakker" }
-                    ?: "registreret køb") +
-                (recorded.paidTotalOre?.let { " · Betalt: " + kroner(it) } ?: "") +
-                " · Nyt køb kan registreres"
+        return "Sidst købt: " +
+                (recorded.packageCount?.let { "$it pakker" } ?: "registreret") +
+                (recorded.paidTotalOre?.let { " · " + kroner(it) } ?: "")
     }
     val standard = context.default(item.ingredient.id) ?: return householdHint
     val product = catalog.product(standard.productId) ?: return householdHint
