@@ -60,7 +60,10 @@ internal object QuantityConversionEngine {
         if (native != null && native.quantityType == ingredient.quantityType) {
             return native.toBaseFactor
         }
-        return rules.firstOrNull { it.unit == unit }
+        // Conflicting household profiles must never be resolved by list order.
+        // DB/profile syncing will enforce uniqueness; fail closed meanwhile.
+        val matching = rules.filter { it.unit == unit }
+        return matching.singleOrNull()
             ?.baseAmountPerUnit
             ?.takeIf { it.isFinite() && it > 0.0 && it <= 1e9 }
     }
@@ -127,7 +130,7 @@ internal object RecipeQuantityRules {
         ) ?: return null
         val estimated = if (displayUnit.nativeUnit?.quantityType == ingredient.quantityType) {
             false
-        } else rules.firstOrNull { it.unit == displayUnit }?.approximate == true
+        } else rules.singleOrNull { it.unit == displayUnit }?.approximate == true
         return RecipeIngredient(
             ingredientId = ingredient.id,
             amountBase = base,
