@@ -84,14 +84,34 @@ private val recipeStepSaver = listSaver<SnapshotStateList<RecipeInstructionStep>
 )
 private val recipeDraftSaver = listSaver<SnapshotStateList<DraftRequirement>, String>(
     save = { drafts ->
-        drafts.flatMap { listOf(it.ingredientId, it.amount.toString(), it.unit.name) }
+        drafts.flatMap { draft ->
+            listOf(
+                draft.ingredientId, draft.amount.toString(), draft.unit.name,
+                draft.displayUnit?.name ?: "",
+                draft.displayFactor?.toString() ?: "",
+                draft.displayApproximate.toString()
+            )
+        }
     },
     restore = { stored ->
         mutableStateListOf<DraftRequirement>().apply {
-            stored.chunked(3).filter { it.size == 3 }.forEach { parts ->
+            // Old save-state bundles contained three fields per requirement.
+            val stride = if (stored.size % 6 == 0) 6 else 3
+            stored.chunked(stride).filter { it.size == stride }.forEach { parts ->
                 val amount = parts[1].toDoubleOrNull()
                 val unit = MeasurementUnit.entries.find { it.name == parts[2] }
-                if (amount != null && unit != null) add(DraftRequirement(parts[0], amount, unit))
+                if (amount != null && unit != null) {
+                    add(DraftRequirement(
+                        ingredientId = parts[0],
+                        amount = amount,
+                        unit = unit,
+                        displayUnit = if (stride == 6) {
+                            QuantityUnit.entries.firstOrNull { it.name == parts[3] }
+                        } else null,
+                        displayFactor = if (stride == 6) parts[4].toDoubleOrNull() else null,
+                        displayApproximate = stride == 6 && parts[5] == "true"
+                    ))
+                }
             }
         }
     }
@@ -997,15 +1017,26 @@ internal fun RecipeEditorScreen(
                 val ingredient = ingredientById[requirement.ingredientId]
 
                 if (ingredient != null) {
+                    val display = RecipeQuantityRules.legacyEditableAmount(
+                        requirement, ingredient
+                    )
+                    val frozenUnit = if (RecipeQuantityRules.hasValidSnapshot(requirement)) {
+                        QuantityUnit.entries.firstOrNull {
+                            it.name == requirement.displayUnitCode
+                        }
+                    } else null
                     add(
                         DraftRequirement(
                             ingredientId = ingredient.id,
-                            amount = RecipeQuantityRules.legacyEditableAmount(
-                                requirement, ingredient
-                            ).first,
-                            unit = RecipeQuantityRules.legacyEditableAmount(
-                                requirement, ingredient
-                            ).second
+                            amount = if (frozenUnit != null) {
+                                requirement.displayAmount!!
+                            } else display.first,
+                            unit = display.second,
+                            displayUnit = frozenUnit,
+                            displayFactor = if (frozenUnit != null) {
+                                requirement.basePerDisplayUnit
+                            } else null,
+                            displayApproximate = requirement.conversionApproximate
                         )
                     )
                 }
@@ -1558,6 +1589,7 @@ internal fun RecipeEditorScreen(
                     RequirementEditor(
                         ingredient = ingredient,
                         draft = draft,
+                        allowCrossDimension = true,
                         onChange = {
                             if (it != draft) {
                                 explicitlyEditedIngredientIds = ArrayList(
