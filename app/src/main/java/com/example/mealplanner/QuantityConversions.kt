@@ -102,6 +102,41 @@ internal object QuantityConversionEngine {
  * Nullable fields preserve old snapshots and queued mutations.
  */
 internal object RecipeQuantityRules {
+    /**
+     * Correct a confirmed measuring-unit definition across saved recipes.
+     * Unlike a changing retail PACK/CAN size, a corrected TABLESPOON,
+     * TEASPOON, CLOVE or HEAD definition changes what the recipe's written
+     * measure meant. Only snapshots still matching the prior verified profile
+     * can be rewritten. Unknown/legacy rows are never guessed.
+     */
+    fun correctedIngredientMeasure(
+        requirement: RecipeIngredient,
+        previous: List<IngredientUnitConversion>,
+        updated: List<IngredientUnitConversion>
+    ): RecipeIngredient {
+        if (!hasValidSnapshot(requirement)) return requirement
+        val code = requirement.displayUnitCode ?: return requirement
+        val unit = QuantityUnit.entries.firstOrNull { it.name == code }
+            ?: return requirement
+        if (unit == QuantityUnit.PACK || unit == QuantityUnit.CAN) return requirement
+        val oldRule = previous.singleOrNull { it.unit == unit } ?: return requirement
+        val newRule = updated.singleOrNull { it.unit == unit } ?: return requirement
+        val former = requirement.basePerDisplayUnit ?: return requirement
+        if (kotlin.math.abs(former - oldRule.baseAmountPerUnit) >
+            kotlin.math.max(0.000001, kotlin.math.abs(former) * 1e-8)
+        ) return requirement
+        val revisedBase = requirement.displayAmount!! * newRule.baseAmountPerUnit
+        if (!revisedBase.isFinite() || revisedBase <= 0.0 || revisedBase > 1e10 ||
+            !newRule.baseAmountPerUnit.isFinite() ||
+            newRule.baseAmountPerUnit <= 0.0 || newRule.baseAmountPerUnit > 1e9
+        ) return requirement
+        return requirement.copy(
+            amountBase = revisedBase,
+            basePerDisplayUnit = newRule.baseAmountPerUnit,
+            conversionApproximate = newRule.approximate
+        )
+    }
+
     fun freeze(
         ingredientId: String,
         displayAmount: Double,

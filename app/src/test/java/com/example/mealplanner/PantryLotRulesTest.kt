@@ -55,4 +55,31 @@ class PantryLotRulesTest {
         val result = PantryLotRules.consume(listOf(legacy, concrete), "pasta", 400.0)!!
         assertEquals(400.0, PantryLotRules.total(result, "pasta"), 0.001)
     }
+    @Test
+    fun fullyUsedPackagesAreHiddenButStillPresentForSync() {
+        val empty = PantryLot(id = "empty", ingredientId = "sauce",
+            originalBase = 150.0, remainingBase = 0.0, opened = true)
+        val open = PantryLot(id = "open", ingredientId = "sauce",
+            originalBase = 150.0, remainingBase = 40.0, opened = true)
+        val other = PantryLot(id = "else", ingredientId = "other",
+            originalBase = 100.0, remainingBase = 100.0)
+        val stored = listOf(empty, open, other)
+        assertEquals(listOf(open), PantryLotRules.active(stored, "sauce"))
+        assertEquals(3, stored.size)
+        assertEquals(40.0, PantryLotRules.total(stored, "sauce"), 0.000001)
+    }
+
+    @Test
+    fun outsideRecipeUsageConsumesOpenPackageAndLeavesZeroTombstone() {
+        val opened = PantryLot(id = "first", ingredientId = "sauce",
+            originalBase = 150.0, remainingBase = 40.0, opened = true)
+        val sealed = PantryLot(id = "second", ingredientId = "sauce",
+            originalBase = 150.0, remainingBase = 150.0)
+        val result = PantryLotRules.consume(listOf(opened, sealed), "sauce", 60.0)!!
+        assertEquals(0.0, result[0].remainingBase, 0.0)
+        assertEquals(130.0, result[1].remainingBase, 0.0)
+        assertEquals(1, PantryLotRules.active(result, "sauce").size)
+        assertNull(PantryLotRules.consume(result, "sauce", 131.0))
+    }
+
 }

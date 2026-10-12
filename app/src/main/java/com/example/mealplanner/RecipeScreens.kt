@@ -1832,6 +1832,9 @@ internal fun IngredientEditorScreen(
     var conversionFactorText by rememberSaveable(ingredientId) { mutableStateOf("") }
     var conversionEstimated by rememberSaveable(ingredientId) { mutableStateOf(false) }
     var showConversionForm by rememberSaveable(ingredientId) { mutableStateOf(false) }
+    var editingConversionUnit by rememberSaveable(ingredientId) {
+        mutableStateOf<QuantityUnit?>(null)
+    }
 
     var shoppingCategoryId by rememberSaveable(ingredientId) {
         mutableStateOf(
@@ -1954,7 +1957,7 @@ internal fun IngredientEditorScreen(
                 Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
                     if (!typeChangeAllowed) {
                         Text(
-                            "Typen kan ikke ændres, mens ingrediensen er på lager eller bruges i opskrifter.",
+                            "Typen kræver sikker konvertering af lager og opskrifter.",
                             color = MaterialTheme.colorScheme.error,
                             style = MaterialTheme.typography.bodySmall
                         )
@@ -2050,13 +2053,7 @@ internal fun IngredientEditorScreen(
                         conversionProfiles.clear()
                     }
                 )
-                if (!typeChangeAllowed) {
-                    Text(
-                        "Fjern beholdningen og opskriftsreferencerne før typen ændres.",
-                        color = MaterialTheme.colorScheme.error,
-                        style = MaterialTheme.typography.bodySmall
-                    )
-                }
+
             }
 
             item {
@@ -2159,6 +2156,15 @@ internal fun IngredientEditorScreen(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+                            TextButton(onClick = {
+                                editingConversionUnit = profile.unit
+                                conversionUnit = profile.unit
+                                conversionFactorText = formatDisplayNumber(
+                                    profile.baseAmountPerUnit
+                                )
+                                conversionEstimated = profile.approximate
+                                showConversionForm = true
+                            }) { Text("Ret") }
                             TextButton(onClick = { conversionProfiles.remove(profile) }) {
                                 Text("Fjern")
                             }
@@ -2167,7 +2173,8 @@ internal fun IngredientEditorScreen(
                     if (showConversionForm) {
                         val options = QuantityUnit.entries.filter { unit ->
                             unit.nativeUnit?.quantityType != type &&
-                                conversionProfiles.none { it.unit == unit }
+                                (conversionProfiles.none { it.unit == unit } ||
+                                    editingConversionUnit == unit)
                         }
                         if (options.isNotEmpty()) {
                             val candidate = if (conversionUnit in options) {
@@ -2178,13 +2185,20 @@ internal fun IngredientEditorScreen(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                SimpleSelector(
-                                    label = candidate.labelFor(1.0),
-                                    options = options,
-                                    optionText = { it.labelFor(1.0) },
-                                    minHeight = 56.dp,
-                                    onSelected = { conversionUnit = it }
-                                )
+                                if (editingConversionUnit != null) {
+                                    Text(
+                                        "1 ${candidate.labelFor(1.0)} =",
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                } else {
+                                    SimpleSelector(
+                                        label = candidate.labelFor(1.0),
+                                        options = options,
+                                        optionText = { it.labelFor(1.0) },
+                                        minHeight = 56.dp,
+                                        onSelected = { conversionUnit = it }
+                                    )
+                                }
                                 OutlinedTextField(
                                     value = conversionFactorText,
                                     onValueChange = { text ->
@@ -2219,22 +2233,34 @@ internal fun IngredientEditorScreen(
                                         if (factor != null && factor.isFinite() &&
                                             factor > 0.0 && factor <= 1e9
                                         ) {
-                                            conversionProfiles += IngredientUnitConversion(
+                                            val replacement = IngredientUnitConversion(
                                                 unit = candidate,
                                                 baseAmountPerUnit = factor,
                                                 approximate = conversionEstimated,
                                                 source = "household-confirmed"
                                             )
+                                            val editing = editingConversionUnit
+                                            if (editing == null) {
+                                                conversionProfiles += replacement
+                                            } else {
+                                                val index = conversionProfiles.indexOfFirst {
+                                                    it.unit == editing
+                                                }
+                                                if (index >= 0) conversionProfiles[index] = replacement
+                                            }
                                             conversionFactorText = ""
+                                            editingConversionUnit = null
                                             showConversionForm = false
                                         }
                                     },
                                     enabled = factor != null && factor.isFinite() &&
                                         factor > 0.0 && factor <= 1e9
-                                ) { Text("Tilføj") }
-                                TextButton(onClick = { showConversionForm = false }) {
-                                    Text("Annuller")
-                                }
+                                ) { Text(if (editingConversionUnit == null) "Tilføj" else "Gem") }
+                                TextButton(onClick = {
+                                    showConversionForm = false
+                                    editingConversionUnit = null
+                                    conversionFactorText = ""
+                                }) { Text("Annuller") }
                             }
                         } else {
                             Text(

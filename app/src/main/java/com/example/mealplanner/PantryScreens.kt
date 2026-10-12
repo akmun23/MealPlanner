@@ -264,7 +264,7 @@ internal fun PantryAmountDialog(
 ) {
     val initialUnit = ingredient.preferredUnit
     val currentBase = state.pantry[ingredient.id] ?: 0.0
-    val lots = state.pantryLots.filter { it.ingredientId == ingredient.id }
+    val lots = PantryLotRules.active(state.pantryLots.toList(), ingredient.id)
     val hasIdentifiedPackages = lots.any { !it.legacyUnknown }
     val physicalUnit = ingredient.quantityType.baseMeasurementUnit()
     var newPackSizeText by remember(ingredient.id) { mutableStateOf("") }
@@ -272,6 +272,9 @@ internal fun PantryAmountDialog(
     var newPackBestBefore by remember(ingredient.id) { mutableStateOf("") }
     var newPackOpened by remember(ingredient.id) { mutableStateOf(false) }
     var addingPackages by rememberSaveable(ingredient.id) { mutableStateOf(false) }
+    var usingStock by rememberSaveable(ingredient.id) { mutableStateOf(false) }
+    var useAmountText by rememberSaveable(ingredient.id) { mutableStateOf("") }
+    var removeLotId by rememberSaveable(ingredient.id) { mutableStateOf<String?>(null) }
     var editingLotId by rememberSaveable(ingredient.id) {
         mutableStateOf<String?>(null)
     }
@@ -286,6 +289,26 @@ internal fun PantryAmountDialog(
                 formatDisplayNumber(initialUnit.fromBase(currentBase))
             } else {
                 ""
+            }
+        )
+    }
+
+    val removingLot = lots.firstOrNull { it.id == removeLotId }
+    if (removingLot != null) {
+        AlertDialog(
+            onDismissRequest = { removeLotId = null },
+            title = { Text("Fjern pakken?") },
+            text = { Text("Pakken fjernes fra lageret.") },
+            confirmButton = {
+                Button(onClick = {
+                    if (state.updatePantryLot(removingLot.id, 0.0, removingLot.opened)) {
+                        removeLotId = null
+                        editingLotId = null
+                    }
+                }) { Text("Fjern") }
+            },
+            dismissButton = {
+                TextButton(onClick = { removeLotId = null }) { Text("Annuller") }
             }
         )
     }
@@ -426,8 +449,50 @@ internal fun PantryAmountDialog(
                                     enabled = remainder != null && remainder.isFinite() &&
                                         remainder >= 0.0 && remainder <= lot.originalBase
                                 ) { Text("Gem rest") }
+                                TextButton(onClick = { removeLotId = lot.id }) {
+                                    Text("Fjern pakke")
+                                }
                             }
                         }
+                    }
+                }
+
+                // Manual consumption works across opened and sealed lots
+                // through the same FIFO ledger as cooking a recipe.
+                if (currentBase > 0.0) {
+                    TextButton(onClick = { usingStock = !usingStock }) {
+                        Text(if (usingStock) "Annuller" else "− Brug fra lager")
+                    }
+                    if (usingStock) {
+                        val available = formatDisplayNumber(
+                            initialUnit.fromBase(currentBase)
+                        )
+                        OutlinedTextField(
+                            value = useAmountText,
+                            onValueChange = { value ->
+                                useAmountText = value.filter {
+                                    it.isDigit() || it == ',' || it == '.'
+                                }
+                            },
+                            label = { Text("Forbrug (${initialUnit.symbol})") },
+                            placeholder = { Text("Højst $available") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                        val consumption = parseDanishDecimal(useAmountText)
+                        Button(
+                            onClick = {
+                                if (consumption != null && state.usePantryAmount(
+                                    ingredient.id, consumption, initialUnit
+                                )) {
+                                    useAmountText = ""
+                                    usingStock = false
+                                }
+                            },
+                            enabled = consumption != null && consumption.isFinite() &&
+                                consumption > 0.0 &&
+                                initialUnit.toBase(consumption) <= currentBase
+                        ) { Text("Træk fra lager") }
                     }
                 }
 

@@ -15,6 +15,10 @@ internal object PantryLotRules {
             lot.remainingBase.isFinite() && lot.remainingBase >= 0.0 &&
             lot.remainingBase <= lot.originalBase && lot.version >= 1L
 
+    /** Finished containers remain in sync history, but never clutter the UI. */
+    fun active(lots: List<PantryLot>, ingredientId: String): List<PantryLot> =
+        lots.filter { it.ingredientId == ingredientId && it.remainingBase > 0.0 }
+
     fun total(lots: List<PantryLot>, ingredientId: String): Double =
         lots.filter { it.ingredientId == ingredientId }.sumOf { it.remainingBase }
 

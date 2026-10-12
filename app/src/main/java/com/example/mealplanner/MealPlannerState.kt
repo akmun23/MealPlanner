@@ -1255,6 +1255,22 @@ class MealPlannerState(
                 if (conversionChanged) 1L else 0L
         )
         ingredients[index] = updated
+        if (conversionChanged) {
+            // The cloud CAS RPC makes the same update atomically to all known
+            // recipe snapshots. Apply the projection locally for an immediate
+            // and consistent shopping-list calculation while offline.
+            val revisedRecipes = recipes.map { recipe ->
+                if (recipe.ingredients.none { it.ingredientId == id }) recipe
+                else recipe.copy(ingredients = recipe.ingredients.map { requirement ->
+                    if (requirement.ingredientId == id) {
+                        RecipeQuantityRules.correctedIngredientMeasure(
+                            requirement, previous.unitConversions, conversions
+                        )
+                    } else requirement
+                })
+            }
+            syncListByKey(recipes, revisedRecipes, Recipe::id)
+        }
         enqueueMutations(
             listOf(QueuedMutation.UpsertIngredient(updated)) +
                 if (!conversionChanged) emptyList() else listOf(
@@ -2008,6 +2024,55 @@ class MealPlannerState(
         enqueueMutation(QueuedMutation.UpsertPantryLot(
             lot = next, expectedVersion = previous.version
         ))
+        return true
+    }
+
+    /**
+     * Manual usage or disposal does not require completing a recipe. Physical
+     * lots are consumed opened-first through the existing idempotent server
+     * RPC; older total-only stock retains the legacy SetPantry path.
+     */
+    fun usePantryAmount(
+        ingredientId: String,
+        amount: Double,
+        unit: MeasurementUnit
+    ): Boolean {
+        val ingredient = ingredients.find { it.id == ingredientId } ?: return false
+        if (unit.quantityType != ingredient.quantityType ||
+            !amount.isFinite() || amount <= 0.0
+        ) return false
+        val usedBase = unit.toBase(amount)
+        val current = pantry[ingredientId] ?: 0.0
+        if (!usedBase.isFinite() || usedBase <= 0.0 || usedBase > 1e10 ||
+            !current.isFinite() || current <= 0.0 ||
+            usedBase > current
+        ) return false
+
+        val liveLots = pantryLots.filter {
+            it.ingredientId == ingredientId && it.remainingBase > 0.0
+        }
+        if (liveLots.isNotEmpty()) {
+            val after = PantryLotRules.consume(
+                pantryLots.toList(), ingredientId, usedBase
+            ) ?: run {
+                lastError = "Lagerpakkerne stemmer ikke med beholdningen. Opdatér lageret."
+                return false
+            }
+            // A single offline event is applied at most once by the cloud.
+            syncListByKey(pantryLots, after, PantryLot::id)
+            pantry[ingredientId] = (current - usedBase).coerceAtLeast(0.0)
+            enqueueMutation(QueuedMutation.ConsumePantryLots(
+                ingredientId = ingredientId,
+                amountBase = usedBase,
+                transactionId = UUID.randomUUID().toString()
+            ))
+        } else {
+            setPantry(
+                ingredientId,
+                (current - usedBase).coerceAtLeast(0.0),
+                ingredient.quantityType.baseMeasurementUnit()
+            )
+        }
         return true
     }
 
