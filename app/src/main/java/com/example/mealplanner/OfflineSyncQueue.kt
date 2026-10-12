@@ -324,7 +324,9 @@ internal sealed interface QueuedMutation {
     @Serializable
     @SerialName("upsert_pantry_lot")
     data class UpsertPantryLot(
-        val lot: PantryLot
+        val lot: PantryLot,
+        val expectedVersion: Long = 0L,
+        val transactionId: String = UUID.randomUUID().toString()
     ) : QueuedMutation
 
     @Serializable
@@ -439,7 +441,7 @@ internal fun QueuedMutation.key(): String = when (this) {
         "pantry:$ingredientId"
 
     is QueuedMutation.UpsertPantryLot ->
-        "pantry-lot:${lot.id}"
+        "pantry-lot:${transactionId}"
 
     is QueuedMutation.SetWeekState ->
         "week:$weeklyPlanId"
@@ -1004,7 +1006,9 @@ private suspend fun applyQueuedMutation(
         }
 
         is QueuedMutation.UpsertPantryLot -> {
-            repository.upsertPantryLot(mutation.lot)
+            repository.upsertPantryLot(
+                mutation.lot, mutation.expectedVersion, mutation.transactionId
+            )
         }
 
         is QueuedMutation.SetPantry -> {
