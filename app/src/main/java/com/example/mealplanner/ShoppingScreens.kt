@@ -84,27 +84,34 @@ fun ShoppingScreen(state: MealPlannerState) {
         }
         bilkaLoading = true
         bilkaLoadError = false
-        val (catalog, weekly) = coroutineScope {
-            val catalogJob = async {
-                BilkaPrejClient.catalog(
-                    state.householdIdentifier,
-                    requestedIngredientIds
-                )
+        try {
+            val (catalog, weekly) = coroutineScope {
+                val catalogJob = async {
+                    BilkaPrejClient.catalog(
+                        state.householdIdentifier,
+                        requestedIngredientIds
+                    )
+                }
+                val weeklyJob = async {
+                    BilkaPrejClient.shoppingContext(state.householdIdentifier, weekId)
+                }
+                catalogJob.await() to weeklyJob.await()
             }
-            val weeklyJob = async {
-                BilkaPrejClient.shoppingContext(state.householdIdentifier, weekId)
-            }
-            catalogJob.await() to weeklyJob.await()
+            // Preserve successful responses independently; a failed catalogue
+            // must never erase known prior purchase overrides.
+            val result = decodeBilkaShoppingLoad(catalog, weekly)
+            result.catalog?.let { bilkaCatalog = it }
+            result.context?.let { bilkaContext = it }
+            bilkaLoadError = result.hasError
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Never leave all Add buttons hidden behind a permanent loading
+            // state on an unexpected network/JSON exception.
+            bilkaLoadError = true
+        } finally {
+            bilkaLoading = false
         }
-        // Preserve any successfully fetched portion of this week's Bilka
-        // information. A failing catalogue request must not also erase the
-        // shopping context (including already registered purchases), or vice
-        // versa. Purchases are still guarded whenever either fetch fails.
-        val result = decodeBilkaShoppingLoad(catalog, weekly)
-        result.catalog?.let { bilkaCatalog = it }
-        result.context?.let { bilkaContext = it }
-        bilkaLoadError = result.hasError
-        bilkaLoading = false
     }
 
     LaunchedEffect(weekId, state.householdIdentifier, requestedIngredientIds) {
