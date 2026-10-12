@@ -148,7 +148,8 @@ private data class RecipeIngredientRow(
     @SerialName("amount_base") val amountBase: Double,
     @SerialName("display_amount") val displayAmount: Double? = null,
     @SerialName("display_unit_code") val displayUnitCode: String? = null,
-    @SerialName("base_per_display_unit") val basePerDisplayUnit: Double? = null
+    @SerialName("base_per_display_unit") val basePerDisplayUnit: Double? = null,
+    @SerialName("conversion_approximate") val conversionApproximate: Boolean = false
 )
 
 @Serializable
@@ -736,7 +737,8 @@ class CloudMealRepository(
                                         amountBase = it.amountBase,
                                         displayAmount = it.displayAmount,
                                         displayUnitCode = it.displayUnitCode,
-                                        basePerDisplayUnit = it.basePerDisplayUnit
+                                        basePerDisplayUnit = it.basePerDisplayUnit,
+                                        conversionApproximate = it.conversionApproximate
                                     )
                                 },
                             pantryPrerequisites =
@@ -1074,7 +1076,8 @@ class CloudMealRepository(
                         amountBase = it.amountBase,
                         displayAmount = it.displayAmount,
                         displayUnitCode = it.displayUnitCode,
-                        basePerDisplayUnit = it.basePerDisplayUnit
+                        basePerDisplayUnit = it.basePerDisplayUnit,
+                        conversionApproximate = it.conversionApproximate
                     )
                 }
             ) {
