@@ -1556,6 +1556,7 @@ class MealPlannerState(
             sourceUrl = sourceUrl
         ) ?: return false
 
+        val retainedManual = manuallyAddedShoppingIds()
         recipes[index] = updated
 
         var weekChanged = false
@@ -1583,6 +1584,8 @@ class MealPlannerState(
         if (weekChanged) {
             shoppingChecked.clear()
             shoppingIncluded.clear()
+            retainedManual.filter { id -> ingredients.any { it.id == id } }
+                .forEach { shoppingIncluded[it] = true }
         }
 
         val mutations = buildList {
@@ -1606,6 +1609,9 @@ class MealPlannerState(
                 )
                 add(weekStateMutation(currentPlanId))
                 add(QueuedMutation.ClearShopping(currentPlanId))
+                shoppingIncluded.filterValues { it }.keys.forEach { ingredientId ->
+                    add(QueuedMutation.SetShoppingIncluded(currentPlanId, ingredientId, true))
+                }
             }
         }
 
@@ -1701,6 +1707,7 @@ class MealPlannerState(
 
     fun deleteRecipe(recipeId: String) {
         val recipe = recipes.find { it.id == recipeId } ?: return
+        val retainedManual = manuallyAddedShoppingIds()
 
         recipes.removeAll { it.id == recipeId }
         selectedLunchRecipeIds.remove(recipeId)
@@ -1715,6 +1722,8 @@ class MealPlannerState(
 
         shoppingChecked.clear()
         shoppingIncluded.clear()
+        retainedManual.filter { id -> ingredients.any { it.id == id } }
+            .forEach { shoppingIncluded[it] = true }
 
         val mutations = buildList {
             val planId = weeklyPlanId
@@ -1732,6 +1741,9 @@ class MealPlannerState(
                 )
                 add(weekStateMutation(planId))
                 add(QueuedMutation.ClearShopping(planId))
+                shoppingIncluded.filterValues { it }.keys.forEach { ingredientId ->
+                    add(QueuedMutation.SetShoppingIncluded(planId, ingredientId, true))
+                }
             }
 
             add(
