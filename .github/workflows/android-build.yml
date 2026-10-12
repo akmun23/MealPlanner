@@ -32,6 +32,9 @@ jobs:
           echo "SUPABASE_URL=https://example.supabase.co" >> local.properties
           echo "SUPABASE_PUBLISHABLE_KEY=sb_publishable_build_check" >> local.properties
 
+      - name: Validate release App Bundle metadata checker
+        run: python3 scripts/test_check_release_bundle_metadata.py
+
       - name: Run unit tests
         run: bash ./gradlew :app:testDebugUnitTest --stacktrace
 
@@ -43,6 +46,16 @@ jobs:
 
       - name: Build R8-optimized production release APK and Play bundle
         run: bash ./gradlew :app:assembleRelease :app:bundleRelease --stacktrace
+
+      - name: Verify Play App Bundle R8 mapping and inspect native symbols
+        run: |
+          set -euo pipefail
+          RELEASE_BUNDLE="$(find app/build/outputs/bundle/release -maxdepth 1 -name '*.aab' -print -quit)"
+          if [[ -z "$RELEASE_BUNDLE" ]]; then
+            echo "::error::The production App Bundle is missing."
+            exit 1
+          fi
+          python3 scripts/check_release_bundle_metadata.py "$RELEASE_BUNDLE"
 
       - name: Build unoptimized comparison APK and release-like benchmark APK
         run: bash ./gradlew :app:assembleUnoptimized :app:assembleBenchmark --stacktrace
@@ -70,7 +83,7 @@ jobs:
       - name: Check optional emulator smoke script syntax
         run: bash -n scripts/smoke_optimized_apk.sh
 
-      - name: Archive shrinker metrics and R8 mapping
+      - name: Archive release mapping, native symbols, and shrinker metrics
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -78,6 +91,7 @@ jobs:
           path: |
             dex-optimization-report.json
             app/build/outputs/mapping/release/mapping.txt
+            app/build/outputs/native-debug-symbols/release/native-debug-symbols.zip
             app/build/outputs/mapping/benchmark/mapping.txt
           retention-days: 14
 

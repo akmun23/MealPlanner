@@ -67,6 +67,11 @@ android {
             optimization {
                 enable = true
             }
+            // Include available native debugging metadata in the Play AAB.
+            // Pre-stripped third-party libraries cannot regain missing symbols.
+            ndk {
+                debugSymbolLevel = "FULL"
+            }
         }
         create("benchmark") {
             initWith(getByName("release"))
