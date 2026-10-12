@@ -139,4 +139,22 @@ class QuantityPlanningRulesTest {
         ))
     }
 
+    @Test
+    fun floatingPointAtPackageBoundaryDoesNotBuyPhantomFourthPack() {
+        val ingredient = ingredient("spice", QuantityType.MASS)
+        val rules = listOf(IngredientUnitConversion(QuantityUnit.PACK, 0.1))
+
+        // 0.1 + 0.2 is not exactly 0.3 in binary floating point.
+        val exactThreePacks = QuantityPlanningRules.planPackages(
+            ingredient, 0.1 + 0.2, 0.0, QuantityUnit.PACK, rules
+        )!!
+        assertEquals(3, exactThreePacks.packageCount)
+
+        // A genuine shortfall is still rounded UP, never silently ignored.
+        val actuallyOverThree = QuantityPlanningRules.planPackages(
+            ingredient, 0.30000001, 0.0, QuantityUnit.PACK, rules
+        )!!
+        assertEquals(4, actuallyOverThree.packageCount)
+    }
+
 }
