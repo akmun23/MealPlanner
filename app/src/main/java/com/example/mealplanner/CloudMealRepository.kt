@@ -190,7 +190,8 @@ private data class PantryLotRow(
     @SerialName("product_id") val productId: String? = null,
     @SerialName("purchase_event_key") val purchaseEventKey: String? = null,
     @SerialName("best_before") val bestBefore: String? = null,
-    @SerialName("lot_version") val version: Long = 1L
+    @SerialName("lot_version") val version: Long = 1L,
+    @SerialName("created_at") val createdAt: String? = null
 )
 
 @Serializable
@@ -833,7 +834,8 @@ class CloudMealRepository(
                     productId = row.productId,
                     purchaseEventKey = row.purchaseEventKey,
                     bestBefore = row.bestBefore,
-                    version = row.version
+                    version = row.version,
+                    createdAt = row.createdAt.orEmpty()
                 )
             }
         }
