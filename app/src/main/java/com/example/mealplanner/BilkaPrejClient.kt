@@ -96,10 +96,12 @@ internal object BilkaPrejClient {
         manualProductName: String?,
         packageCount: Int?,
         amountBase: Double,
-        paidTotalOre: Long?
+        paidTotalOre: Long?,
+        purchaseId: String? = null
     ): Result<JsonObject> =
         call(
             "record-purchase", householdId = householdId, weekId = weekId,
+            purchaseId = purchaseId,
             ingredientId = ingredientId, productId = productId,
             manualProductName = manualProductName, packageCount = packageCount,
             amountBase = amountBase, paidTotalOre = paidTotalOre
@@ -139,7 +141,8 @@ internal object BilkaPrejClient {
         manualProductName: String? = null,
         packageCount: Int? = null,
         amountBase: Double? = null,
-        paidTotalOre: Long? = null
+        paidTotalOre: Long? = null,
+        purchaseId: String? = null
     ): Result<JsonObject> = withContext(Dispatchers.IO) {
         runCatching {
             val accessToken = SupabaseProvider.client.auth.currentSessionOrNull()?.accessToken
@@ -158,6 +161,7 @@ internal object BilkaPrejClient {
                 page?.let { put("page", it) }
                 enabled?.let { put("enabled", it) }
                 weekId?.let { put("weekId", it) }
+                purchaseId?.let { put("purchaseId", it) }
                 manualProductName?.let { put("manualProductName", it) }
                 packageCount?.let { put("packageCount", it) }
                 amountBase?.let { put("amountBase", it) }
