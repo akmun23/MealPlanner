@@ -18,6 +18,8 @@
 - Åbn **Indkøb → Tilføj vare**. Skriv f.eks. **Skyr**.
 - Hvis ingrediensen allerede findes, bruges den eksisterende post. Ellers vælg **vægt, volumen, stk. eller pakke/dåse** og tilføj den som ny fælles ingrediens.
 - Der oprettes **ingen ekstra dublet** hvis varen allerede er på indkøbslisten. Ønsker du at tilvælge en vare, der allerede findes men er fravalgt, kan du tilføje den igen.
+- En eksisterende ingrediens med `Køb aldrig` skal først ændres i ingrediensindstillingerne; serveren afviser bevidst registrering af sådanne køb.
+- Ved manuelt tilføjede varer uden en kendt pakkestørrelse kræver lagerregistrering en eksplicit **faktisk købt mængde**; appen foreslår ikke automatisk f.eks. 1 gram.
 - En manuel vare kan afkrydses som **købt** og derefter lægges på lager som de øvrige indkøbsvarer. Den viser `Tilføjet manuelt` i stedet for en falsk, beregnet opskriftsmængde.
 - Tryk **Fjern fra indkøb** for at fjerne en manuel vare fra den valgte uges liste; selve ingrediensen slettes **ikke** fra ingrediensbiblioteket.
 - Valget er gemt i husstandens eksisterende `shopping_inclusions` og synkroniseres til partnerens telefon gennem realtime og offline-køen.
