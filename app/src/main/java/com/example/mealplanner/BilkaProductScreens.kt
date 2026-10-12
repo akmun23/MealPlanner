@@ -550,7 +550,11 @@ internal fun BilkaProductPickerScreen(
                 runCatching {
                     data = parseBilkaCatalog(raw)
                     selected = data?.defaultId(ingredientId)
-                }.onFailure { error = "Kunne ikke læse varerne." }
+                    if (data?.parseWarnings?.isNotEmpty() == true) {
+                        error = "Nogle vareposter kunne ikke læses: " +
+                            data!!.parseWarnings.joinToString() + ". Øvrige varer vises."
+                    }
+                }.onFailure { error = "Bilka-svaret mangler de forventede varefelter." }
             }
             .onFailure { error = "Kunne ikke hente varerne. ${it.message ?: "Prøv igen."}" }
         busy = false
@@ -720,8 +724,20 @@ internal fun BilkaProductPickerScreen(
                     }
                 }
             }
+            if (!busy && data != null && error != null) {
+                item {
+                    Text(
+                        error ?: "",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    OutlinedButton(onClick = { scope.launch { reload() } }) {
+                        Text("Opdatér Bilka-varer")
+                    }
+                }
+            }
             if (busy) item { CircularProgressIndicator() }
-            else if (error != null) {
+            else if (error != null && data == null) {
                 item {
                     EmptyCard(error ?: "Fejl")
                     OutlinedButton(onClick = { scope.launch { reload() } }) { Text("Prøv igen") }
