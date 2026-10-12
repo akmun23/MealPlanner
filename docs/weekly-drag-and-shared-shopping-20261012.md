@@ -5,7 +5,9 @@
 ### Madplan
 
 - På en ulåst dag med en planlagt ret findes et **flyttehåndtag** i dagskortets overskrift.
-- **Hold og træk** håndtaget til den dag, retten skal serveres. Listen kan scrolle langs kanten under træk.
+- **Hold og træk** håndtaget til den dag, retten skal serveres. I 1.4.1 vises en halvgennemsigtig kopi af dagskortet under fingeren, den oprindelige placering tones ned, og en gyldig destinationsdag får en tydelig kant. Telefonen giver også en kort vibrationsfeedback, når trækket starter. Listen kan scrolle langs kanten under træk.
+- Det kompakte flyttehåndtag har teksten **Flyt**. Et almindeligt tryk åbner stadig listen over destinationsdage.
+- Træk uden for en gyldig dag eller afbryd handlingen: retten bliver på sin oprindelige dag. Den flydende kopi gemmer ingen data.
 - **Tryk** på håndtaget for at vælge destinationsdag fra en dialog (tilgængelighed og sikker fallback).
 - Retterne **bytter plads**. Hvis destinationsdagen var tom, flyttes retten dertil, og oprindelsesdagen bliver tom.
 - Låste og spiste dage samt dage markeret **Ikke hjemme** kan ikke være kilde eller destination. Brug daglåsen først ved behov.
@@ -64,3 +66,14 @@ Manuel test på en **testhusstand med to enheder**:
 `versionName=1.4.0`, `versionCode=11` – kontrollér at versionCode 11 er ledig i Play Console.
 
 **Koden er ikke verificeret med et Android SDK/device build i dette værktøjsmiljø.** GitHub Actions har tidligere fejlet, før de første buildtrin startede. Kræv Android Studio Debug/JUnit/build samt manuel drag-and-drop og synkronisering på to enheder før produktionsudrulning.
+
+## 1.4.1 – Visuel drag-feedback / manuel accepttest
+
+1. På **Madplan**: hold på knappen **Flyt** ved en ret. Kortet på den oprindelige dag bliver tonet ned, og en halvgennemsigtig kopi med dag og ret følger fingeren kontinuerligt. Vibrationen skal mærkes på en enhed, som understøtter haptisk feedback.
+2. Træk over en anden **ulåst** dags kort. Destinationskortet får en kontrastfuld ramme, og det flydende kort viser `Slip for at bytte med ...` eller `Slip for at flytte til ...` for en tom dag.
+3. Slip og bekræft, at retterne bytter plads, at indkøb er uændret, og at ændringen synkroniseres til partnerens telefon.
+4. Træk over en låst/spist/ude-dag, afbryd trækket, og slip uden en gyldig destination. Intet må flyttes. Langsom og hurtig scrolling skal stadig virke, også ved listens kanter.
+5. **Kort tryk på Flyt** skal stadig åbne destinationsdialogen. Kontroller også TalkBack-knappens beskrivelse. Flydende kort har med vilje ingen ekstra TalkBack-fokuselementer.
+6. Kør fra samme commit både `gradlew.bat :app:assembleDebug` og `gradlew.bat :app:assembleBenchmark`. Ingen Android-build/emulator er udført i ChatGPT-miljøet.
+
+VersionCode 12 bruges til 1.4.1-testbuildet. Kontrollér at koden ikke allerede er brugt i Play Console.
