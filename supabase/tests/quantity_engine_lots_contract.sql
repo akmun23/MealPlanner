@@ -13,6 +13,9 @@ declare
     replay numeric;
     lot_count integer;
     first_lot_id uuid;
+    profile_id uuid := gen_random_uuid();
+    profile_revision bigint;
+    profile_stale_rejected boolean := false;
 begin
     select id into owner_id from auth.users limit 1;
     if owner_id is null then
@@ -22,6 +25,10 @@ begin
     insert into public.households(id, name, join_code, created_by)
         values (h, 'Temporary quantity test',
             substring(md5(gen_random_uuid()::text) from 1 for 8), owner_id);
+    insert into public.household_members(household_id,user_id,role)
+        values (h,owner_id,'owner')
+        on conflict do nothing;
+    perform set_config('request.jwt.claim.sub',owner_id::text,true);
     insert into public.weekly_plans(id, household_id, week_start)
         values (w, h, '2040-05-07');
     insert into public.ingredients(
@@ -86,11 +93,47 @@ begin
         raise exception 'Legitimate repeated purchase was blocked or retried twice: %',lot_count;
     end if;
 
+    -- Household profile version 0 -> 1, replay -> 1, stale phone fails,
+    -- second confirmed package factor moves to version 2.
+    profile_revision := public.save_ingredient_conversions_once(
+        h,i,0,
+        '[{"unit_code":"PACK","base_amount_per_unit":200,"approximate":false}]'::jsonb,
+        profile_id
+    );
+    if profile_revision <> 1 then raise exception 'Profile first revision not 1'; end if;
+    profile_revision := public.save_ingredient_conversions_once(
+        h,i,0,
+        '[{"unit_code":"PACK","base_amount_per_unit":200,"approximate":false}]'::jsonb,
+        profile_id
+    );
+    if profile_revision <> 1 then raise exception 'Profile replay changed version'; end if;
+    begin
+        perform public.save_ingredient_conversions_once(
+            h,i,0,
+            '[{"unit_code":"PACK","base_amount_per_unit":150,"approximate":false}]'::jsonb,
+            gen_random_uuid()
+        );
+    exception when others then profile_stale_rejected := true;
+    end;
+    if not profile_stale_rejected then raise exception 'Stale device overwrote profile'; end if;
+    profile_revision := public.save_ingredient_conversions_once(
+        h,i,1,
+        '[{"unit_code":"PACK","base_amount_per_unit":150,"approximate":false}]'::jsonb,
+        gen_random_uuid()
+    );
+    if profile_revision <> 2 or not exists (
+        select 1 from public.ingredient_unit_conversions
+        where household_id=h and ingredient_id=i
+          and unit_code='PACK' and base_amount_per_unit=150
+    ) then
+        raise exception 'Confirmed package size did not update atomically';
+    end if;
+
     -- Unknown package factor must never be guessed or materialized.
     if exists (
         select 1 from public.ingredient_unit_conversions
-        where ingredient_id = i
-    ) then raise exception 'Unconfirmed conversion profile appeared'; end if;
+        where ingredient_id = i and unit_code <> 'PACK'
+    ) then raise exception 'An unconfirmed conversion unit appeared'; end if;
 
     select amount_base into base_after from public.pantry_items
         where household_id=h and ingredient_id=i;

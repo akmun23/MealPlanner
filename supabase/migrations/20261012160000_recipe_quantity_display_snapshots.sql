@@ -316,6 +316,27 @@ create trigger pantry_items_legacy_reconcile
 after insert or update of amount_base on public.pantry_items
 for each row execute function private.reconcile_old_pantry_write();
 
+-- Old versions can DELETE an aggregate row when emptying inventory.
+-- Mirror this intentional deletion into the package ledger. Nested calls
+-- from a lot transaction do not affect the legacy aggregate.
+create or replace function private.reconcile_old_pantry_delete()
+returns trigger language plpgsql security definer set search_path = ''
+as $body$
+begin
+    if pg_trigger_depth() > 1 then return old; end if;
+    delete from public.pantry_lots
+    where household_id = old.household_id
+      and ingredient_id = old.ingredient_id;
+    return old;
+end;
+$body$;
+revoke all on function private.reconcile_old_pantry_delete()
+    from public, anon, authenticated;
+drop trigger if exists pantry_items_legacy_delete on public.pantry_items;
+create trigger pantry_items_legacy_delete
+after delete on public.pantry_items
+for each row execute function private.reconcile_old_pantry_delete();
+
 -- Consumption is one atomic transaction, preferring opened/expiring lots.
 -- Direct UPDATE is guarded by RLS; this RPC also checks household membership.
 create or replace function public.consume_pantry_lots(
@@ -579,6 +600,7 @@ create table if not exists public.pantry_lot_mutation_receipts (
     lot_id uuid not null,
     expected_version bigint not null,
     resulting_version bigint not null,
+    payload_hash text not null,
     created_at timestamptz not null default now()
 );
 revoke all on public.pantry_lot_mutation_receipts from public,anon,authenticated;
@@ -593,6 +615,7 @@ create or replace function public.upsert_pantry_lot_once(
 as $body$
 declare previous public.pantry_lot_mutation_receipts%rowtype;
         new_version bigint;
+        content_hash text;
 begin
  if not private.is_household_member(p_household_id) then raise exception 'not a member'; end if;
  if p_event_id is null or p_lot_id is null or p_ingredient_id is null
@@ -602,16 +625,29 @@ begin
     or p_remaining_amount_base > p_original_amount_base
     or p_expected_version is null or p_expected_version < 0
     then raise exception 'invalid lot mutation'; end if;
+ content_hash := md5(jsonb_build_object(
+    'household',p_household_id,'lot',p_lot_id,'ingredient',p_ingredient_id,
+    'original',p_original_amount_base,'remaining',p_remaining_amount_base,
+    'opened',p_opened,'legacy',p_legacy_unknown,'product',p_product_id,
+    'best_before',p_best_before,'expected_version',p_expected_version
+ )::text);
+ -- Serialize concurrent retries of the same event ID before inspecting
+ -- receipts; an interrupted retry must not report a false version conflict.
+ perform pg_advisory_xact_lock(hashtextextended('pantry-lot:' || p_event_id::text, 0));
  select * into previous from public.pantry_lot_mutation_receipts where event_id=p_event_id;
  if found then
     if previous.household_id <> p_household_id or previous.lot_id <> p_lot_id
-       or previous.expected_version <> p_expected_version then
+       or previous.expected_version <> p_expected_version
+       or previous.payload_hash <> content_hash then
         raise exception 'lot mutation token reused';
     end if;
     return previous.resulting_version;
  end if;
 
  if p_expected_version = 0 then
+    if coalesce(p_legacy_unknown,false) then
+        raise exception 'legacy inventory can only be imported by migration';
+    end if;
     insert into public.pantry_lots(
         id, household_id, ingredient_id, original_amount_base,
         remaining_amount_base, opened, legacy_unknown, product_id, best_before
@@ -638,8 +674,8 @@ begin
     raise exception 'stale pantry lot version; refresh before editing';
  end if;
  insert into public.pantry_lot_mutation_receipts (
-    event_id, household_id, lot_id, expected_version, resulting_version
- ) values (p_event_id,p_household_id,p_lot_id,p_expected_version,new_version);
+    event_id, household_id, lot_id, expected_version, resulting_version, payload_hash
+ ) values (p_event_id,p_household_id,p_lot_id,p_expected_version,new_version,content_hash);
  return new_version;
 end;
 $body$;
