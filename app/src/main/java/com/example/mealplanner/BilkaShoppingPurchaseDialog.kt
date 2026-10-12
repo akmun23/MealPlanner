@@ -131,7 +131,9 @@ internal fun BilkaPurchaseDialog(
     }
     var amountText by remember(ingredient.id) {
         mutableStateOf(
-            formatDisplayNumber(
+            // A manually added item has no recipe quantity. Do not silently
+            // suggest buying 1 gram of e.g. skyr; request the actual amount.
+            if (item.manualOnly) "" else formatDisplayNumber(
                 ingredient.preferredUnit.fromBase(
                     PurchaseDialogRules.suggestedPurchasedBase(
                         item.requiredBase, item.pantryBase, ingredient.preferredUnit

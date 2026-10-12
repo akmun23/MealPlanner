@@ -1,6 +1,9 @@
 package com.example.mealplanner
 
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -12,18 +15,21 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.DragHandle
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
@@ -47,24 +53,40 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.FloatState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
 import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.format.DateTimeFormatter
 import java.time.temporal.TemporalAdjusters
 import java.time.temporal.WeekFields
 import java.util.Locale
+import kotlin.math.roundToInt
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 @Composable
 fun WeekScreen(
@@ -78,6 +100,41 @@ fun WeekScreen(
     val selectedLunch = state.lunchRecipes()
     val lunchOptions =
         state.recipes.filter { it.mealType == MealType.LUNCH }.sortedBy { it.name.lowercase() }
+    // A dedicated drag handle leaves the rest of every day card scrollable.
+    // The same action is also accessible via a tap-to-choose-day dialog.
+    val weekListState = rememberLazyListState()
+    val dragScope = rememberCoroutineScope()
+    val haptics = LocalHapticFeedback.current
+    val edgeThresholdPx = with(LocalDensity.current) { 72.dp.toPx() }
+    // Layout positions are updated on every scroll frame: do not turn them
+    // into Compose state or the whole week would recompose during scrolling.
+    val listRootTop = remember { floatArrayOf(0f) }
+    // Read inside DraggedDayPreview rather than recomposing the full week
+    // for each pixel the finger moves.
+    val dragPositionY = remember { mutableFloatStateOf(0f) }
+    var draggingDay by remember { mutableStateOf<DayOfWeek?>(null) }
+    var hoveredDay by remember { mutableStateOf<DayOfWeek?>(null) }
+    val scrollJob = remember { arrayOfNulls<Job>(1) }
+
+    fun hoverAt(y: Float): DayOfWeek? {
+        val item = weekListState.layoutInfo.visibleItemsInfo.firstOrNull {
+            it.key is String &&
+                (it.key as String).startsWith("meal-day-") &&
+                y >= it.offset && y < it.offset + it.size
+        } ?: return null
+        val name = (item.key as String).removePrefix("meal-day-")
+        return DayOfWeek.entries.firstOrNull { it.name == name }
+    }
+
+    fun updateHover() {
+        val origin = draggingDay
+        val target = hoverAt(dragPositionY.floatValue)
+        hoveredDay = if (
+            origin != null && target != null &&
+            state.canMoveDinner(origin, target)
+        ) target else null
+    }
+
     var showLunchPicker by remember { mutableStateOf(false) }
     var showSandwichPicker by remember { mutableStateOf(false) }
     var showGenerateConfirmation by remember { mutableStateOf(false) }
@@ -268,8 +325,12 @@ fun WeekScreen(
     // Day cards are expensive to measure (photos, menus, status chips).
     // Compose only visible overview sections and day cards, not a single
     // enormous summary item on every scroll frame.
+    // Draw the scrolling list first, then the floating card above it.
+    Box(modifier = Modifier.fillMaxSize()) {
     LazyColumn(
-        modifier = Modifier.fillMaxSize(),
+        state = weekListState,
+        modifier = Modifier.fillMaxSize()
+            .onGloballyPositioned { listRootTop[0] = it.positionInRoot().y },
         contentPadding = PaddingValues(16.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
@@ -583,19 +644,143 @@ fun WeekScreen(
             }
         }
 
+        item(key = "week-drag-help", contentType = "week-section") {
+            Text(
+                "Hold på flyttehåndtaget ved en ret, og træk den til en anden dag. " +
+                    "Du kan også trykke på håndtaget for at vælge dagen.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
         items(
             items = orderedWeekDays,
-            key = { it.name },
+            key = { "meal-day-${it.name}" },
             contentType = { "day-card" }
         ) { day ->
             DayCard(
                 day = day,
                 state = state,
+                dropTarget = hoveredDay == day,
+                dragging = draggingDay == day,
+                onStartDrag = { source, rootY ->
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    draggingDay = source
+                    dragPositionY.floatValue = rootY - listRootTop[0]
+                    hoveredDay = null
+                },
+                onDrag = { deltaY ->
+                    dragPositionY.floatValue += deltaY
+                    updateHover()
+                    val end = weekListState.layoutInfo.viewportEndOffset
+                    val amount = when {
+                        dragPositionY.floatValue > end - edgeThresholdPx -> 24f
+                        dragPositionY.floatValue < edgeThresholdPx -> -24f
+                        else -> 0f
+                    }
+                    if (amount != 0f && scrollJob[0]?.isActive != true) {
+                        scrollJob[0] = dragScope.launch {
+                            weekListState.scrollBy(amount)
+                            updateHover()
+                        }
+                    }
+                },
+                onEndDrag = {
+                    val source = draggingDay
+                    val destination = hoveredDay
+                    draggingDay = null
+                    hoveredDay = null
+                    if (source != null && destination != null) {
+                        state.moveDinner(source, destination)
+                    }
+                },
+                onCancelDrag = {
+                    draggingDay = null
+                    hoveredDay = null
+                },
                 onOpenRecipe = onOpenRecipe,
                 onFinishDinner = { date, recipeId ->
                     finishingDinner = date to recipeId
                 }
             )
+        }
+    }
+
+        // A semi-transparent copy follows the actual pointer. The source
+        // card fades and the valid destination gets an outline, so users can
+        // see both what they picked up and where it will be dropped.
+        draggingDay?.let { source ->
+            state.recipeFor(source)?.let { recipe ->
+                DraggedDayPreview(
+                    day = source,
+                    recipeName = recipe.name,
+                    targetDay = hoveredDay,
+                    targetHasMeal = hoveredDay?.let(state::recipeFor) != null,
+                    pointerY = dragPositionY
+                )
+            }
+        }
+    }
+}
+
+/** Floating visual only: pointer gestures remain owned by the day handle. */
+@Composable
+private fun DraggedDayPreview(
+    day: DayOfWeek,
+    recipeName: String,
+    targetDay: DayOfWeek?,
+    targetHasMeal: Boolean,
+    pointerY: FloatState
+) {
+    val fingerCenterPx = with(LocalDensity.current) { 36.dp.toPx() }
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .offset {
+                IntOffset(0, (pointerY.floatValue - fingerCenterPx).roundToInt())
+            }
+            .graphicsLayer {
+                alpha = 0.86f
+                scaleX = 1.015f
+                scaleY = 1.015f
+            }
+            .clearAndSetSemantics {},
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 10.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Icon(
+                Icons.Filled.DragHandle,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onPrimaryContainer
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "${day.danishName()} · ${recipeName}",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    when {
+                        targetDay == null -> "Træk til en anden ulåst dag"
+                        targetHasMeal -> "Slip for at bytte med ${targetDay.danishName()}"
+                        else -> "Slip for at flytte til ${targetDay.danishName()}"
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
+                )
+            }
         }
     }
 }
@@ -640,7 +825,13 @@ fun DayCard(
     day: DayOfWeek,
     state: MealPlannerState,
     onOpenRecipe: (String) -> Unit,
-    onFinishDinner: (LocalDate, String) -> Unit
+    onFinishDinner: (LocalDate, String) -> Unit,
+    dropTarget: Boolean = false,
+    dragging: Boolean = false,
+    onStartDrag: (DayOfWeek, Float) -> Unit = { _, _ -> },
+    onDrag: (Float) -> Unit = {},
+    onEndDrag: () -> Unit = {},
+    onCancelDrag: () -> Unit = {}
 ) {
     val away = state.dayModes[day] == DayMode.AWAY
     // Compose observes these lists and maps directly. Remembering by size/id
@@ -654,7 +845,8 @@ fun DayCard(
     val recipe = if (completedLocked && eatenId != null) {
         state.recipes.find { it.id == eatenId } ?: plannedRecipe
     } else plannedRecipe
-    val isSandwich = recipe?.id != null && recipe.id == state.weeklySandwichRecipeId
+    val isSandwich = day == state.sandwichDay &&
+        recipe?.id != null && recipe.id == state.weeklySandwichRecipeId
     val isLocked = state.isDayLocked(day)
     val maxPrepMinutes = state.dayMaxPrepMinutes[day]
     val recipeCategory = if (recipe != null) {
@@ -663,6 +855,43 @@ fun DayCard(
             state.recipeProteinNames(recipe)
         )
     } else ""
+
+    val canDrag = !away && recipe != null &&
+        !isLocked && state.weeklyPlanId != null &&
+        !state.isWeekChanging && !state.isPlanning
+    val gripRootTop = remember { floatArrayOf(0f) }
+    var showMovePicker by remember(day, state.displayedWeekStart) {
+        mutableStateOf(false)
+    }
+    if (showMovePicker) {
+        AlertDialog(
+            onDismissRequest = { showMovePicker = false },
+            title = { Text("Flyt ${recipe?.name ?: "retten"}") },
+            text = {
+                LazyColumn(modifier = Modifier.heightIn(max = 380.dp)) {
+                    items(
+                        items = orderedWeekDays.filter { state.canMoveDinner(day, it) },
+                        key = { it.name }
+                    ) { destination ->
+                        TextButton(
+                            onClick = {
+                                state.moveDinner(day, destination)
+                                showMovePicker = false
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Byt med ${destination.danishName()}")
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showMovePicker = false }) {
+                    Text("Annuller")
+                }
+            }
+        )
+    }
 
     var showRecipePicker by remember { mutableStateOf(false) }
     var recipeSearch by remember { mutableStateOf("") }
@@ -805,16 +1034,26 @@ fun DayCard(
     }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (dropTarget) Modifier.border(
+                    width = 2.dp,
+                    color = MaterialTheme.colorScheme.tertiary,
+                    shape = RoundedCornerShape(20.dp)
+                ) else Modifier
+            )
+            .graphicsLayer { alpha = if (dragging) 0.42f else 1f },
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
             containerColor = when {
+                dropTarget -> MaterialTheme.colorScheme.tertiaryContainer
                 away -> MaterialTheme.colorScheme.surfaceVariant
                 isSandwich -> MaterialTheme.colorScheme.primaryContainer
                 else -> MaterialTheme.colorScheme.surface
             }
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (away) 0.dp else 1.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = if (dragging || dropTarget) 5.dp else if (away) 0.dp else 1.dp)
     ) {
         Column(modifier = Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -890,6 +1129,46 @@ fun DayCard(
                         }
                     }
                     Spacer(Modifier.width(4.dp))
+                }
+
+                if (canDrag) {
+                    // Short tap opens an accessible destination picker.
+                    // Long press and drag drops onto another visible day card.
+                    IconButton(
+                        onClick = { showMovePicker = true },
+                        modifier = Modifier
+                            .size(44.dp)
+                            .onGloballyPositioned {
+                                gripRootTop[0] = it.positionInRoot().y
+                            }
+                            .pointerInput(day, canDrag) {
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = { offset: Offset ->
+                                        onStartDrag(day, gripRootTop[0] + offset.y)
+                                    },
+                                    onDrag = { change, amount ->
+                                        change.consume()
+                                        onDrag(amount.y)
+                                    },
+                                    onDragEnd = onEndDrag,
+                                    onDragCancel = onCancelDrag
+                                )
+                            }
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                Icons.Filled.DragHandle,
+                                contentDescription = "Flyt ${recipe?.name} fra ${day.danishName()}",
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Text(
+                                "Flyt",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.primary
+                            )
+                        }
+                    }
                 }
 
                 Switch(

@@ -266,10 +266,8 @@ fun MealPlannerApp(
         tab = AppTab.entries[pagerState.currentPage]
     }
     var page by remember { mutableStateOf<AppPage?>(null) }
-    // This @Composable WindowInsets getter internally uses remembered lambdas.
-    // Read it unconditionally, before the page-specific composition changes:
-    // the crash log shows a WindowInsetsHolder lambda being mistaken for an
-    // onConflict Function0 while the page switches during recomposition.
+    // Evaluate this composable inset getter outside page-dependent branches.
+    // A WindowInsets lambda cast failed during navigation in the release log.
     val isKeyboardVisible = WindowInsets.isImeVisible
     // Remember the screen that opened Prej settings so Back goes there,
     // whether the user came from settings, product overview, or the picker.
@@ -282,6 +280,7 @@ fun MealPlannerApp(
     var showSyncConflictDialog by remember {
         mutableStateOf(value = false)
     }
+    // Stable callback for the sync badge, independent of page navigation.
     val openSyncConflictDialog: () -> Unit = remember {
         { showSyncConflictDialog = true }
     }
@@ -619,19 +618,7 @@ fun MealPlannerApp(
 }
 
 
-/**
- * Keep the overlay's remembered callbacks in an independent composition scope.
- *
- * The 2026-10-12 crash log reports:
- * WindowInsetsHolder$Companion$ExternalSyntheticLambda0
- *   cannot be cast to kotlin.jvm.functions.Function0
- *   at MealPlannerApp(MainActivity.kt:620).
- *
- * The old root composition read a @Composable IME getter in page-dependent
- * branches immediately before memoizing a Function0 for SyncStatusBadge.
- * The new structure reads the inset unconditionally in MealPlannerApp and
- * moves the overlay callback use into its own composable group.
- */
+/** Keep transient snackbar/badge composition separate from page switches. */
 @Composable
 private fun BoxScope.GlobalSyncOverlays(
     page: AppPage?,
