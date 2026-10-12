@@ -57,7 +57,7 @@ internal object QuantityPlanningRules {
         // display changes from tablespoons or packs back to grams.
         val bridgeApproximate = if (
             targetUnit.nativeUnit?.quantityType == ingredient.quantityType
-        ) false else rules.firstOrNull { it.unit == targetUnit }?.approximate == true
+        ) false else rules.singleOrNull { it.unit == targetUnit }?.approximate == true
 
         val changed = requirement.copy(
             displayAmount = display,
@@ -86,9 +86,9 @@ internal object QuantityPlanningRules {
             !pantryBase.isFinite() || pantryBase < 0.0 || pantryBase > 1e10
         ) return null
 
-        val rule = rules.firstOrNull { it.unit == packageUnit } ?: return null
+        val rule = rules.singleOrNull { it.unit == packageUnit } ?: return null
         val packBase = QuantityConversionEngine.basePerUnit(
-            ingredient, packageUnit, listOf(rule)
+            ingredient, packageUnit, rules
         ) ?: return null
         val missing = max(0.0, requiredBase - pantryBase)
         val rawCount = ceil(missing / packBase)
