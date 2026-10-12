@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -31,6 +32,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import java.text.NumberFormat
 import java.util.Locale
+import java.util.UUID
 import kotlinx.coroutines.launch
 import kotlin.math.roundToLong
 
@@ -170,6 +172,18 @@ internal fun BilkaPurchaseDialog(
             (if (manual) manualName.trim().length >= 2
             else currentProduct != null && count != null && count in 1..500) &&
             (paidText.isBlank() || paidOre != null)
+
+    // Network retries of identical checkout details reuse the SAME event ID.
+    // Explicit edits get a fresh ID: a second real purchase is allowed while
+    // lost responses / duplicate taps cannot add the same one twice.
+    val checkoutFingerprint = listOf(
+        weekId, ingredient.id, manual.toString(), selectedId.orEmpty(),
+        manualName, count?.toString().orEmpty(), baseAmount?.toString().orEmpty(),
+        paidOre?.toString().orEmpty()
+    ).joinToString("|")
+    val checkoutId = rememberSaveable(ingredient.id, weekId, checkoutFingerprint) {
+        UUID.randomUUID().toString()
+    }
 
     AlertDialog(
         onDismissRequest = { if (!saving) onDismiss() },
@@ -357,7 +371,8 @@ internal fun BilkaPurchaseDialog(
                             manualProductName = if (manual) manualName.trim() else null,
                             packageCount = if (manual) null else count,
                             amountBase = amount,
-                            paidTotalOre = paidOre
+                            paidTotalOre = paidOre,
+                            purchaseId = checkoutId
                         ).let { purchaseResult ->
                             if (purchaseResult.isSuccess) {
                                 state.refreshNow()
