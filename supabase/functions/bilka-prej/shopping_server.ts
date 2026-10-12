@@ -42,6 +42,7 @@ export async function shoppingContext(ctx: ShoppingService, weekId: string) {
 export interface CheckoutPayload {
   weekId: string;
   ingredientId: string;
+  purchaseId?: string | null;
   productId?: string | null;
   manualProductName?: string | null;
   packageCount?: number | null;
@@ -59,6 +60,9 @@ type ProductRow = {
  */
 export async function recordPurchase(ctx: ShoppingService, input: CheckoutPayload) {
   await checkedWeek(ctx, input.weekId);
+  if (input.purchaseId != null && !uuid(input.purchaseId)) {
+    throw new CheckoutError("invalid_purchase_id", 400);
+  }
   if (!uuid(input.ingredientId)) throw new CheckoutError("invalid_ingredient", 400);
   const house = encode(ctx.householdId);
   const ingredientRows = list<{id: string; quantity_type: string; never_buy: boolean}>(await ctx.admin(
@@ -139,7 +143,9 @@ export async function recordPurchase(ctx: ShoppingService, input: CheckoutPayloa
   }
 
   try {
-    const amount = await ctx.rpc("bilka_record_purchase", {
+    const amount = await ctx.rpc(
+      input.purchaseId ? "bilka_record_purchase_v2" : "bilka_record_purchase", {
+      ...(input.purchaseId ? { p_purchase_id: input.purchaseId } : {}),
       p_household_id: ctx.householdId,
       p_weekly_plan_id: input.weekId,
       p_ingredient_id: input.ingredientId,
