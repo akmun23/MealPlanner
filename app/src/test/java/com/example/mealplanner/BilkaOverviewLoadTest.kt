@@ -18,9 +18,13 @@ class BilkaOverviewLoadTest {
         """{"items":[{"ingredientId":"milk","name":"Mælk","state":"CHOSEN","candidateCount":2}]}"""
     )
     private val products = raw(
-        """{"candidates":[{"ingredient_id":"milk","product_id":"123"}],""" +
-            """"defaults":[{"ingredient_id":"milk","product_id":"123"}],""" +
-            """"products":[{"id":"123","name":"Letmælk","price_ore":1200}]}"""
+        """
+        {
+          "candidates": [{"ingredient_id": "milk", "product_id": "123"}],
+          "defaults": [{"ingredient_id": "milk", "product_id": "123"}],
+          "products": [{"id": "123", "name": "Letmælk", "price_ore": 1200}]
+        }
+        """.trimIndent()
     )
 
     @Test
