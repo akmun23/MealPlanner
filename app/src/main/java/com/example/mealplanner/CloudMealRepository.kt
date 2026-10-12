@@ -47,8 +47,21 @@ private data class IngredientRow(
     val name: String,
     @SerialName("quantity_type") val quantityType: String,
     @SerialName("preferred_unit") val preferredUnit: String,
+    @SerialName("never_buy") val neverBuy: Boolean = false,
     @SerialName("shopping_category_id") val shoppingCategoryId: String? = null,
     @SerialName("image_path") val imagePath: String? = null
+)
+
+@Serializable
+private data class BilkaDefaultImageRow(
+    @SerialName("ingredient_id") val ingredientId: String,
+    @SerialName("product_id") val productId: String
+)
+
+@Serializable
+private data class BilkaProductImageRow(
+    val id: String,
+    @SerialName("image_url") val imageUrl: String? = null
 )
 
 @Serializable
@@ -81,6 +94,18 @@ private data class RecipeCategoryAssignmentRow(
     @SerialName("category_id") val categoryId: String
 )
 
+/** Every persisted RecipeRow field must be requested during remote refresh. */
+internal val recipeCloudReadColumns = listOf(
+    "id",
+    "household_id",
+    "name",
+    "meal_type",
+    "notes",
+    "instruction_steps",
+    "source_url",
+    "image_path",
+)
+
 @Serializable
 internal data class RecipeRow(
     val id: String,
@@ -88,6 +113,8 @@ internal data class RecipeRow(
     val name: String,
     @SerialName("meal_type") val mealType: String = "DINNER",
     val notes: String,
+    @SerialName("instruction_steps") val instructionSteps: List<RecipeInstructionStep> = emptyList(),
+    @SerialName("source_url") val sourceUrl: String? = null,
     @SerialName("image_path") val imagePath: String? = null
 )
 
@@ -152,13 +179,17 @@ private data class WeeklyPlanRow(
 )
 
 @Serializable
-private data class PlannedMealRow(
+internal data class PlannedMealRow(
     @SerialName("household_id") val householdId: String,
     @SerialName("weekly_plan_id") val weeklyPlanId: String,
     @SerialName("day_of_week") val dayOfWeek: Int,
     val mode: String,
     @SerialName("recipe_id") val recipeId: String? = null,
-    val locked: Boolean = false
+    // Required in database: DO NOT give this a Kotlin default.
+    // Kotlinx serialization omits default-valued properties by default,
+    // which made locked=false disappear from Supabase upserts and caused
+    // PostgreSQL's NOT NULL constraint to reject week sync repeatedly.
+    val locked: Boolean
 )
 
 @Serializable
@@ -217,7 +248,9 @@ data class CloudSnapshot(
     val weeklyPlanId: String,
     val weeklySandwichRecipeId: String?,
     val sandwichDay: DayOfWeek?,
-    val history: List<MealHistoryEntry>
+    val history: List<MealHistoryEntry>,
+    val viewWeekStart: LocalDate = LocalDate.now()
+        .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
 ) {
     companion object {
         val EMPTY = CloudSnapshot(
@@ -437,6 +470,7 @@ class CloudMealRepository(
         LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
 
     suspend fun loadCurrent(
+        weekStart: LocalDate = currentWeekStart()
     ): CloudSnapshot = withContext(Dispatchers.IO) {
         coroutineScope {
             val ingredientsDeferred = async {
@@ -449,7 +483,7 @@ class CloudMealRepository(
                 loadPantrySnapshot()
             }
             val weekDeferred = async {
-                loadWeekSnapshot()
+                loadWeekSnapshot(weekStart)
             }
             val historyDeferred = async {
                 // History maintenance is independent of the other reads;
@@ -489,7 +523,8 @@ class CloudMealRepository(
                 weeklySandwichRecipeId =
                     week.weeklySandwichRecipeId,
                 sandwichDay = week.sandwichDay,
-                history = history
+                history = history,
+                viewWeekStart = weekStart
             )
         }
     }
@@ -513,9 +548,43 @@ class CloudMealRepository(
                     }.decodeList<IngredientProteinRow>()
                 }
 
+                // The chosen Bilka product supplies the pantry thumbnail only
+                // when no photo was explicitly selected for this ingredient.
+                // Never download original-size pictures during snapshot loading.
+                val bilkaImagesDeferred = async {
+                    try {
+                        val defaults = supabase.from("ingredient_bilka_defaults")
+                            .select(columns = Columns.list("ingredient_id", "product_id")) {
+                                filter { eq("household_id", householdId) }
+                            }.decodeList<BilkaDefaultImageRow>()
+                        val productIds = defaults.map { it.productId }.distinct()
+                        if (productIds.isEmpty()) {
+                            emptyMap()
+                        } else {
+                            val photos = productIds.chunked(100).flatMap { ids ->
+                                supabase.from("bilka_products")
+                                    .select(columns = Columns.list("id", "image_url")) {
+                                        filter { isIn("id", ids) }
+                                    }.decodeList<BilkaProductImageRow>()
+                            }.associateBy { it.id }
+                            defaults.mapNotNull { row ->
+                                val url = photos[row.productId]?.imageUrl
+                                    ?.takeIf { it.startsWith("https://") || it.startsWith("http://") }
+                                url?.let { row.ingredientId to it }
+                            }.toMap()
+                        }
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                        throw cancelled
+                    } catch (_: Exception) {
+                        // An unreachable optional catalog must not block pantry loading.
+                        emptyMap<String, String>()
+                    }
+                }
+
                 val ingredientRows = ingredientsDeferred.await()
                 val categoryRows = categoriesDeferred.await()
                 val proteinRows = proteinFlagsDeferred.await()
+                val bilkaImages = bilkaImagesDeferred.await()
                 val proteinByIngredient =
                     proteinRows.associateBy { it.ingredientId }
 
@@ -536,7 +605,11 @@ class CloudMealRepository(
                             shoppingCategoryId = row.shoppingCategoryId,
                             isProtein =
                                 proteinByIngredient[row.id]?.isProtein == true,
-                            imageUri = row.imagePath?.let(MealImageReference::forPath),
+                            neverBuy = row.neverBuy,
+                            imageUri = PantryImageRules.displayImage(
+                                manualImageUri = row.imagePath?.let(MealImageReference::forPath),
+                                bilkaImageUrl = bilkaImages[row.id]
+                            ),
                             imagePath = row.imagePath
                         )
                     },
@@ -570,15 +643,12 @@ class CloudMealRepository(
                     }.decodeList<RecipeCategoryAssignmentRow>()
                 }
                 val recipesDeferred = async {
+                    // Explicit projection MUST include every persisted RecipeRow
+                    // field. Omitting steps/URL silently applies their Kotlin
+                    // defaults during decoding and then wipes the user's edits
+                    // when realtime refresh replaces the optimistic recipe.
                     supabase.from("recipes").select(
-                        columns = Columns.list(
-                            "id",
-                            "household_id",
-                            "name",
-                            "meal_type",
-                            "notes",
-                            "image_path"
-                        )
+                        columns = Columns.list(*recipeCloudReadColumns.toTypedArray())
                     ) {
                         filter { eq("household_id", householdId) }
                     }.decodeList<RecipeRow>()
@@ -652,6 +722,8 @@ class CloudMealRepository(
                             categoryId =
                                 categoryByRecipe[row.id]?.categoryId,
                             notes = row.notes,
+                            instructionSteps = row.instructionSteps,
+                            sourceUrl = row.sourceUrl,
                             imageUri = row.imagePath?.let(MealImageReference::forPath),
                             imagePath = row.imagePath,
                             ingredients =
@@ -682,14 +754,14 @@ class CloudMealRepository(
                 .associate { it.ingredientId to it.amountBase }
         }
 
-    internal suspend fun loadWeekSnapshot(): CloudWeekSnapshot =
+    internal suspend fun loadWeekSnapshot(weekStart: LocalDate = currentWeekStart()): CloudWeekSnapshot =
         withContext(Dispatchers.IO) {
             val settings = supabase.from("household_settings").select {
                 filter { eq("household_id", householdId) }
             }.decodeList<SettingsRow>().firstOrNull()
 
             val weeklyPlan = ensureWeek(
-                weekStart = currentWeekStart(),
+                weekStart = weekStart,
                 sandwichRecipeId = settings?.sandwichRecipeId
             )
 
@@ -866,6 +938,7 @@ class CloudMealRepository(
                 name = ingredient.name,
                 quantityType = ingredient.quantityType.name,
                 preferredUnit = ingredient.preferredUnit.name,
+                neverBuy = ingredient.neverBuy,
                 shoppingCategoryId = ingredient.shoppingCategoryId,
                 imagePath = finalImage.first
             )
@@ -929,6 +1002,8 @@ class CloudMealRepository(
                 name = recipe.name,
                 mealType = recipe.mealType.name,
                 notes = recipe.notes,
+                instructionSteps = recipe.instructionSteps,
+                sourceUrl = recipe.sourceUrl,
                 imagePath = finalImage.first
             )
         ) {
@@ -982,8 +1057,10 @@ class CloudMealRepository(
         }
 
         if (recipe.ingredients.isNotEmpty()) {
-            supabase.from("recipe_ingredients").insert(
-                recipe.ingredients.map {
+            // Idempotent across Room/WorkManager retries and repeated writes:
+            // the primary key is (recipe_id, ingredient_id).
+            supabase.from("recipe_ingredients").upsert(
+                RecipeRequirementRules.combineIngredients(recipe.ingredients).map {
                     RecipeIngredientRow(
                         householdId = householdId,
                         recipeId = recipe.id,
@@ -991,7 +1068,9 @@ class CloudMealRepository(
                         amountBase = it.amountBase
                     )
                 }
-            )
+            ) {
+                onConflict = "recipe_id,ingredient_id"
+            }
         }
 
         supabase.from("recipe_pantry_prerequisites").delete {
@@ -1002,8 +1081,8 @@ class CloudMealRepository(
         }
 
         if (recipe.pantryPrerequisites.isNotEmpty()) {
-            supabase.from("recipe_pantry_prerequisites").insert(
-                recipe.pantryPrerequisites.map {
+            supabase.from("recipe_pantry_prerequisites").upsert(
+                RecipeRequirementRules.combinePrerequisites(recipe.pantryPrerequisites).map {
                     RecipePantryPrerequisiteRow(
                         householdId = householdId,
                         recipeId = recipe.id,
@@ -1011,7 +1090,9 @@ class CloudMealRepository(
                         minimumAmountBase = it.minimumAmountBase
                     )
                 }
-            )
+            ) {
+                onConflict = "recipe_id,ingredient_id"
+            }
         }
 
         recipe.copy(
@@ -1226,6 +1307,7 @@ class CloudMealRepository(
         )
     }
 
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
     internal suspend fun startRealtime(
         scope: CoroutineScope,
         onEvent: suspend (CloudRealtimeEvent) -> Unit
@@ -1341,12 +1423,18 @@ class CloudMealRepository(
         sandwichRecipeId: String?,
         sandwichDay: DayOfWeek?
     ) {
-        val weekStart = LocalDate.now().with(DayOfWeek.MONDAY)
+        // Never overwrite the actual week_start with today's Monday when
+        // saving a future/past plan. The plan ID is the source of truth.
+        val existing = supabase.from("weekly_plans").select {
+            filter {
+                eq("household_id", householdId)
+                eq("id", weeklyPlanId)
+            }
+        }.decodeList<WeeklyPlanRow>().firstOrNull()
+            ?: error("Weekly plan no longer exists")
+
         supabase.from("weekly_plans").upsert(
-            WeeklyPlanRow(
-                id = weeklyPlanId,
-                householdId = householdId,
-                weekStart = weekStart.toString(),
+            existing.copy(
                 sandwichDay = sandwichDay?.value,
                 sandwichRecipeId = sandwichRecipeId
             )
@@ -1370,7 +1458,12 @@ class CloudMealRepository(
             return existingPath to imageUri
         }
 
-        val bytes = prepareImage(imageUri.toUri())
+        // Ingredient images are only used as 60dp pantry thumbnails.
+        // Resize them at upload, not just at display, to avoid huge originals.
+        val bytes = prepareImage(
+            imageUri.toUri(),
+            maxDimension = if (kind == "ingredients") PantryImageRules.INGREDIENT_UPLOAD_MAX_PIXELS else 1600
+        )
         val path = $$"$$householdId/$$kind/$$objectId-${UUID.randomUUID()}.jpg"
         supabase.storage["meal-images"].upload(path, bytes) {
             upsert = false
@@ -1391,7 +1484,7 @@ class CloudMealRepository(
         imageUrls.invalidate(path)
     }
 
-    private fun prepareImage(uri: Uri): ByteArray {
+    private fun prepareImage(uri: Uri, maxDimension: Int): ByteArray {
         val resolver = context.contentResolver
 
         val bounds = BitmapFactory.Options().apply {
@@ -1403,7 +1496,7 @@ class CloudMealRepository(
 
         var sample = 1
         val largest = maxOf(bounds.outWidth, bounds.outHeight)
-        while (largest / sample > 1600) {
+        while (largest / sample > maxDimension) {
             sample *= 2
         }
 

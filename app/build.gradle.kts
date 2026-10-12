@@ -43,8 +43,9 @@ android {
         applicationId = "com.mealplan.mealplanner"
         minSdk = 26
         targetSdk = 37
-        versionCode = 7
-        versionName = "1.2.3"
+        versionCode = 10
+        versionName = "1.3.2"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField(
             "String",
@@ -61,22 +62,33 @@ android {
 
     buildTypes {
         release {
-            // Stability hotfix: re-enable release shrinking only after a
-            // physical-device startup test with a captured crash trace.
+            // AGP 9.4: optimize code (R8) and resources for the actual
+            // production APK/AAB. The benchmark variant inherits this.
             optimization {
-                enable = false
+                enable = true
+            }
+            // Include available native debugging metadata in the Play AAB.
+            // Pre-stripped third-party libraries cannot regain missing symbols.
+            ndk {
+                debugSymbolLevel = "FULL"
             }
         }
         create("benchmark") {
             initWith(getByName("release"))
-            // Evaluate R8's optimized DEX and resource shrinking before
-            // restoring it to production. The existing release build stays
-            // non-minified until a real-device launch + local/cloud flow test.
+            // The benchmark must match release's R8 settings but use a test
+            // signature. Never install over a Play-signed production app.
+            signingConfig = signingConfigs.getByName("debug")
+            isDebuggable = false
+            matchingFallbacks += listOf("release")
+        }
+        create("unoptimized") {
+            initWith(getByName("release"))
+            // Comparison artifact only: identical release source/dependencies
+            // without shrinking, used to quantify R8's DEX reduction.
+            // This variant must never be uploaded to Play Console.
             optimization {
-                enable = true
+                enable = false
             }
-            // Non-debuggable for realistic startup/frame tracing; do NOT
-            // install over a release-signed app (different signing keys).
             signingConfig = signingConfigs.getByName("debug")
             isDebuggable = false
             matchingFallbacks += listOf("release")
@@ -97,6 +109,12 @@ android {
 
         // Required because we create BuildConfig.SUPABASE_URL etc.
         buildConfig = true
+    }
+}
+
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    compilerOptions {
+        allWarningsAsErrors.set(true)
     }
 }
 
@@ -157,6 +175,12 @@ dependencies {
     testImplementation(libs.androidx.work.testing)
     testImplementation(libs.robolectric)
 
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.runner)
+
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(
         libs.androidx.compose.ui.tooling
     )

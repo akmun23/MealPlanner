@@ -71,23 +71,23 @@ internal fun authErrorMessage(
 
     return when {
         "invalid login credentials" in raw ||
-            "invalid credentials" in raw ->
+                "invalid credentials" in raw ->
             "Forkert e-mail eller adgangskode."
 
         "email not confirmed" in raw ||
-            "email_not_confirmed" in raw ->
+                "email_not_confirmed" in raw ->
             "Bekræft din e-mail, før du logger ind."
 
         "user already registered" in raw ||
-            "already been registered" in raw ->
+                "already been registered" in raw ->
             "Der findes allerede en konto med denne e-mail."
 
         "invalid email" in raw ||
-            "email address" in raw && "invalid" in raw ->
+                "email address" in raw && "invalid" in raw ->
             "Indtast en gyldig e-mailadresse."
 
         "weak password" in raw ||
-            "password should be at least" in raw ->
+                "password should be at least" in raw ->
             if (action == AuthAction.SIGN_UP) {
                 "Vælg en adgangskode på mindst 12 tegn."
             } else {
@@ -95,7 +95,7 @@ internal fun authErrorMessage(
             }
 
         "rate limit" in raw ||
-            "too many requests" in raw ->
+                "too many requests" in raw ->
             "For mange forsøg. Prøv igen lidt senere."
 
         "signup" in raw && "disabled" in raw ->
@@ -122,11 +122,11 @@ data class HouseholdMemberDto(
 
 @Serializable
 data class HouseholdDto(
-    val id: String,
-    val name: String,
+    val id: String = "",
+    val name: String = "Mit Hjem",
 
     @SerialName("join_code")
-    val joinCode: String
+    val joinCode: String = ""
 )
 
 class CloudAccountRepository(context: Context) {
@@ -771,8 +771,8 @@ private fun LoginScreen(
             },
             enabled =
                 !isBusy &&
-                    email.isNotBlank() &&
-                    password.length >= 6,
+                        email.isNotBlank() &&
+                        password.length >= 6,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp)
         ) {
@@ -799,8 +799,8 @@ private fun LoginScreen(
             },
             enabled =
                 !isBusy &&
-                    email.isNotBlank() &&
-                    password.length >= NEW_ACCOUNT_MIN_PASSWORD_LENGTH,
+                        email.isNotBlank() &&
+                        password.length >= NEW_ACCOUNT_MIN_PASSWORD_LENGTH,
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp)
         ) {

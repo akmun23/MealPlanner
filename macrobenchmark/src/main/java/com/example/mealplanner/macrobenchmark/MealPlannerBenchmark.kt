@@ -20,7 +20,8 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class MealPlannerBenchmark {
-    @get:Rule val rule = MacrobenchmarkRule()
+    @get:Rule
+    val rule = MacrobenchmarkRule()
 
     @Test
     fun coldStartup() = rule.measureRepeated(
@@ -40,16 +41,18 @@ class MealPlannerBenchmark {
         compilationMode = CompilationMode.None(),
         startupMode = StartupMode.WARM,
         iterations = 8,
-        setupBlock = { startActivityAndWait() },
+        setupBlock = {
+            val device = UiDevice.getInstance(
+                InstrumentationRegistry.getInstrumentation()
+            )
+            check(device.wait(Until.hasObject(By.text("Opskrifter")), 10_000)) {
+                "Sign in and open your household before benchmarking tabs."
+            }
+        },
         measureBlock = {
             val device = UiDevice.getInstance(
                 InstrumentationRegistry.getInstrumentation()
             )
-            // Run after signing in; the benchmark APK replaces the installed
-            // app and the login state may need to be established again.
-            check(device.wait(Until.hasObject(By.text("Opskrifter")), 10_000)) {
-                "Sign in and open your household before benchmarking tabs."
-            }
             device.findObject(By.text("Opskrifter")).click()
             device.waitForIdle()
             device.findObject(By.text("Lager")).click()
@@ -62,10 +65,171 @@ class MealPlannerBenchmark {
     )
 
     /**
+     * Read-only release-like crash regression. Run on a spare phone with a
+     * signed-in/prepared household. Opening a page is enough to reproduce
+     * the reported release crash; never save, modify or delete user data.
+     *
+     * Unlike app/src/androidTest, this executes against the R8-optimized
+     * non-debuggable benchmark variant, matching the Play release's shrinker.
+     */
+    @Test
+    fun subpageNavigationSmoke() = rule.measureRepeated(
+        packageName = PACKAGE_NAME,
+        metrics = listOf(FrameTimingMetric()),
+        compilationMode = CompilationMode.None(),
+        startupMode = StartupMode.WARM,
+        iterations = 1,
+        setupBlock = {
+            val device = UiDevice.getInstance(
+                InstrumentationRegistry.getInstrumentation()
+            )
+            check(device.wait(Until.hasObject(By.desc("Indstillinger")), 10_000)) {
+                "Prepare and sign in to a household before the navigation smoke test."
+            }
+        },
+        measureBlock = {
+            val device = UiDevice.getInstance(
+                InstrumentationRegistry.getInstrumentation()
+            )
+            // The reported ClassCastException occurred during recomposition
+            // when switching between a main tab and any subpage. Repeat the
+            // transition rather than measuring only the first successful open.
+            repeat(5) { cycle ->
+                check(device.wait(Until.hasObject(By.desc("Indstillinger")), 8_000)) {
+                    "Settings action missing before transition $cycle."
+                }
+                device.findObject(By.desc("Indstillinger")).click()
+                check(device.wait(Until.hasObject(By.text("Indstillinger")), 8_000)) {
+                    "Settings crashed on transition $cycle."
+                }
+                check(device.wait(Until.hasObject(By.desc("Tilbage")), 8_000)) {
+                    "Settings back action absent on transition $cycle."
+                }
+                device.pressBack()
+                check(device.wait(Until.hasObject(By.text("Opskrifter")), 8_000)) {
+                    "App crashed returning to tabs on transition $cycle."
+                }
+            }
+
+            device.findObject(By.text("Opskrifter")).click()
+            check(device.wait(Until.hasObject(By.text("Ny opskrift")), 8_000)) {
+                "Recipes tab did not become ready."
+            }
+            device.findObject(By.text("Ny opskrift")).click()
+            check(device.wait(Until.hasObject(By.desc("Tilbage")), 8_000)) {
+                "App crashed or new-recipe subpage failed to open."
+            }
+            device.pressBack()
+            check(device.wait(Until.hasObject(By.text("Lager")), 8_000)) {
+                "App crashed while returning from recipe editor."
+            }
+
+            device.findObject(By.text("Lager")).click()
+            check(device.wait(Until.hasObject(By.text("Ny ingrediens")), 8_000)) {
+                "Pantry tab did not become ready."
+            }
+            device.findObject(By.text("Ny ingrediens")).click()
+            check(device.wait(Until.hasObject(By.desc("Tilbage")), 8_000)) {
+                "App crashed or new-ingredient subpage failed to open."
+            }
+            device.pressBack()
+            check(device.wait(Until.hasObject(By.text("Madplan")), 8_000)) {
+                "App crashed while returning from ingredient editor."
+            }
+        }
+    )
+
+    /**
+     * Read-only navigation smoke covering existing recipe and ingredient
+     * subpages. Requires a prepared household with at least one of each.
+     * Never saves or deletes anything.
+     */
+    @Test
+    fun existingItemSubpagesSmoke() = rule.measureRepeated(
+        packageName = PACKAGE_NAME,
+        metrics = listOf(FrameTimingMetric()),
+        compilationMode = CompilationMode.None(),
+        startupMode = StartupMode.WARM,
+        iterations = 1,
+        setupBlock = {
+            val device = UiDevice.getInstance(
+                InstrumentationRegistry.getInstrumentation()
+            )
+            check(device.wait(Until.hasObject(By.text("Opskrifter")), 10_000)) {
+                "Sign in and prepare recipes and pantry ingredients first."
+            }
+        },
+        measureBlock = {
+            val device = UiDevice.getInstance(
+                InstrumentationRegistry.getInstrumentation()
+            )
+
+            device.findObject(By.text("Opskrifter")).click()
+            device.waitForIdle()
+            var recipeCard = device.findObject(By.descStartsWith("Åbn opskrift: "))
+            if (recipeCard == null) {
+                device.swipe(
+                    device.displayWidth / 2, device.displayHeight * 3 / 4,
+                    device.displayWidth / 2, device.displayHeight / 3, 25
+                )
+                recipeCard = device.findObject(By.descStartsWith("Åbn opskrift: "))
+            }
+            check(recipeCard != null) {
+                "At least one visible recipe is needed for existing-item navigation."
+            }
+            recipeCard.click()
+            check(device.wait(Until.hasObject(By.text("Rediger")), 8_000)) {
+                "Recipe details crashed or failed to render."
+            }
+
+            device.findObject(By.text("Rediger")).click()
+            check(device.wait(Until.hasObject(By.text("Rediger opskrift")), 8_000)) {
+                "Recipe editor crashed or failed to render."
+            }
+            device.pressBack()
+            check(device.wait(Until.hasObject(By.text("Rediger")), 8_000)) {
+                "Returning from the recipe editor failed."
+            }
+            device.pressBack()
+            check(device.wait(Until.hasObject(By.text("Lager")), 8_000)) {
+                "Returning from recipe details failed."
+            }
+
+            device.findObject(By.text("Lager")).click()
+            device.waitForIdle()
+            var ingredientEdit = device.findObject(By.desc("Rediger ingrediens"))
+            if (ingredientEdit == null) {
+                device.swipe(
+                    device.displayWidth / 2, device.displayHeight * 3 / 4,
+                    device.displayWidth / 2, device.displayHeight / 3, 25
+                )
+                ingredientEdit = device.findObject(By.desc("Rediger ingrediens"))
+            }
+            check(ingredientEdit != null) {
+                "At least one visible ingredient is needed for existing-item navigation."
+            }
+            ingredientEdit.click()
+            check(device.wait(Until.hasObject(By.text("Rediger ingrediens")), 8_000)) {
+                "Ingredient editor crashed or failed to render."
+            }
+            device.pressBack()
+            check(device.wait(Until.hasObject(By.text("Lager")), 8_000)) {
+                "Returning from ingredient editor failed."
+            }
+        }
+    )
+
+    /**
      * Separate measurements for the two long lists, instead of only testing
      * tab transitions. Use a populated household with representative photos
      * so these tests reproduce the scrolling pauses reported on devices.
      */
+    @Test
+    fun weekScrollFrameTiming() = measureListScroll("Madplan")
+
+    @Test
+    fun shoppingScrollFrameTiming() = measureListScroll("Indkøb")
+
     @Test
     fun pantryScrollFrameTiming() = measureListScroll("Lager")
 
@@ -79,7 +243,6 @@ class MealPlannerBenchmark {
         startupMode = StartupMode.WARM,
         iterations = 8,
         setupBlock = {
-            startActivityAndWait()
             val device = UiDevice.getInstance(
                 InstrumentationRegistry.getInstrumentation()
             )

@@ -10,24 +10,16 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SyncStatusScreen(
     state: MealPlannerState,
@@ -44,21 +36,7 @@ internal fun SyncStatusScreen(
         SyncIndicator.OFFLINE -> "Du arbejder offline"
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text("Synkronisering") },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
-                            contentDescription = "Tilbage"
-                        )
-                    }
-                }
-            )
-        }
-    ) { padding ->
+    SubpageScaffold(title = "Synkronisering", onBack = onBack) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
             contentPadding = PaddingValues(16.dp),
@@ -96,7 +74,7 @@ internal fun SyncStatusScreen(
                 Button(
                     onClick = state::retryPendingSync,
                     enabled = state.pendingSyncCount > 0 &&
-                        state.syncConflictCount == 0,
+                            state.syncConflictCount == 0,
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text("Prøv at synkronisere nu")

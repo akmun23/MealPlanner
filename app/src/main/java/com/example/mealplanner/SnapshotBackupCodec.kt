@@ -58,9 +58,9 @@ internal object SnapshotBackupCodec {
         require(snapshot.pantry.values.all { it.isFinite() && it >= 0.0 })
         require(recipes.all { recipe ->
             recipe.ingredients.all { it.amountBase.isFinite() && it.amountBase >= 0.0 } &&
-                recipe.pantryPrerequisites.all {
-                    it.minimumAmountBase.isFinite() && it.minimumAmountBase >= 0.0
-                }
+                    recipe.pantryPrerequisites.all {
+                        it.minimumAmountBase.isFinite() && it.minimumAmountBase >= 0.0
+                    }
         })
     }
 }

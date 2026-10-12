@@ -35,8 +35,8 @@ object WeeklyPlanner {
     ): PlannerResult {
         val dinnerRecipes = recipes.filter {
             it.mealType == MealType.DINNER &&
-                it.autoRotationEnabled &&
-                hasRequiredPantryStock(it, pantry)
+                    it.autoRotationEnabled &&
+                    hasRequiredPantryStock(it, pantry)
         }
 
         if (dinnerRecipes.isEmpty() && weeklySandwichRecipeId == null) {
@@ -57,14 +57,15 @@ object WeeklyPlanner {
         val sandwichDay = when {
             sandwichRecipe == null -> null
             currentSandwichDay != null &&
-                currentSandwichDay in lockedDays &&
-                currentSandwichDay in homeDays -> currentSandwichDay
+                    currentSandwichDay in lockedDays &&
+                    currentSandwichDay in homeDays -> currentSandwichDay
+
             else -> sandwichDayPreference.firstOrNull { day ->
                 day in homeDays &&
-                    fitsPrepLimit(
-                        recipe = sandwichRecipe,
-                        maxPrepMinutes = maxPrepMinutesByDay[day]
-                    )
+                        fitsPrepLimit(
+                            recipe = sandwichRecipe,
+                            maxPrepMinutes = maxPrepMinutesByDay[day]
+                        )
             }
         }
 
@@ -90,21 +91,21 @@ object WeeklyPlanner {
                 .toMutableSet()
 
             unlockedHomeDays.forEach { day ->
-                    val eligible = eligibleByDay.getValue(day)
+                val eligible = eligibleByDay.getValue(day)
 
-                    val available = eligible.filter {
-                        it.id != weeklySandwichRecipeId && it.id !in usedIds
-                    }.ifEmpty {
-                        eligible.filter { it.id != weeklySandwichRecipeId }
-                    }.ifEmpty {
-                        eligible
-                    }
+                val available = eligible.filter {
+                    it.id != weeklySandwichRecipeId && it.id !in usedIds
+                }.ifEmpty {
+                    eligible.filter { it.id != weeklySandwichRecipeId }
+                }.ifEmpty {
+                    eligible
+                }
 
-                    if (available.isEmpty()) return@forEach
+                if (available.isEmpty()) return@forEach
 
-                    val ranked = available
-                        .map { recipe ->
-                            recipe to (
+                val ranked = available
+                    .map { recipe ->
+                        recipe to (
                                 incrementalRecipeScore(
                                     recipe = recipe,
                                     chosenRecipeIds = chosen.values.filterNotNull(),
@@ -115,16 +116,16 @@ object WeeklyPlanner {
                                     targetDate = weekStart.plusDays(day.value.toLong() - 1),
                                     weights = weights
                                 ) + randomJitter(weights.jitter, random)
-                            )
-                        }
-                        .sortedByDescending { it.second }
+                                )
+                    }
+                    .sortedByDescending { it.second }
 
-                    // Sample every eligible recipe; a top-four cutoff kept recycling
-                    // the same few meals, even when many more were available.
-                    val recipe = weightedPick(ranked, random, weights.jitter)
-                    chosen[day] = recipe.id
-                    usedIds += recipe.id
-                }
+                // Sample every eligible recipe; a top-four cutoff kept recycling
+                // the same few meals, even when many more were available.
+                val recipe = weightedPick(ranked, random, weights.jitter)
+                chosen[day] = recipe.id
+                usedIds += recipe.id
+            }
 
             val improved = localImprove(
                 plan = chosen,
@@ -195,8 +196,8 @@ object WeeklyPlanner {
 
         val dinnerRecipes = recipes.filter {
             it.mealType == MealType.DINNER &&
-                it.autoRotationEnabled &&
-                hasRequiredPantryStock(it, pantry)
+                    it.autoRotationEnabled &&
+                    hasRequiredPantryStock(it, pantry)
         }
         val recipesById = recipes.associateBy { it.id }
         val historyByRecipe = indexHistory(history)
@@ -215,8 +216,8 @@ object WeeklyPlanner {
 
         val alternatives = eligible.filter {
             it.id != weeklySandwichRecipeId &&
-                it.id != oldId &&
-                it.id !in usedElsewhere
+                    it.id != oldId &&
+                    it.id !in usedElsewhere
         }.ifEmpty {
             eligible.filter {
                 it.id != weeklySandwichRecipeId && it.id != oldId
@@ -278,9 +279,17 @@ object WeeklyPlanner {
 
         var best = plan.toMutableMap()
         var bestScore = scoreWholeWeek(
-            best, sandwichDay, sandwichRecipeId,
+            best,
+            sandwichDay,
+            sandwichRecipeId,
             activeDayModes,
-            recipesById, pantry, historyByRecipe, proteinIngredientIds, weekStart, previousPlan, weights
+            recipesById,
+            pantry,
+            historyByRecipe,
+            proteinIngredientIds,
+            weekStart,
+            previousPlan,
+            weights
         )
 
         repeat(LOCAL_SEARCH_STEPS) {
@@ -304,9 +313,17 @@ object WeeklyPlanner {
             if (!respectsTimeLimits) return@repeat
 
             val score = scoreWholeWeek(
-                candidate, sandwichDay, sandwichRecipeId,
+                candidate,
+                sandwichDay,
+                sandwichRecipeId,
                 activeDayModes,
-                recipesById, pantry, historyByRecipe, proteinIngredientIds, weekStart, previousPlan, weights
+                recipesById,
+                pantry,
+                historyByRecipe,
+                proteinIngredientIds,
+                weekStart,
+                previousPlan,
+                weights
             )
             if (score > bestScore) {
                 best = candidate

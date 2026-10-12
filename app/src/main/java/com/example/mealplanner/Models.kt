@@ -36,6 +36,12 @@ enum class MeasurementUnit(
     fun toBase(amount: Double): Double = amount * toBaseFactor
     fun fromBase(amountBase: Double): Double = amountBase / toBaseFactor
 
+    /** Convert the displayed amount while preserving its underlying quantity. */
+    fun convertAmountTo(amount: Double, target: MeasurementUnit): Double? {
+        if (!amount.isFinite() || quantityType != target.quantityType) return null
+        return target.fromBase(toBase(amount))
+    }
+
     fun labelFor(amount: Double): String = when (this) {
         PACK -> if (abs(amount - 1.0) < 0.00001) "pakke" else "pakker"
         CAN -> if (abs(amount - 1.0) < 0.00001) "dåse" else "dåser"
@@ -97,14 +103,40 @@ data class Ingredient(
     val preferredUnit: MeasurementUnit,
     val shoppingCategoryId: String? = null,
     val isProtein: Boolean = false,
+    val neverBuy: Boolean = false,
     val imageUri: String? = null,
     val imagePath: String? = null
 )
+
+/**
+ * Existing quantities are stored in base units without a quantity-kind tag.
+ * Reinterpreting those values as mass/volume/count would silently corrupt data.
+ */
+internal fun canChangeIngredientQuantityType(
+    ingredient: Ingredient,
+    newType: QuantityType,
+    pantryBase: Double,
+    recipes: List<Recipe>
+): Boolean = ingredient.quantityType == newType || (
+        pantryBase == 0.0 &&
+                recipes.none { recipe ->
+                    recipe.ingredients.any { it.ingredientId == ingredient.id } ||
+                            recipe.pantryPrerequisites.any { it.ingredientId == ingredient.id }
+                }
+        )
 
 @Serializable
 data class RecipeIngredient(
     val ingredientId: String,
     val amountBase: Double
+)
+
+/** An ordered recipe instruction: level 0 is a numbered main step, level 1 a lettered substep. */
+@Serializable
+data class RecipeInstructionStep(
+    val id: String = UUID.randomUUID().toString(),
+    val text: String,
+    val level: Int = 0
 )
 
 @Serializable
@@ -135,7 +167,9 @@ data class Recipe(
     val imageUri: String? = null,
     val imagePath: String? = null,
     val ingredients: List<RecipeIngredient>,
-    val pantryPrerequisites: List<RecipePantryPrerequisite> = emptyList()
+    val pantryPrerequisites: List<RecipePantryPrerequisite> = emptyList(),
+    val instructionSteps: List<RecipeInstructionStep> = emptyList(),
+    val sourceUrl: String? = null
 )
 
 enum class DayMode {
@@ -211,8 +245,8 @@ fun prepLimitLabel(minutes: Int?): String = when (minutes) {
 
 fun prepLimitOptionLabel(minutes: Int?): String = when (minutes) {
     null -> "Alle retter"
-    30 -> "⚡ Hurtig ret (< 30 min)"
-    60 -> "⏳ God tid (> 30 min)"
+    30 -> "⚡ Højst 30 min"
+    60 -> "⏳ Højst 60 min"
     else -> if (minutes <= 30) "⚡ Hurtig ret" else "⏳ God tid"
 }
 

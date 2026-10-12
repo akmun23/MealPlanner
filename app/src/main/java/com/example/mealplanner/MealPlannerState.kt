@@ -35,15 +35,16 @@ import kotlin.time.Duration.Companion.milliseconds
 class MealPlannerState(
     context: Context,
     private val householdId: String,
-    parentScope: CoroutineScope
+    parentScope: CoroutineScope,
 ) {
     // Keep household work isolated from other UI and household scopes.
     private val scope = CoroutineScope(
         parentScope.coroutineContext +
-            SupervisorJob(parentScope.coroutineContext[Job])
+                SupervisorJob(parentScope.coroutineContext[Job])
     )
     private val isLocalOnly = householdId == "local-household-1"
     val isLocalMode: Boolean get() = isLocalOnly
+    val householdIdentifier: String get() = householdId
     private val repository = CloudMealRepository(
         context = context.applicationContext,
         householdId = householdId
@@ -88,6 +89,11 @@ class MealPlannerState(
     val selectedLunchRecipeIds = mutableStateListOf<String>()
     val history = mutableStateListOf<MealHistoryEntry>()
 
+    // Explicit unlocks are session-scoped: completed meals are locked again
+    // when the user reopens the app or navigates to another week.
+    private val editableCompletedDates = mutableStateSetOf<LocalDate>()
+    private val unlockedRegenerationWeeks = mutableStateSetOf<LocalDate>()
+
     var weeklySandwichRecipeId by mutableStateOf<String?>(null)
         private set
 
@@ -95,6 +101,12 @@ class MealPlannerState(
         private set
 
     var weeklyPlanId by mutableStateOf<String?>(null)
+        private set
+
+    var displayedWeekStart by mutableStateOf(currentWeekStart())
+        private set
+
+    var isWeekChanging by mutableStateOf(false)
         private set
 
     var isLoading by mutableStateOf(true)
@@ -124,7 +136,6 @@ class MealPlannerState(
      */
     suspend fun exportPortableBackup(): String {
         val snapshot = currentSnapshot()
-            ?: error("The household has not finished loading")
         return withContext(Dispatchers.Default) {
             SnapshotBackupCodec.encode(snapshot)
         }
@@ -184,21 +195,9 @@ class MealPlannerState(
         val initialLoad = scope.launch {
             initialize()
         }
-        scope.launch {
-            initialLoad.join()
-            // Cache images for the other tabs without composing those screens
-            // and without blocking the first household frame.
-            delay(2_500L.milliseconds)
-            val recipesById = recipes.associateBy { it.id }
-            val imageReferences = buildList {
-                orderedWeekDays.mapNotNull { plan[it] }.forEach { id ->
-                    recipesById[id]?.imageUri?.let(::add)
-                }
-                recipes.forEach { it.imageUri?.let(::add) }
-                ingredients.forEach { it.imageUri?.let(::add) }
-            }
-            MealImagePrefetcher.warm(context.applicationContext, imageReferences)
-        }
+        // Do not prefetch 150 full household thumbnails after startup.
+        // Background network/bitmap work competes with user flings; the
+        // LazyColumn's visible images are fetched on demand by Coil.
         if (!isLocalOnly) scope.launch {
             // During initial load, initialize() already attempts a refresh.
             // Start listening once it has finished, then react to later
@@ -268,10 +267,10 @@ class MealPlannerState(
         withContext(Dispatchers.IO) {
             runCatching { roomCache.load() }.getOrNull()
         }?.let { cached ->
-                applySnapshot(cached)
-                hasCachedSnapshot = true
-                isLoading = false
-            }
+            applySnapshot(cached)
+            hasCachedSnapshot = true
+            isLoading = false
+        }
 
         if (isLocalOnly) {
             // No credentials or cloud household exist in local-only mode.
@@ -281,7 +280,7 @@ class MealPlannerState(
                 weeklyPlanId = "local-week-${currentWeekStart()}"
             }
             try {
-                roomCache.save(currentSnapshot()!!)
+                roomCache.save(currentSnapshot())
             } catch (_: Exception) {
                 lastError = "Den lokale madplan kunne ikke gemmes."
             }
@@ -323,7 +322,7 @@ class MealPlannerState(
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             if (hasCachedSnapshot) {
                 syncIndicator = if (hasPendingMutations) {
                     SyncIndicator.PENDING
@@ -471,16 +470,17 @@ class MealPlannerState(
         val startingGenerations = CloudSyncDomain.entries
             .associateWith(syncTracker::generation)
         if (offlineSyncQueue.hasPendingMutations()) return
-        val snapshot = repository.loadCurrent(
-        )
+        val requestedWeek = displayedWeekStart
+        val snapshot = repository.loadCurrent(requestedWeek)
 
         var applied = false
         reloadMutex.withLock {
             if (
                 !syncTracker.isCurrent(startingGenerations) ||
                 (expectedGenerations != null &&
-                    !syncTracker.isCurrent(expectedGenerations)) ||
-                offlineSyncQueue.hasPendingMutations()
+                        !syncTracker.isCurrent(expectedGenerations)) ||
+                offlineSyncQueue.hasPendingMutations() ||
+                displayedWeekStart != requestedWeek
             ) {
                 return@withLock
             }
@@ -503,9 +503,9 @@ class MealPlannerState(
             val generationSnapshot = when (domain) {
                 CloudSyncDomain.WEEK -> mapOf(
                     CloudSyncDomain.WEEK to
-                        syncTracker.generation(CloudSyncDomain.WEEK),
+                            syncTracker.generation(CloudSyncDomain.WEEK),
                     CloudSyncDomain.SHOPPING to
-                        syncTracker.generation(CloudSyncDomain.SHOPPING)
+                            syncTracker.generation(CloudSyncDomain.SHOPPING)
                 )
 
                 else -> mapOf(
@@ -545,11 +545,14 @@ class MealPlannerState(
                 }
 
                 CloudSyncDomain.WEEK -> {
-                    val week = repository.loadWeekSnapshot()
+                    val requestedWeek = displayedWeekStart
+                    val week = repository.loadWeekSnapshot(requestedWeek)
                     val shopping = repository.loadShoppingSnapshot(
                         week.weeklyPlanId
                     )
-                    if (!syncTracker.isCurrent(generationSnapshot)) {
+                    if (!syncTracker.isCurrent(generationSnapshot) ||
+                        displayedWeekStart != requestedWeek
+                    ) {
                         return@withLock
                     }
                     applyWeekSnapshot(week)
@@ -712,6 +715,7 @@ class MealPlannerState(
 
         weeklyPlanId = snapshot.weeklyPlanId
             .takeUnless { it.startsWith("offline-week-") }
+        displayedWeekStart = snapshot.viewWeekStart
         weeklySandwichRecipeId = snapshot.weeklySandwichRecipeId
         sandwichDay = snapshot.sandwichDay
     }
@@ -817,7 +821,8 @@ class MealPlannerState(
             weeklyPlanId = planId,
             weeklySandwichRecipeId = weeklySandwichRecipeId,
             sandwichDay = sandwichDay,
-            history = history.toList()
+            history = history.toList(),
+            viewWeekStart = displayedWeekStart
         )
     }
 
@@ -838,9 +843,7 @@ class MealPlannerState(
                     syncTracker.isCurrent(generations) &&
                     !offlineSyncQueue.hasPendingMutations()
                 ) {
-                    currentSnapshot()?.let { snapshot ->
-                        roomCache.save(snapshot)
-                    }
+                    roomCache.save(currentSnapshot())
                 }
             }
         }
@@ -864,7 +867,7 @@ class MealPlannerState(
         syncTracker.markLocalChange(domains)
         syncIndicator = SyncIndicator.SAVING
 
-        val snapshot = currentSnapshot() ?: return
+        val snapshot = currentSnapshot()
 
         if (isLocalOnly) {
             // Local-only updates are durable in Room, without creating an
@@ -899,7 +902,7 @@ class MealPlannerState(
                     } else if (drainResult == OfflineSyncDrainResult.RETRY) {
                         syncIndicator = SyncIndicator.PENDING
                     }
-                } catch (e: Exception) {
+                } catch (_: Exception) {
                     if (offlineSyncQueue.hasPendingMutations()) {
                         syncIndicator = SyncIndicator.PENDING
                     } else {
@@ -954,16 +957,60 @@ class MealPlannerState(
     }
 
     private fun canEditWeek(): Boolean {
+        if (isWeekChanging || isPlanning) return false
         if (weeklyPlanId != null) return true
-        lastError = "Ugeplanen kan opdateres, når forbindelsen er tilbage. Lager og opskrifter virker offline."
+        lastError =
+            "Ugeplanen kan opdateres, når forbindelsen er tilbage. Lager og opskrifter virker offline."
         return false
     }
 
+    private fun dateFor(day: DayOfWeek): LocalDate =
+        displayedWeekStart.plusDays((day.value - 1).toLong())
+
+    fun isCompletedDayLocked(day: DayOfWeek): Boolean =
+        WeekRules.completedDayLocked(dateFor(day), history, editableCompletedDates)
+
+    fun isDayLocked(day: DayOfWeek): Boolean =
+        isCompletedDayLocked(day) || day in lockedDays
+
+    fun isWeekRegenerationLocked(): Boolean =
+        WeekRules.requiresRegenerationUnlock(
+            displayedWeekStart, history, unlockedRegenerationWeeks
+        )
+
+    /** This unlocks only regeneration; individual completed dinners stay protected. */
+    fun unlockWeekRegeneration() {
+        if (!canEditWeek() || !isWeekRegenerationLocked()) return
+        unlockedRegenerationWeeks.add(displayedWeekStart)
+    }
+
+    fun unlockRegisteredMeal(date: LocalDate) {
+        if (isWeekChanging || isPlanning || !WeekRules.completedOn(date, history)) return
+        editableCompletedDates.add(date)
+        if (date in displayedWeekStart..displayedWeekStart.plusDays(6)) {
+            lockedDays.remove(date.dayOfWeek)
+            persistWeek()
+        }
+    }
+
+    fun isRegisteredMealEditable(date: LocalDate): Boolean =
+        !WeekRules.completedOn(date, history) || date in editableCompletedDates
+
     fun toggleLockDay(day: DayOfWeek) {
         if (!canEditWeek()) return
-        if (dayModes[day] == DayMode.AWAY || recipeFor(day) == null) return
-
-        if (day in lockedDays) {
+        val date = dateFor(day)
+        if (!WeekRules.completedOn(date, history) &&
+            (dayModes[day] == DayMode.AWAY || recipeFor(day) == null)
+        ) return
+        if (WeekRules.completedOn(date, history)) {
+            if (date in editableCompletedDates) {
+                editableCompletedDates.remove(date)
+                lockedDays.add(day)
+            } else {
+                editableCompletedDates.add(date)
+                lockedDays.remove(day)
+            }
+        } else if (day in lockedDays) {
             lockedDays.remove(day)
         } else {
             lockedDays.add(day)
@@ -973,15 +1020,45 @@ class MealPlannerState(
 
     fun setRecipeForDay(day: DayOfWeek, recipeId: String?) {
         if (!canEditWeek()) return
+        if (isCompletedDayLocked(day)) {
+            lastError = "Retten er markeret som spist. Lås dagen op før ændringer."
+            return
+        }
         if (day == sandwichDay) return
+        if (plan[day] == recipeId &&
+            (recipeId == null || dayModes[day] != DayMode.AWAY)
+        ) return // Re-selecting the same meal must not reset shopping progress.
+
+        val previousItems = shoppingItems()
+        val previousChecked = shoppingChecked.toMap()
+        val previousIncluded = shoppingIncluded.toMap()
 
         plan[day] = recipeId
-        if (recipeId != null) {
-            dayModes[day] = DayMode.AUTO
-        }
+        if (recipeId != null) dayModes[day] = DayMode.AUTO
+
+        val retainedIds = ShoppingRetentionRules.unchangedIngredientIds(
+            previousItems, shoppingItems()
+        )
         shoppingChecked.clear()
         shoppingIncluded.clear()
-        persistWeek(clearChecks = true)
+        retainedIds.forEach { ingredientId ->
+            previousIncluded[ingredientId]?.let { shoppingIncluded[ingredientId] = it }
+            previousChecked[ingredientId]?.let { shoppingChecked[ingredientId] = it }
+        }
+
+        // Clear and restore retained choices in the same durable outbox
+        // transaction so offline/cloud clients see the same shopping state.
+        val id = weeklyPlanId ?: return
+        enqueueMutations(buildList {
+            add(weekStateMutation(id))
+            add(QueuedMutation.ClearShopping(id))
+            shoppingIncluded.forEach { (ingredientId, included) ->
+                add(QueuedMutation.SetShoppingIncluded(id, ingredientId, included))
+            }
+            shoppingChecked.forEach { (ingredientId, checked) ->
+                add(QueuedMutation.SetShoppingChecked(id, ingredientId, checked))
+            }
+        })
     }
 
     fun isIngredientNameAvailable(
@@ -991,7 +1068,7 @@ class MealPlannerState(
         val clean = name.trim()
         return clean.isNotBlank() && ingredients.none {
             it.id != excludingId &&
-                it.name.trim().equals(clean, ignoreCase = true)
+                    it.name.trim().equals(clean, ignoreCase = true)
         }
     }
 
@@ -1001,7 +1078,8 @@ class MealPlannerState(
         shoppingCategoryId: String?,
         isProtein: Boolean,
         imageUri: String? = null,
-        preferredUnit: MeasurementUnit = MeasurementUnit.defaultFor(type)
+        preferredUnit: MeasurementUnit = MeasurementUnit.defaultFor(type),
+        neverBuy: Boolean = false
     ): Boolean {
         val clean = name.normalizedDisplayName()
         if (clean.isBlank() || preferredUnit.quantityType != type) return false
@@ -1017,6 +1095,7 @@ class MealPlannerState(
             preferredUnit = preferredUnit,
             shoppingCategoryId = shoppingCategoryId,
             isProtein = isProtein,
+            neverBuy = neverBuy,
             imageUri = imageUri
         )
 
@@ -1027,6 +1106,16 @@ class MealPlannerState(
         return true
     }
 
+    fun canChangeIngredientQuantityType(id: String, newType: QuantityType): Boolean {
+        val ingredient = ingredients.find { it.id == id } ?: return false
+        return canChangeIngredientQuantityType(
+            ingredient = ingredient,
+            newType = newType,
+            pantryBase = pantry[id] ?: 0.0,
+            recipes = recipes.toList()
+        )
+    }
+
     fun updateIngredient(
         id: String,
         name: String,
@@ -1034,7 +1123,8 @@ class MealPlannerState(
         shoppingCategoryId: String?,
         isProtein: Boolean,
         preferredUnit: MeasurementUnit,
-        imageUri: String? = null
+        imageUri: String? = null,
+        neverBuy: Boolean = false
     ): Boolean {
         val index = ingredients.indexOfFirst { it.id == id }
         if (
@@ -1042,6 +1132,12 @@ class MealPlannerState(
             name.isBlank() ||
             preferredUnit.quantityType != type
         ) return false
+
+        if (!canChangeIngredientQuantityType(id, type)) {
+            lastError =
+                "Typen kan ikke ændres, mens ingrediensen er på lager eller bruges i en opskrift."
+            return false
+        }
 
         if (!isIngredientNameAvailable(name, excludingId = id)) {
             lastError = "Ingrediensen findes allerede."
@@ -1054,6 +1150,7 @@ class MealPlannerState(
             preferredUnit = preferredUnit,
             shoppingCategoryId = shoppingCategoryId,
             isProtein = isProtein,
+            neverBuy = neverBuy,
             imageUri = imageUri
         )
         ingredients[index] = updated
@@ -1070,7 +1167,7 @@ class MealPlannerState(
         val clean = name.trim()
         return clean.isNotBlank() && ingredientCategories.none {
             it.id != excludingId &&
-                it.name.trim().equals(clean, ignoreCase = true)
+                    it.name.trim().equals(clean, ignoreCase = true)
         }
     }
 
@@ -1149,7 +1246,7 @@ class MealPlannerState(
         val clean = name.normalizedDisplayName()
         return clean.isNotBlank() && recipeCategories.none {
             it.id != excludingId &&
-                it.name.equals(clean, ignoreCase = true)
+                    it.name.equals(clean, ignoreCase = true)
         }
     }
 
@@ -1288,9 +1385,9 @@ class MealPlannerState(
                 recipe.ingredients.any {
                     it.ingredientId == ingredientId
                 } ||
-                    recipe.pantryPrerequisites.any {
-                        it.ingredientId == ingredientId
-                    }
+                        recipe.pantryPrerequisites.any {
+                            it.ingredientId == ingredientId
+                        }
             }
         ) {
             lastError =
@@ -1323,7 +1420,7 @@ class MealPlannerState(
         val clean = name.trim()
         return clean.isNotBlank() && recipes.none {
             it.id != excludingId &&
-                it.name.trim().equals(clean, ignoreCase = true)
+                    it.name.trim().equals(clean, ignoreCase = true)
         }
     }
 
@@ -1336,7 +1433,9 @@ class MealPlannerState(
         notes: String = "",
         imageUri: String? = null,
         pantryPrerequisites: List<DraftRequirement> = emptyList(),
-        requirements: List<DraftRequirement>
+        requirements: List<DraftRequirement>,
+        instructionSteps: List<RecipeInstructionStep> = emptyList(),
+        sourceUrl: String? = null
     ): String? {
         if (!isRecipeNameAvailable(name)) {
             lastError = "Opskriften findes allerede."
@@ -1354,7 +1453,9 @@ class MealPlannerState(
             imageUri = imageUri,
             imagePath = null,
             pantryPrerequisites = pantryPrerequisites,
-            requirements = requirements
+            requirements = requirements,
+            instructionSteps = instructionSteps,
+            sourceUrl = sourceUrl
         ) ?: return null
 
         recipes += recipe
@@ -1374,7 +1475,9 @@ class MealPlannerState(
         notes: String = "",
         imageUri: String? = null,
         pantryPrerequisites: List<DraftRequirement> = emptyList(),
-        requirements: List<DraftRequirement>
+        requirements: List<DraftRequirement>,
+        instructionSteps: List<RecipeInstructionStep> = emptyList(),
+        sourceUrl: String? = null
     ): Boolean {
         val index = recipes.indexOfFirst { it.id == id }
         if (index < 0) return false
@@ -1396,7 +1499,9 @@ class MealPlannerState(
             imageUri = imageUri,
             imagePath = existing.imagePath,
             pantryPrerequisites = pantryPrerequisites,
-            requirements = requirements
+            requirements = requirements,
+            instructionSteps = instructionSteps,
+            sourceUrl = sourceUrl
         ) ?: return false
 
         recipes[index] = updated
@@ -1425,7 +1530,7 @@ class MealPlannerState(
 
         if (weekChanged) {
             shoppingChecked.clear()
-        shoppingIncluded.clear()
+            shoppingIncluded.clear()
         }
 
         val mutations = buildList {
@@ -1467,7 +1572,9 @@ class MealPlannerState(
         imageUri: String?,
         imagePath: String?,
         pantryPrerequisites: List<DraftRequirement>,
-        requirements: List<DraftRequirement>
+        requirements: List<DraftRequirement>,
+        instructionSteps: List<RecipeInstructionStep>,
+        sourceUrl: String?
     ): Recipe? {
         val clean = name.normalizedDisplayName()
         val cleanPrepMinutes = prepMinutes?.takeIf { it in 1..1440 }
@@ -1475,9 +1582,9 @@ class MealPlannerState(
             clean.isBlank() ||
             requirements.isEmpty() ||
             (
-                categoryId != null &&
-                recipeCategories.none { it.id == categoryId }
-            )
+                    categoryId != null &&
+                            recipeCategories.none { it.id == categoryId }
+                    )
         ) return null
 
         val converted = requirements.mapNotNull { draft ->
@@ -1530,10 +1637,13 @@ class MealPlannerState(
             prepMinutes = cleanPrepMinutes,
             categoryId = categoryId,
             notes = notes.trim(),
+            instructionSteps = instructionSteps.filter { it.text.isNotBlank() }
+                .map { it.copy(text = it.text.trim(), level = it.level.coerceIn(0, 1)) },
+            sourceUrl = sourceUrl?.trim()?.takeIf { it.isNotBlank() },
             imageUri = imageUri,
             imagePath = imagePath,
-            ingredients = converted,
-            pantryPrerequisites = convertedPrerequisites
+            ingredients = RecipeRequirementRules.combineIngredients(converted),
+            pantryPrerequisites = RecipeRequirementRules.combinePrerequisites(convertedPrerequisites)
         )
     }
 
@@ -1585,6 +1695,10 @@ class MealPlannerState(
 
     fun removeSandwichThisWeek() {
         if (!canEditWeek()) return
+        if (sandwichDay?.let(::isCompletedDayLocked) == true) {
+            lastError = "Den spiste sandwich er låst. Lås dagen op før ændringer."
+            return
+        }
         if (weeklySandwichRecipeId == null && sandwichDay == null) return
 
         weeklySandwichRecipeId = null
@@ -1599,13 +1713,21 @@ class MealPlannerState(
         if (!canEditWeek()) return
         if (recipes.none { it.id == recipeId && it.mealType == MealType.DINNER }) return
 
-        weeklySandwichRecipeId = recipeId
-        if (
-            sandwichDay == null ||
+        val targetDay = if (sandwichDay == null ||
             sandwichDay?.let { dayModes[it] == DayMode.AWAY } == true
         ) {
-            sandwichDay = WeeklyPlanner.preferredSandwichDay(dayModes)
+            WeeklyPlanner.preferredSandwichDay(dayModes)
+        } else sandwichDay
+
+        if (sandwichDay?.let(::isCompletedDayLocked) == true ||
+            targetDay?.let(::isCompletedDayLocked) == true
+        ) {
+            lastError = "En spist sandwichdag er låst. Lås dagen op før ændringer."
+            return
         }
+
+        weeklySandwichRecipeId = recipeId
+        sandwichDay = targetDay
 
         shoppingChecked.clear()
         shoppingIncluded.clear()
@@ -1617,12 +1739,23 @@ class MealPlannerState(
 
     fun toggleEatingAtHome(day: DayOfWeek) {
         if (!canEditWeek()) return
+        if (isCompletedDayLocked(day)) {
+            lastError = "Dagen er markeret som spist og er låst."
+            return
+        }
         val result = WeekRules.toggleHome(
             day = day,
             modes = dayModes.toMap(),
             currentSandwichDay = sandwichDay,
             hasSandwichRecipe = weeklySandwichRecipeId != null
         )
+        if (result.sandwichDay != sandwichDay &&
+            (sandwichDay?.let(::isCompletedDayLocked) == true ||
+                    result.sandwichDay?.let(::isCompletedDayLocked) == true)
+        ) {
+            lastError = "En spist sandwichdag kan ikke flyttes uden at låse dagen op."
+            return
+        }
 
         syncMap(
             target = dayModes,
@@ -1644,6 +1777,10 @@ class MealPlannerState(
         maxPrepMinutes: Int?
     ) {
         if (!canEditWeek()) return
+        if (isCompletedDayLocked(day)) {
+            lastError = "Dagen er markeret som spist og er låst."
+            return
+        }
         val normalized = maxPrepMinutes?.takeIf { it in 1..1440 }
         dayMaxPrepMinutes[day] = normalized
 
@@ -1665,7 +1802,9 @@ class MealPlannerState(
         val ingredient = ingredients.find { it.id == ingredientId } ?: return
         if (unit.quantityType != ingredient.quantityType) return
 
-        val base = unit.toBase(amount.coerceAtLeast(0.0))
+        if (!amount.isFinite() || amount < 0.0) return
+        val base = unit.toBase(amount)
+        if (!base.isFinite()) return
         pantry[ingredientId] = base
 
         enqueueMutation(
@@ -1682,10 +1821,13 @@ class MealPlannerState(
         unit: MeasurementUnit
     ) {
         val ingredient = ingredients.find { it.id == ingredientId } ?: return
-        if (unit.quantityType != ingredient.quantityType || amount <= 0.0) return
+        if (unit.quantityType != ingredient.quantityType ||
+            !amount.isFinite() || amount <= 0.0
+        ) return
 
         val addedBase = unit.toBase(amount)
         val next = (pantry[ingredientId] ?: 0.0) + addedBase
+        if (!next.isFinite()) return
         pantry[ingredientId] = next
 
         enqueueMutation(
@@ -1737,12 +1879,71 @@ class MealPlannerState(
     }
 
     /**
+     * Finish a planned dinner and record the explicitly reviewed pantry usage
+     * in one offline-sync batch. A second tap cannot consume stock again;
+     * corrections to history remain possible in the separate history screen
+     * without repeating pantry deductions.
+     */
+    fun completePlannedDinner(
+        date: LocalDate,
+        recipeId: String,
+        deductions: Map<String, Double>
+    ): Boolean {
+        if (isPlanning || isWeekChanging) {
+            lastError = "Vent til madplanen er opdateret, før du registrerer retten."
+            return false
+        }
+        if (!MealCompletionRules.mayFinish(date, LocalDate.now(), history)) {
+            lastError =
+                "Dagen er allerede registreret, eller datoen ligger uden for de seneste 90 dage."
+            return false
+        }
+        val recipe = recipes.find { it.id == recipeId && it.mealType == MealType.DINNER }
+        if (date in displayedWeekStart..displayedWeekStart.plusDays(6) &&
+            recipeFor(date.dayOfWeek)?.id != recipeId
+        ) {
+            lastError = "Dagens planlagte ret er ændret. Luk vinduet og prøv igen."
+            return false
+        }
+        if (recipe == null) {
+            lastError = "Opskriften findes ikke længere."
+            return false
+        }
+        val remaining = MealCompletionRules.remainingAfterMeal(recipe, pantry, deductions)
+        if (remaining == null) {
+            lastError = "Kontrollér lagerforbruget. En mængde er ugyldig eller større end lageret."
+            return false
+        }
+
+        remaining.forEach { (ingredientId, value) -> pantry[ingredientId] = value }
+        history.add(MealHistoryEntry(recipeId, date))
+        // Completion and the persisted day lock share an offline outbox batch.
+        val lockMutation = if (date in displayedWeekStart..displayedWeekStart.plusDays(6)) {
+            lockedDays.add(date.dayOfWeek)
+            weeklyPlanId?.let(::weekStateMutation)
+        } else null
+        enqueueMutations(
+            remaining.map { (ingredientId, amountBase) ->
+                QueuedMutation.SetPantry(ingredientId = ingredientId, amountBase = amountBase)
+            } + QueuedMutation.SetMealEaten(
+                eatenOn = date.toString(), recipeId = recipeId
+            ) + listOfNotNull(lockMutation)
+        )
+        return true
+    }
+
+    /**
      * Confirm or correct the actual dinner eaten on a date. Unconfirmed
      * planning entries are intentionally excluded from meal history.
      */
     fun recordEaten(date: LocalDate, recipeId: String?) {
+        if (isPlanning || isWeekChanging) {
+            lastError = "Vent til madplanen er opdateret, før du retter historikken."
+            return
+        }
         if (date.isAfter(LocalDate.now()) ||
-            date.isBefore(LocalDate.now().minusDays(89))) {
+            date.isBefore(LocalDate.now().minusDays(89))
+        ) {
             lastError = "Vælg en dag inden for de seneste 90 dage."
             return
         }
@@ -1750,30 +1951,59 @@ class MealPlannerState(
             lastError = "Opskriften findes ikke længere."
             return
         }
+        if (!isRegisteredMealEditable(date)) {
+            lastError = "Det spiste måltid er låst. Lås op før du retter historikken."
+            return
+        }
         val previous = history.find { it.eatenOn == date }?.recipeId
-        if (previous == recipeId) return
+        if (previous == recipeId) {
+            // A confirmation of the existing registration must not leave an
+            // already-completed day permanently unlocked in this session.
+            editableCompletedDates.remove(date)
+            if (recipeId != null && date in displayedWeekStart..displayedWeekStart.plusDays(6)) {
+                lockedDays.add(date.dayOfWeek)
+                persistWeek()
+            }
+            return
+        }
 
         history.removeAll { it.eatenOn == date }
         if (recipeId != null) {
             history.add(MealHistoryEntry(recipeId, date))
         }
-        enqueueMutation(
-            QueuedMutation.SetMealEaten(
-                eatenOn = date.toString(),
-                recipeId = recipeId
-            )
+        // Editing a historic entry is a one-time operation; relock afterwards.
+        editableCompletedDates.remove(date)
+        val lockMutation = if (date in displayedWeekStart..displayedWeekStart.plusDays(6)) {
+            if (recipeId == null) lockedDays.remove(date.dayOfWeek)
+            else lockedDays.add(date.dayOfWeek)
+            weeklyPlanId?.let(::weekStateMutation)
+        } else null
+        enqueueMutations(
+            listOf(
+                QueuedMutation.SetMealEaten(
+                    eatenOn = date.toString(),
+                    recipeId = recipeId
+                )
+            ) + listOfNotNull(lockMutation)
         )
     }
 
     fun generateWeek() {
-        if (isPlanning || weeklyPlanId == null) return
+        if (isPlanning || isWeekChanging || weeklyPlanId == null) return
+        if (isWeekRegenerationLocked()) {
+            lastError = "Ugen indeholder spiste måltider. Lås genplanlægning op først."
+            return
+        }
 
         val recipesSnapshot = recipes.toList()
         val pantrySnapshot = pantry.toMap()
         val modeSnapshot = dayModes.toMap()
         val maxPrepSnapshot = dayMaxPrepMinutes.toMap()
         val planSnapshot = plan.toMap()
-        val lockSnapshot = lockedDays.toSet()
+        val lockSnapshot = lockedDays.toSet() +
+                WeekRules.completedDaysForWeek(displayedWeekStart, history).filter {
+                    isCompletedDayLocked(it)
+                }
         val historySnapshot = history.toList()
         val weightsSnapshot = plannerWeights
         val proteinIngredientIds = ingredients
@@ -1783,9 +2013,10 @@ class MealPlannerState(
             .toSet()
         val sandwichRecipe = weeklySandwichRecipeId
         val currentSandwichDay = sandwichDay
+        val weekStartSnapshot = displayedWeekStart
 
+        isPlanning = true
         scope.launch {
-            isPlanning = true
             try {
                 val result = withContext(Dispatchers.Default) {
                     WeeklyPlanner.generate(
@@ -1799,7 +2030,7 @@ class MealPlannerState(
                         lockedDays = lockSnapshot,
                         history = historySnapshot,
                         proteinIngredientIds = proteinIngredientIds,
-                        weekStart = currentWeekStart(),
+                        weekStart = weekStartSnapshot,
                         weights = weightsSnapshot
                     )
                 }
@@ -1810,7 +2041,7 @@ class MealPlannerState(
                 shoppingIncluded.clear()
 
                 persistWeek(clearChecks = true)
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 lastError =
                     "Madplanen kunne ikke opdateres. Prøv igen."
             } finally {
@@ -1820,7 +2051,11 @@ class MealPlannerState(
     }
 
     fun reroll(day: DayOfWeek) {
-        if (!canEditWeek()) return
+        if (!canEditWeek() || isPlanning) return
+        if (isWeekRegenerationLocked() || isCompletedDayLocked(day)) {
+            lastError = "Ugen eller dagen er låst efter registrering af et måltid."
+            return
+        }
         if (
             day in lockedDays ||
             dayModes[day] == DayMode.AWAY ||
@@ -1834,12 +2069,14 @@ class MealPlannerState(
         val planSnapshot = plan.toMap()
         val historySnapshot = history.toList()
         val weightsSnapshot = plannerWeights
+        val weekStartSnapshot = displayedWeekStart
         val proteinIngredientIds = ingredients
             .asSequence()
             .filter { it.isProtein }
             .map { it.id }
             .toSet()
 
+        isPlanning = true
         scope.launch {
             try {
                 val updated = withContext(Dispatchers.Default) {
@@ -1854,18 +2091,21 @@ class MealPlannerState(
                         currentPlan = planSnapshot,
                         history = historySnapshot,
                         proteinIngredientIds = proteinIngredientIds,
-                        weekStart = currentWeekStart(),
+                        weekStart = weekStartSnapshot,
                         weights = weightsSnapshot
                     )
                 }
 
+                if (isWeekRegenerationLocked() || isCompletedDayLocked(day)) return@launch
                 plan.putAll(updated)
                 shoppingChecked.clear()
                 shoppingIncluded.clear()
                 persistWeek(clearChecks = true)
-            } catch (e: Exception) {
+            } catch (_: Exception) {
                 lastError =
                     "Retten kunne ikke skiftes. Prøv igen."
+            } finally {
+                isPlanning = false
             }
         }
     }
@@ -1873,11 +2113,18 @@ class MealPlannerState(
     fun moveSandwich() {
         if (!canEditWeek()) return
         if (weeklySandwichRecipeId == null) return
-
-        sandwichDay = WeekRules.nextSandwichDay(
+        val nextDay = WeekRules.nextSandwichDay(
             current = sandwichDay,
             modes = dayModes.toMap()
         )
+        if (sandwichDay?.let(::isCompletedDayLocked) == true ||
+            nextDay?.let(::isCompletedDayLocked) == true
+        ) {
+            lastError = "En spist sandwichdag er låst. Lås dagen op først."
+            return
+        }
+
+        sandwichDay = nextDay
 
         shoppingChecked.clear()
         shoppingIncluded.clear()
@@ -1949,6 +2196,7 @@ class MealPlannerState(
         return totals.mapNotNull { (ingredientId, requiredBase) ->
             val ingredient = ingredientsById[ingredientId]
                 ?: return@mapNotNull null
+            if (!ShoppingIngredientRules.isAutomaticallyPurchased(ingredient)) return@mapNotNull null
 
             ShoppingItem(
                 ingredient = ingredient,
@@ -2090,6 +2338,76 @@ class MealPlannerState(
         val unit = ingredient.preferredUnit
         val value = unit.fromBase(amountBase)
         return "${formatNumber(value)} ${unit.labelFor(value)}"
+    }
+
+    /**
+     * Navigate between server-backed weekly plans. All pending changes are
+     * persisted before switching, and each week has its own plan/checks/locks.
+     * The local-only mode keeps the existing single-week behavior for now.
+     */
+    fun changeDisplayedWeek(offsetWeeks: Long) {
+        if (offsetWeeks == 0L || isWeekChanging || isPlanning || isLocalOnly) return
+        val target = displayedWeekStart.plusWeeks(offsetWeeks)
+        isWeekChanging = true
+        scope.launch {
+            try {
+                mutationQueueMutex.withLock {
+                    if (offlineSyncQueue.hasPendingMutations()) {
+                        offlineSyncQueue.drainInApp(repository)
+                    }
+                    if (offlineSyncQueue.hasPendingMutations()) {
+                        // Never replace the only cached snapshot while the
+                        // previous week's optimistic writes still need syncing.
+                        lastError =
+                            "Ugeskift er sat på pause, fordi lokale ændringer endnu ikke er synkroniseret. " +
+                                    "Dine data er ikke slettet. Prøv igen efter synkronisering."
+                        return@launch
+                    }
+                    reloadMutex.withLock {
+                        val week = repository.loadWeekSnapshot(target)
+                        val shopping = repository.loadShoppingSnapshot(week.weeklyPlanId)
+
+                        // Persist the complete target view first. If disk
+                        // persistence fails, the UI stays on its previous week
+                        // instead of showing an incompletely saved transition.
+                        val nextSnapshot = currentSnapshot().copy(
+                            dayModes = week.dayModes,
+                            dayMaxPrepMinutes = week.dayMaxPrepMinutes,
+                            plan = week.plan,
+                            lockedDays = week.lockedDays,
+                            selectedLunchRecipeIds = week.selectedLunchRecipeIds,
+                            weeklyPlanId = week.weeklyPlanId,
+                            weeklySandwichRecipeId = week.weeklySandwichRecipeId,
+                            sandwichDay = week.sandwichDay,
+                            shoppingChecked = shopping.checked,
+                            shoppingIncluded = shopping.included,
+                            viewWeekStart = target
+                        )
+                        roomCache.save(nextSnapshot)
+                        Snapshot.withMutableSnapshot {
+                            applyWeekSnapshot(week)
+                            applyShoppingSnapshot(shopping)
+                            displayedWeekStart = target
+                            editableCompletedDates.clear()
+                            unlockedRegenerationWeeks.clear()
+                        }
+                    }
+                }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                lastError = "Ugen kunne ikke hentes. Tjek forbindelsen og prøv igen."
+            } finally {
+                isWeekChanging = false
+            }
+        }
+    }
+
+    fun showCurrentWeek() {
+        if (isWeekChanging || isPlanning || isLocalOnly) return
+        val current = currentWeekStart()
+        val delta = java.time.temporal.ChronoUnit.WEEKS.between(displayedWeekStart, current)
+        changeDisplayedWeek(delta)
     }
 
     private fun currentWeekStart(): LocalDate =

@@ -25,7 +25,7 @@ internal class PlannerSettingsStore(context: Context) {
     }
 
     fun reset(householdId: String) {
-        preferences.edit {remove(key(householdId))}
+        preferences.edit { remove(key(householdId)) }
     }
 
     private fun valid(weights: PlannerWeights): Boolean =

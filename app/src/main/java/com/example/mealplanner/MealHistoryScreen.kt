@@ -41,16 +41,39 @@ internal fun MealHistoryScreen(
 ) {
     var editingDate by remember { mutableStateOf<LocalDate?>(null) }
     var search by remember { mutableStateOf("") }
+    var unlockingDate by remember { mutableStateOf<LocalDate?>(null) }
     val today = LocalDate.now()
     val dates = remember(today) {
         (0 until 35).map { today.minusDays(it.toLong()) }
+    }
+
+    unlockingDate?.let { date ->
+        AlertDialog(
+            onDismissRequest = { unlockingDate = null },
+            title = { Text("Lås spist måltid op?") },
+            text = {
+                Text(
+                    "Et færdigregistreret måltid er låst. En rettelse i historikken " +
+                            "justerer ikke lagerforbruget. Lås kun op, hvis registreringen er forkert."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    state.unlockRegisteredMeal(date)
+                    unlockingDate = null
+                }) { Text("Lås op") }
+            },
+            dismissButton = {
+                TextButton(onClick = { unlockingDate = null }) { Text("Annuller") }
+            }
+        )
     }
 
     editingDate?.let { date ->
         val available = state.recipes
             .filter {
                 it.mealType == MealType.DINNER &&
-                    (search.isBlank() || it.name.contains(search, ignoreCase = true))
+                        (search.isBlank() || it.name.contains(search, ignoreCase = true))
             }
             .sortedBy { it.name.lowercase() }
 
@@ -117,15 +140,22 @@ internal fun MealHistoryScreen(
             item {
                 Text(
                     "Registrér det, I faktisk spiste. Kun disse måltider " +
-                        "skal tælle som historik, når næste madplan genereres.",
+                            "skal tælle som historik, når næste madplan genereres.",
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Text(
                     "Ældre historik kan indeholde retter, som appen tidligere " +
-                        "registrerede automatisk. Du kan rette dem her.",
+                            "registrerede automatisk. Du kan rette dem her.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 6.dp, bottom = 8.dp)
+                )
+                Text(
+                    "Hvis du retter eller fjerner et spist måltid her, ændres " +
+                            "lagerbeholdningen ikke automatisk.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(bottom = 8.dp)
                 )
             }
             items(dates, key = { it.toString() }) { date ->
@@ -160,9 +190,19 @@ internal fun MealHistoryScreen(
                         }
                         TextButton(onClick = {
                             search = ""
-                            editingDate = date
+                            if (logged != null && !state.isRegisteredMealEditable(date)) {
+                                unlockingDate = date
+                            } else {
+                                editingDate = date
+                            }
                         }) {
-                            Text(if (logged == null) "Registrér" else "Ret")
+                            Text(
+                                when {
+                                    logged == null -> "Registrér"
+                                    state.isRegisteredMealEditable(date) -> "Ret"
+                                    else -> "Lås op"
+                                }
+                            )
                         }
                     }
                 }

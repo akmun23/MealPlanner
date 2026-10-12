@@ -17,6 +17,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -130,9 +131,10 @@ fun PantryScreen(
                 SimpleSelector(
                     label = selectedCategory?.name ?: "Alle kategorier",
                     options = listOf<IngredientCategory?>(null) +
-                        state.ingredientCategories.sortedBy { it.name.lowercase() },
+                            state.ingredientCategories.sortedBy { it.name.lowercase() },
                     optionText = { it?.name ?: "Alle kategorier" },
-                    onSelected = { selectedCategoryId = it?.id }
+                    onSelected = { selectedCategoryId = it?.id },
+                    fillWidth = true
                 )
             }
         }
@@ -145,13 +147,15 @@ fun PantryScreen(
                     label = "Status: ${stockFilter.label}",
                     options = PantryStockFilter.entries.toList(),
                     optionText = { it.label },
-                    onSelected = { stockFilterKey = it.name }
+                    onSelected = { stockFilterKey = it.name },
+                    fillWidth = true
                 )
                 SimpleSelector(
                     label = "Sorter: ${sortOrder.label}",
                     options = PantrySortOrder.entries.toList(),
                     optionText = { it.label },
-                    onSelected = { sortOrderKey = it.name }
+                    onSelected = { sortOrderKey = it.name },
+                    fillWidth = true
                 )
             }
             Text(
@@ -161,7 +165,36 @@ fun PantryScreen(
             )
         }
 
-        items(filtered, key = { it.id }) { ingredient ->
+        if (filtered.isEmpty()) {
+            item {
+                val isFiltered = searchQuery.isNotBlank() || selectedCategoryId != null ||
+                        stockFilter != PantryStockFilter.ALL ||
+                        sortOrder != PantrySortOrder.NAME_ASC
+
+                EmptyCard(
+                    title = if (state.ingredients.isEmpty()) "Ingen ingredienser endnu" else "Ingen ingredienser fundet",
+                    text = if (state.ingredients.isEmpty()) "Tilføj en ny ingrediens for at holde styr på dit lager." else "Ingen ingredienser matcher dine nuværende filtre.",
+                    icon = Icons.Filled.Inventory2,
+                    action = if (isFiltered) {
+                        {
+                            Button(
+                                onClick = {
+                                    searchQuery = ""
+                                    selectedCategoryId = null
+                                    stockFilterKey = PantryStockFilter.ALL.name
+                                    sortOrderKey = PantrySortOrder.NAME_ASC.name
+                                },
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Text("Ryd filtre")
+                            }
+                        }
+                    } else null
+                )
+            }
+        }
+
+        items(filtered, key = { it.id }, contentType = { "pantry-row" }) { ingredient ->
             val amount = state.pantry[ingredient.id] ?: 0.0
 
             OutlinedCard(
@@ -261,28 +294,61 @@ internal fun PantryAmountDialog(
                     singleLine = true
                 )
 
+                if (amountText.isBlank() ||
+                    parseDanishDecimal(amountText)?.let { !it.isFinite() || it < 0.0 } != false
+                ) {
+                    Text(
+                        if (currentBase > 0.0) {
+                            "Angiv en gyldig mængde, eller brug Tøm lager."
+                        } else {
+                            "Angiv en gyldig mængde."
+                        },
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+
+                if (currentBase > 0.0) {
+                    TextButton(onClick = {
+                        state.setPantry(ingredient.id, 0.0, unit)
+                        onDismiss()
+                    }) {
+                        Text("Tøm lager")
+                    }
+                }
+
                 SimpleSelector(
                     label = unit.selectorLabel(),
                     options = MeasurementUnit.compatibleWith(
                         ingredient.quantityType
                     ),
                     optionText = { it.selectorLabel() },
-                    onSelected = { unit = it }
+                    onSelected = { selected ->
+                        val entered = parseDanishDecimal(amountText)
+                        if (entered != null && entered.isFinite()) {
+                            amountText = formatDisplayNumber(
+                                unit.convertAmountTo(entered, selected) ?: entered
+                            )
+                        }
+                        unit = selected
+                    }
                 )
             }
         },
         confirmButton = {
+            val amount = parseDanishDecimal(amountText)
+                ?.takeIf { it.isFinite() && it >= 0.0 }
             Button(
                 onClick = {
-                    val amount = parseDanishDecimal(amountText) ?: 0.0
-
+                    val validAmount = amount ?: return@Button
                     state.setPantry(
                         ingredientId = ingredient.id,
-                        amount = amount,
+                        amount = validAmount,
                         unit = unit
                     )
                     onDismiss()
-                }
+                },
+                enabled = amount != null
             ) {
                 Text("Gem")
             }

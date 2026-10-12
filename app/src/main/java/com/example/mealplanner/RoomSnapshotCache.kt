@@ -78,6 +78,7 @@ internal abstract class LocalStateDao {
     protected abstract suspend fun insertPantry(
         entities: List<LocalPantryEntity>
     )
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     abstract suspend fun upsertSnapshot(
         entity: HouseholdSnapshotEntity
@@ -165,8 +166,8 @@ internal object MealPlannerDatabaseProvider {
                 // missing migration. Fail visibly instead of losing user data.
                 .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build().also {
-                instance = it
-            }
+                    instance = it
+                }
         }
 
     internal val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -310,6 +311,7 @@ private data class CachedIngredient(
     val preferredUnit: String,
     val shoppingCategoryId: String?,
     val isProtein: Boolean,
+    val neverBuy: Boolean = false,
     val imageUri: String?,
     val imagePath: String?
 )
@@ -345,7 +347,9 @@ private data class CachedRecipe(
     val imageUri: String?,
     val imagePath: String?,
     val ingredients: List<CachedRecipeIngredient>,
-    val pantryPrerequisites: List<CachedPantryPrerequisite>
+    val pantryPrerequisites: List<CachedPantryPrerequisite>,
+    val instructionSteps: List<RecipeInstructionStep> = emptyList(),
+    val sourceUrl: String? = null
 )
 
 @Serializable
@@ -408,7 +412,8 @@ internal object RoomSnapshotCodec {
                     selectedLunchRecipeIds = emptyList(),
                     weeklyPlanId = "offline-week-$weekStart",
                     weeklySandwichRecipeId = null,
-                    sandwichDay = null
+                    sandwichDay = null,
+                    viewWeekStart = currentWeekStart(today)
                 )
             }
         }.getOrNull()
@@ -420,7 +425,7 @@ internal object RoomSnapshotCodec {
     )
 
     private fun CloudSnapshot.toCached() = CachedCloudSnapshot(
-        weekStart = currentWeekStart().toString(),
+        weekStart = viewWeekStart.toString(),
         ingredients = ingredients.map {
             CachedIngredient(
                 id = it.id,
@@ -429,6 +434,7 @@ internal object RoomSnapshotCodec {
                 preferredUnit = it.preferredUnit.name,
                 shoppingCategoryId = it.shoppingCategoryId,
                 isProtein = it.isProtein,
+                neverBuy = it.neverBuy,
                 imageUri = it.imageUri,
                 imagePath = it.imagePath
             )
@@ -458,6 +464,8 @@ internal object RoomSnapshotCodec {
                 notes = recipe.notes,
                 imageUri = recipe.imageUri,
                 imagePath = recipe.imagePath,
+                instructionSteps = recipe.instructionSteps,
+                sourceUrl = recipe.sourceUrl,
                 ingredients = recipe.ingredients.map {
                     CachedRecipeIngredient(
                         ingredientId = it.ingredientId,
@@ -505,6 +513,7 @@ internal object RoomSnapshotCodec {
                         MeasurementUnit.valueOf(it.preferredUnit),
                     shoppingCategoryId = it.shoppingCategoryId,
                     isProtein = it.isProtein,
+                    neverBuy = it.neverBuy,
                     imageUri = it.imageUri,
                     imagePath = it.imagePath
                 )
@@ -535,6 +544,8 @@ internal object RoomSnapshotCodec {
                     notes = recipe.notes,
                     imageUri = recipe.imageUri,
                     imagePath = recipe.imagePath,
+                    instructionSteps = recipe.instructionSteps,
+                    sourceUrl = recipe.sourceUrl,
                     ingredients = recipe.ingredients.map {
                         RecipeIngredient(
                             ingredientId = it.ingredientId,
@@ -580,6 +591,7 @@ internal object RoomSnapshotCodec {
                     recipeId = it.recipeId,
                     eatenOn = LocalDate.parse(it.eatenOn)
                 )
-            }
+            },
+            viewWeekStart = LocalDate.parse(weekStart)
         )
 }

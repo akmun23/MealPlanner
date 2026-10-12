@@ -14,22 +14,30 @@ import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.imePadding
-import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -38,27 +46,27 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Inventory2
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -75,13 +83,11 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -94,6 +100,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -101,9 +109,8 @@ import androidx.compose.ui.unit.dp
 import io.github.jan.supabase.auth.handleDeeplinks
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.awaitCancellation
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
-import java.util.Locale
+import kotlinx.coroutines.withContext
 
 private val AppColors = lightColorScheme(
     primary = Color(0xFF2F6B4F),
@@ -116,7 +123,7 @@ private val AppColors = lightColorScheme(
     surface = Color(0xFFFFFFFF),
     surfaceVariant = Color(0xFFE9EEE9),
     onSurfaceVariant = Color(0xFF4E5750),
-    outline = Color(0xFFBBC4BC)
+    outline = Color(0xFFBBC4BC),
 )
 
 internal val DarkAppColors = darkColorScheme(
@@ -157,7 +164,7 @@ internal val DarkAppColors = darkColorScheme(
     error = Color(0xFFFFB4AB),
     onError = Color(0xFF690005),
     errorContainer = Color(0xFF93000A),
-    onErrorContainer = Color(0xFFFFDAD6)
+    onErrorContainer = Color(0xFFFFDAD6),
 )
 
 class MainActivity : ComponentActivity() {
@@ -180,7 +187,7 @@ class MainActivity : ComponentActivity() {
                         onThemeModeChange = { selected ->
                             themePreferences.save(selected)
                             themeMode = selected
-                        }
+                        },
                     )
                 }
             }
@@ -205,6 +212,9 @@ private sealed interface AppPage {
     data object MealHistory : AppPage
     data object Settings : AppPage
     data object PlannerSettings : AppPage
+    data object BilkaApiSettings : AppPage
+    data object BilkaProducts : AppPage
+    data class BilkaProductPicker(val ingredientId: String, val ingredientName: String) : AppPage
     data object SyncStatus : AppPage
     data object DataBackup : AppPage
     data object IngredientCategories : AppPage
@@ -256,12 +266,37 @@ fun MealPlannerApp(
         tab = AppTab.entries[pagerState.currentPage]
     }
     var page by remember { mutableStateOf<AppPage?>(null) }
+    // This @Composable WindowInsets getter internally uses remembered lambdas.
+    // Read it unconditionally, before the page-specific composition changes:
+    // the crash log shows a WindowInsetsHolder lambda being mistaken for an
+    // onConflict Function0 while the page switches during recomposition.
+    val isKeyboardVisible = WindowInsets.isImeVisible
+    // Remember the screen that opened Prej settings so Back goes there,
+    // whether the user came from settings, product overview, or the picker.
+    var bilkaSettingsReturnPage by remember { mutableStateOf<AppPage>(AppPage.Settings) }
+    fun openBilkaSettings(from: AppPage) {
+        bilkaSettingsReturnPage = from
+        page = AppPage.BilkaApiSettings
+    }
+
     var showSyncConflictDialog by remember {
-        mutableStateOf(false)
+        mutableStateOf(value = false)
+    }
+    val openSyncConflictDialog: () -> Unit = remember {
+        { showSyncConflictDialog = true }
     }
     val pantryListState = rememberLazyListState()
     val tabStateHolder = rememberSaveableStateHolder()
     val messageHostState = remember { SnackbarHostState() }
+
+    val missingShoppingCount by remember(state) {
+        derivedStateOf {
+            state.shoppingItems().count { item ->
+                state.isShoppingIncluded(item.ingredient.id) &&
+                        state.shoppingChecked[item.ingredient.id] != true
+            }
+        }
+    }
 
     LaunchedEffect(state.lastError) {
         val message = state.lastError ?: return@LaunchedEffect
@@ -277,6 +312,9 @@ fun MealPlannerApp(
             AppPage.Settings -> null
             AppPage.MealHistory -> null
             AppPage.PlannerSettings -> AppPage.Settings
+            AppPage.BilkaApiSettings -> bilkaSettingsReturnPage
+            AppPage.BilkaProducts -> AppPage.Settings
+            is AppPage.BilkaProductPicker -> AppPage.BilkaProducts
             AppPage.SyncStatus -> AppPage.Settings
             AppPage.DataBackup -> AppPage.Settings
             AppPage.IngredientCategories -> AppPage.Settings
@@ -285,6 +323,7 @@ fun MealPlannerApp(
             is AppPage.RecipeDetail -> null
             is AppPage.RecipeEditor ->
                 current.recipeId?.let { AppPage.RecipeDetail(it) }
+
             null -> null
         }
     }
@@ -350,192 +389,280 @@ fun MealPlannerApp(
 
     Box(modifier = Modifier.fillMaxSize()) {
         when (val current = page) {
-        AppPage.MealHistory -> MealHistoryScreen(
-            state = state,
-            onBack = { navigateBack() }
-        )
+            AppPage.MealHistory -> MealHistoryScreen(
+                state = state,
+                onBack = { navigateBack() }
+            )
 
-        AppPage.Settings -> SettingsScreen(
-            household = household,
-            state = state,
-            onBack = { navigateBack() },
-            onRenameHousehold = onRenameHousehold,
-            onIngredientCategories = { page = AppPage.IngredientCategories },
-            onRecipeCategories = { page = AppPage.RecipeCategories },
-            onPlannerSettings = { page = AppPage.PlannerSettings },
-            onSyncStatus = { page = AppPage.SyncStatus },
-            onDataBackup = { page = AppPage.DataBackup },
-            themeMode = themeMode,
-            onThemeModeChange = onThemeModeChange,
-            onLogout = onLogout
-        )
+            AppPage.Settings -> SettingsScreen(
+                household = household,
+                state = state,
+                onBack = { navigateBack() },
+                onRenameHousehold = onRenameHousehold,
+                onIngredientCategories = { page = AppPage.IngredientCategories },
+                onRecipeCategories = { page = AppPage.RecipeCategories },
+                onPlannerSettings = { page = AppPage.PlannerSettings },
+                onBilkaApiSettings = { openBilkaSettings(AppPage.Settings) },
+                onBilkaProducts = { page = AppPage.BilkaProducts },
+                onSyncStatus = { page = AppPage.SyncStatus },
+                onDataBackup = { page = AppPage.DataBackup },
+                themeMode = themeMode,
+                onThemeModeChange = onThemeModeChange,
+                onLogout = onLogout
+            )
 
-        AppPage.PlannerSettings -> PlannerSettingsScreen(
-            state = state,
-            onBack = { navigateBack() }
-        )
+            AppPage.BilkaProducts -> BilkaProductsScreen(
+                householdId = household.id,
+                onBack = { navigateBack() },
+                onImport = { openBilkaSettings(AppPage.BilkaProducts) },
+                onPick = { ingredientId, ingredientName ->
+                    page = AppPage.BilkaProductPicker(ingredientId, ingredientName)
+                }
+            )
 
-        AppPage.SyncStatus -> SyncStatusScreen(
-            state = state,
-            onBack = { navigateBack() }
-        )
-
-        AppPage.DataBackup -> DataBackupScreen(
-            state = state,
-            onBack = { navigateBack() }
-        )
-
-        AppPage.IngredientCategories -> IngredientCategoriesScreen(
-            state = state,
-            onBack = { navigateBack() }
-        )
-
-        AppPage.RecipeCategories -> RecipeCategoriesScreen(
-            state = state,
-            onBack = { navigateBack() }
-        )
-
-        is AppPage.IngredientEditor -> IngredientEditorScreen(
-            state = state,
-            ingredientId = current.ingredientId,
-            onBack = { navigateBack() },
-            onSaved = { page = null }
-        )
-
-        is AppPage.RecipeDetail -> RecipeDetailScreen(
-            state = state,
-            recipeId = current.recipeId,
-            onBack = { navigateBack() },
-            onEdit = { page = AppPage.RecipeEditor(current.recipeId) }
-        )
-
-        is AppPage.RecipeEditor -> RecipeEditorScreen(
-            state = state,
-            recipeId = current.recipeId,
-            initialMealType = current.initialMealType,
-            onBack = { navigateBack() },
-            onSaved = { savedId ->
-                page = savedId?.let { AppPage.RecipeDetail(it) }
-            }
-        )
-
-        null -> {
-            Scaffold(
-                containerColor = MaterialTheme.colorScheme.background,
-                topBar = {
-                    AppHeader(
-                        onSettings = { page = AppPage.Settings }
-                    )
+            is AppPage.BilkaProductPicker -> BilkaProductPickerScreen(
+                householdId = household.id,
+                ingredientId = current.ingredientId,
+                ingredientName = current.ingredientName,
+                onBack = { navigateBack() },
+                onSaved = {
+                    state.refreshNow()
+                    page = AppPage.BilkaProducts
                 },
-                bottomBar = {
-                    // Give the editor the full height when the keyboard is open.
-                    if (!WindowInsets.isImeVisible) {
-                    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                        AppTab.entries.forEach { item ->
-                            NavigationBarItem(
-                                selected = item == tab,
-                                onClick = {
-                                    tab = item
-                                    scope.launch {
-                                        pagerState.scrollToPage(item.ordinal)
-                                    }
-                                },
-                                icon = {
-                                    Icon(
-                                        item.icon,
-                                        contentDescription = item.label
-                                    )
-                                },
-                                label = {
-                                    Text(
-                                        item.label,
-                                        fontWeight = if (item == tab) FontWeight.Bold else FontWeight.Normal
+                onImport = { openBilkaSettings(current) }
+            )
+
+            AppPage.BilkaApiSettings -> BilkaApiSettingsScreen(
+                householdId = household.id,
+                onBack = { navigateBack() },
+                onViewProducts = { page = AppPage.BilkaProducts }
+            )
+
+            AppPage.PlannerSettings -> PlannerSettingsScreen(
+                state = state,
+                onBack = { navigateBack() }
+            )
+
+            AppPage.SyncStatus -> SyncStatusScreen(
+                state = state,
+                onBack = { navigateBack() }
+            )
+
+            AppPage.DataBackup -> DataBackupScreen(
+                state = state,
+                onBack = { navigateBack() }
+            )
+
+            AppPage.IngredientCategories -> IngredientCategoriesScreen(
+                state = state,
+                onBack = { navigateBack() }
+            )
+
+            AppPage.RecipeCategories -> RecipeCategoriesScreen(
+                state = state,
+                onBack = { navigateBack() }
+            )
+
+            is AppPage.IngredientEditor -> IngredientEditorScreen(
+                state = state,
+                ingredientId = current.ingredientId,
+                onBack = { navigateBack() },
+                onSaved = { page = null }
+            )
+
+            is AppPage.RecipeDetail -> RecipeDetailScreen(
+                state = state,
+                recipeId = current.recipeId,
+                onBack = { navigateBack() },
+                onEdit = { page = AppPage.RecipeEditor(current.recipeId) }
+            )
+
+            is AppPage.RecipeEditor -> RecipeEditorScreen(
+                state = state,
+                recipeId = current.recipeId,
+                initialMealType = current.initialMealType,
+                onBack = { navigateBack() },
+                onSaved = { savedId ->
+                    page = savedId?.let { AppPage.RecipeDetail(it) }
+                }
+            )
+
+            null -> {
+                Scaffold(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    topBar = {
+                        AppHeader(
+                            onSettings = {
+                                page = AppPage.Settings
+                            }
+                        )
+                    },
+                    bottomBar = {
+                        // Give the editor the full height when the keyboard is open.
+                        if (!isKeyboardVisible) {
+                            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                                AppTab.entries.forEach { item ->
+                                    val isShopping = item == AppTab.SHOPPING
+                                    NavigationBarItem(
+                                        selected = item == tab,
+                                        onClick = {
+                                            tab = item
+                                            scope.launch {
+                                                pagerState.scrollToPage(item.ordinal)
+                                            }
+                                        },
+                                        icon = {
+                                            if (isShopping && missingShoppingCount > 0) {
+                                                BadgedBox(
+                                                    badge = {
+                                                        Badge {
+                                                            Text(
+                                                                if (missingShoppingCount > 99) "99+" else missingShoppingCount.toString(),
+                                                                style = MaterialTheme.typography.labelSmall
+                                                            )
+                                                        }
+                                                    }
+                                                ) {
+                                                    Icon(
+                                                        item.icon,
+                                                        contentDescription = item.label
+                                                    )
+                                                }
+                                            } else {
+                                                Icon(
+                                                    item.icon,
+                                                    contentDescription = item.label
+                                                )
+                                            }
+                                        },
+                                        label = {
+                                            Text(
+                                                item.label,
+                                                fontWeight = if (item == tab) FontWeight.Bold else FontWeight.Normal
+                                            )
+                                        }
                                     )
                                 }
-                            )
+                            }
                         }
                     }
-                    }
-                }
-            ) { padding ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding)
-                ) {
-                    if (state.isLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.align(Alignment.Center)
-                        )
-                    } else {
-                        HorizontalPager(
-                            state = pagerState,
-                            // Only compose the visible tab; other lists build on demand.
-                            beyondViewportPageCount = 0,
-                            modifier = Modifier.fillMaxSize()
-                        ) { pageIndex ->
-                            val visibleTab = AppTab.entries[pageIndex]
-                            tabStateHolder.SaveableStateProvider(visibleTab.name) {
-                            when (visibleTab) {
-                                AppTab.WEEK -> WeekScreen(
-                                    state = state,
-                                    onMealHistory = { page = AppPage.MealHistory },
-                                    onOpenRecipe = {
-                                        page = AppPage.RecipeDetail(it)
-                                    },
-                                    onNewLunchRecipe = {
-                                        page = AppPage.RecipeEditor(
-                                            recipeId = null,
-                                            initialMealType = MealType.LUNCH
+                ) { padding ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(padding)
+                    ) {
+                        if (state.isLoading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.align(Alignment.Center)
+                            )
+                        } else {
+                            HorizontalPager(
+                                state = pagerState,
+                                // Only compose the visible tab; other lists build on demand.
+                                beyondViewportPageCount = 0,
+                                modifier = Modifier.fillMaxSize()
+                            ) { pageIndex ->
+                                val visibleTab = AppTab.entries[pageIndex]
+                                tabStateHolder.SaveableStateProvider(visibleTab.name) {
+                                    when (visibleTab) {
+                                        AppTab.WEEK -> WeekScreen(
+                                            state = state,
+                                            onMealHistory = { page = AppPage.MealHistory },
+                                            onOpenRecipe = {
+                                                page = AppPage.RecipeDetail(it)
+                                            },
+                                            onNewLunchRecipe = {
+                                                page = AppPage.RecipeEditor(
+                                                    recipeId = null,
+                                                    initialMealType = MealType.LUNCH
+                                                )
+                                            }
                                         )
+
+                                        AppTab.RECIPES -> RecipesScreen(
+                                            state = state,
+                                            onAddRecipe = { page = AppPage.RecipeEditor(null) },
+                                            onOpenRecipe = { page = AppPage.RecipeDetail(it) }
+                                        )
+
+                                        AppTab.PANTRY -> PantryScreen(
+                                            state = state,
+                                            listState = pantryListState,
+                                            onAddIngredient = {
+                                                page = AppPage.IngredientEditor(null)
+                                            },
+                                            onEditIngredient = {
+                                                page = AppPage.IngredientEditor(it)
+                                            }
+                                        )
+
+                                        AppTab.SHOPPING -> ShoppingScreen(state)
                                     }
-                                )
-                                AppTab.RECIPES -> RecipesScreen(
-                                    state = state,
-                                    onAddRecipe = { page = AppPage.RecipeEditor(null) },
-                                    onOpenRecipe = { page = AppPage.RecipeDetail(it) }
-                                )
-                                AppTab.PANTRY -> PantryScreen(
-                                    state = state,
-                                    listState = pantryListState,
-                                    onAddIngredient = {
-                                        page = AppPage.IngredientEditor(null)
-                                    },
-                                    onEditIngredient = {
-                                        page = AppPage.IngredientEditor(it)
-                                    }
-                                )
-                                AppTab.SHOPPING -> ShoppingScreen(state)
-                            }
+                                }
                             }
                         }
                     }
                 }
             }
         }
-        }
 
-        SnackbarHost(
-            hostState = messageHostState,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(
-                    horizontal = 16.dp,
-                    vertical = 126.dp
-                )
-        )
-
-        SyncStatusBadge(
+        GlobalSyncOverlays(
+            page = page,
+            isKeyboardVisible = isKeyboardVisible,
             indicator = state.syncIndicator,
+            messageHostState = messageHostState,
             onRetry = state::retryPendingSync,
-            onConflict = {
-                showSyncConflictDialog = true
-            },
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = 86.dp)
+            onConflict = openSyncConflictDialog
         )
     }
+}
+
+
+/**
+ * Keep the overlay's remembered callbacks in an independent composition scope.
+ *
+ * The 2026-10-12 crash log reports:
+ * WindowInsetsHolder$Companion$ExternalSyntheticLambda0
+ *   cannot be cast to kotlin.jvm.functions.Function0
+ *   at MealPlannerApp(MainActivity.kt:620).
+ *
+ * The old root composition read a @Composable IME getter in page-dependent
+ * branches immediately before memoizing a Function0 for SyncStatusBadge.
+ * The new structure reads the inset unconditionally in MealPlannerApp and
+ * moves the overlay callback use into its own composable group.
+ */
+@Composable
+private fun BoxScope.GlobalSyncOverlays(
+    page: AppPage?,
+    isKeyboardVisible: Boolean,
+    indicator: SyncIndicator,
+    messageHostState: SnackbarHostState,
+    onRetry: () -> Unit,
+    onConflict: () -> Unit
+) {
+    val overlayBottom = when (page) {
+        is AppPage.RecipeEditor -> 84.dp
+        null -> if (!isKeyboardVisible) 86.dp else 16.dp
+        else -> 16.dp
+    }
+    val hasSyncStatus = indicator != SyncIndicator.IDLE
+    SnackbarHost(
+        hostState = messageHostState,
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .padding(horizontal = 16.dp)
+            .padding(bottom = overlayBottom + if (hasSyncStatus) 56.dp else 0.dp)
+    )
+
+    SyncStatusBadge(
+        indicator = indicator,
+        onRetry = onRetry,
+        onConflict = onConflict,
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .padding(bottom = overlayBottom)
+    )
 }
 
 @Composable
@@ -586,24 +713,47 @@ private fun SyncStatusBadge(
 
 @Composable
 private fun AppHeader(onSettings: () -> Unit) {
-    Surface(shadowElevation = 1.dp) {
+    Surface(
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 12.dp),
+                .padding(horizontal = 20.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            Surface(
+                shape = CircleShape,
+                color = MaterialTheme.colorScheme.primaryContainer,
+                modifier = Modifier.size(36.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        Icons.Filled.Restaurant,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+            Spacer(Modifier.width(12.dp))
             Text(
                 "MealPlanner",
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.weight(1f)
             )
 
-            IconButton(onClick = onSettings) {
+            IconButton(
+                onClick = onSettings,
+                modifier = Modifier.clip(CircleShape)
+            ) {
                 Icon(
                     Icons.Filled.Settings,
-                    contentDescription = "Indstillinger"
+                    contentDescription = "Indstillinger",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
         }
@@ -615,15 +765,15 @@ private fun RecipeCategoriesScreen(
     state: MealPlannerState,
     onBack: () -> Unit
 ) {
-    var showAdd by remember { mutableStateOf(false) }
+    var showAdd by remember { mutableStateOf(value = false) }
     var editing by remember { mutableStateOf<RecipeCategoryOption?>(null) }
     var categoryName by remember { mutableStateOf("") }
     val recipeCategoryNameAvailable =
         categoryName.isBlank() ||
-            state.isRecipeCategoryNameAvailable(
-                name = categoryName,
-                excludingId = editing?.id
-            )
+                state.isRecipeCategoryNameAvailable(
+                    name = categoryName,
+                    excludingId = editing?.id
+                )
 
     if (showAdd || editing != null) {
         AlertDialog(
@@ -673,7 +823,7 @@ private fun RecipeCategoriesScreen(
                     },
                     enabled =
                         categoryName.trim().isNotBlank() &&
-                            recipeCategoryNameAvailable
+                                recipeCategoryNameAvailable
                 ) {
                     Text("Gem")
                 }
@@ -794,10 +944,10 @@ private fun IngredientCategoriesScreen(
 
     val ingredientCategoryNameAvailable =
         categoryName.isBlank() ||
-            state.isIngredientCategoryNameAvailable(
-                name = categoryName,
-                excludingId = editing?.id
-            )
+                state.isIngredientCategoryNameAvailable(
+                    name = categoryName,
+                    excludingId = editing?.id
+                )
 
     val activeDialog = showAdd || editing != null
     if (activeDialog) {
@@ -848,7 +998,7 @@ private fun IngredientCategoriesScreen(
                     },
                     enabled =
                         categoryName.trim().isNotBlank() &&
-                            ingredientCategoryNameAvailable
+                                ingredientCategoryNameAvailable
                 ) {
                     Text("Gem")
                 }
@@ -967,6 +1117,8 @@ private fun SettingsScreen(
     onIngredientCategories: () -> Unit,
     onRecipeCategories: () -> Unit,
     onPlannerSettings: () -> Unit,
+    onBilkaApiSettings: () -> Unit,
+    onBilkaProducts: () -> Unit,
     onSyncStatus: () -> Unit,
     onDataBackup: () -> Unit,
     themeMode: ThemeMode,
@@ -983,8 +1135,11 @@ private fun SettingsScreen(
     var feedbackError by remember {
         mutableStateOf<String?>(null)
     }
-    var homeName by remember(household.name) {
-        mutableStateOf(household.name)
+    val safeHouseholdName = household.name.ifBlank { "Mit Hjem" }
+    val safeJoinCode = household.joinCode.ifBlank { "---" }
+
+    var homeName by remember(safeHouseholdName) {
+        mutableStateOf(safeHouseholdName)
     }
 
     if (showRenameHome) {
@@ -1026,8 +1181,8 @@ private fun SettingsScreen(
                     },
                     enabled =
                         !renameBusy &&
-                            homeName.trim().isNotBlank() &&
-                            homeName.trim() != household.name
+                                homeName.trim().isNotBlank() &&
+                                homeName.trim() != safeHouseholdName
                 ) {
                     Text("Gem")
                 }
@@ -1084,7 +1239,7 @@ private fun SettingsScreen(
                     },
                     enabled =
                         !feedbackBusy &&
-                            feedback.trim().length >= 3
+                                feedback.trim().length >= 3
                 ) {
                     Text("Send")
                 }
@@ -1115,7 +1270,7 @@ private fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            household.name,
+                            safeHouseholdName,
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.weight(1f)
@@ -1123,7 +1278,7 @@ private fun SettingsScreen(
 
                         IconButton(
                             onClick = {
-                                homeName = household.name
+                                homeName = safeHouseholdName
                                 showRenameHome = true
                             }
                         ) {
@@ -1132,6 +1287,28 @@ private fun SettingsScreen(
                                 contentDescription = "Omdøb hjem"
                             )
                         }
+                    }
+                }
+            }
+
+            item {
+                SectionCard("BilkaToGo") {
+                    Text(
+                        "Administrér din personlige Prej API-nøgle, søgekald og automatisk prisopdatering.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                    Button(
+                        onClick = onBilkaApiSettings,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Prej API-nøgle og søgeindstillinger")
+                    }
+                    OutlinedButton(
+                        onClick = onBilkaProducts,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Mine BilkaToGo-produkter")
                     }
                 }
             }
@@ -1213,7 +1390,7 @@ private fun SettingsScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            household.joinCode,
+                            safeJoinCode,
                             style = MaterialTheme.typography.headlineSmall,
                             fontWeight = FontWeight.Bold,
                             modifier = Modifier.weight(1f)
@@ -1224,10 +1401,11 @@ private fun SettingsScreen(
                                 val clipboard = context.getSystemService(
                                     Context.CLIPBOARD_SERVICE
                                 ) as ClipboardManager
+                                @Suppress("UsePropertyAccessSyntax")
                                 clipboard.setPrimaryClip(
                                     ClipData.newPlainText(
                                         "Invitationskode",
-                                        household.joinCode
+                                        safeJoinCode
                                     )
                                 )
                                 Toast.makeText(
@@ -1266,42 +1444,62 @@ private fun SettingsScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun SubpageScaffold(
     title: String,
     onBack: () -> Unit,
     action: (@Composable () -> Unit)? = null,
+    bottomBar: (@Composable () -> Unit)? = null,
     content: @Composable (PaddingValues) -> Unit
 ) {
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        title,
-                        fontWeight = FontWeight.SemiBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ArrowBack,
+            // Shared subpages use a minimal stable header rather than the
+            // experimental Material3 TopAppBar and generated arrow asset.
+            // This isolates their release navigation/rendering path from
+            // the main tab scaffold without changing screen functionality.
+            Surface(
+                color = MaterialTheme.colorScheme.background,
+                tonalElevation = 1.dp,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .windowInsetsPadding(WindowInsets.statusBars)
+            ) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 56.dp)
+                        .padding(horizontal = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(
+                        onClick = onBack,
+                        modifier = Modifier.semantics {
                             contentDescription = "Tilbage"
+                        }
+                    ) {
+                        Text(
+                            text = "←",
+                            style = MaterialTheme.typography.headlineMedium,
+                            color = MaterialTheme.colorScheme.onSurface
                         )
                     }
-                },
-                actions = {
+                    Text(
+                        title,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .weight(1f)
+                            .padding(start = 4.dp)
+                    )
                     action?.invoke()
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background
-                )
-            )
+                }
+            }
         },
+        bottomBar = { bottomBar?.invoke() },
         content = content
     )
 }
@@ -1332,17 +1530,63 @@ internal fun SectionCard(
 }
 
 @Composable
-internal fun EmptyCard(text: String) {
-    Surface(
+internal fun EmptyCard(
+    text: String,
+    icon: ImageVector? = null,
+    title: String? = null,
+    action: (@Composable () -> Unit)? = null
+) {
+    Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 0.dp)
     ) {
-        Text(
-            text,
-            modifier = Modifier.padding(16.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            if (icon != null) {
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.size(48.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = icon,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(10.dp))
+            }
+            if (title != null) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+                Spacer(Modifier.height(4.dp))
+            }
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            if (action != null) {
+                Spacer(Modifier.height(12.dp))
+                action()
+            }
+        }
     }
 }
 
@@ -1350,16 +1594,24 @@ internal fun EmptyCard(text: String) {
 internal fun SearchField(
     value: String,
     onValueChange: (String) -> Unit,
-    placeholder: String
+    placeholder: String,
+    modifier: Modifier = Modifier
 ) {
     OutlinedTextField(
         value = value,
         onValueChange = onValueChange,
-        placeholder = { Text(placeholder) },
+        placeholder = {
+            Text(
+                placeholder,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+            )
+        },
         leadingIcon = {
             Icon(
                 Icons.Filled.Search,
-                contentDescription = null
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant
             )
         },
         trailingIcon = {
@@ -1369,14 +1621,22 @@ internal fun SearchField(
                 ) {
                     Icon(
                         Icons.Filled.Clear,
-                        contentDescription = "Ryd søgning"
+                        contentDescription = "Ryd søgning",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
             }
         },
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(14.dp),
-        singleLine = true
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        singleLine = true,
+        colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+            focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+            unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f),
+            disabledContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.1f),
+            focusedBorderColor = MaterialTheme.colorScheme.primary,
+            unfocusedBorderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+        )
     )
 }
 
@@ -1407,6 +1667,7 @@ internal fun ImagePickerBox(
 
     Box(
         modifier = modifier
+            .fillMaxWidth()
             .height(height)
             .clip(RoundedCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.surfaceVariant)
@@ -1486,24 +1747,27 @@ internal fun AppThumbnail(
     fallback: String,
     modifier: Modifier = Modifier
 ) {
-    val boxSize = 60.dp
-    val actualModifier = if (modifier == Modifier) Modifier.size(boxSize) else modifier
-
-    if (!imageUri.isNullOrBlank()) {
-        MealImage(
-            imageUri = imageUri,
-            modifier = actualModifier.clip(RoundedCornerShape(16.dp)),
-            thumbnail = true,
-            fallback = fallback
-        )
-    } else {
-        Surface(
-            modifier = actualModifier,
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.primaryContainer,
-            tonalElevation = 2.dp
+    // Layout dimensions are owned by the placeholder, never the source image.
+    // An image selected from a 4000px camera file or Prej must not resize rows.
+    val boxSize = PantryImageRules.THUMBNAIL_SIZE_DP.dp
+    Surface(
+        modifier = modifier.requiredSize(boxSize),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.primaryContainer,
+        tonalElevation = 2.dp
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
         ) {
-            Box(contentAlignment = Alignment.Center) {
+            if (!imageUri.isNullOrBlank()) {
+                MealImage(
+                    imageUri = imageUri,
+                    modifier = Modifier.fillMaxSize(),
+                    thumbnail = true,
+                    fallback = fallback
+                )
+            } else {
                 Text(
                     fallback,
                     style = MaterialTheme.typography.headlineMedium,
@@ -1522,17 +1786,16 @@ internal fun <T> SelectorChips(
     label: (T) -> String,
     onSelected: (T) -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        items.chunked(3).forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                row.forEach { item ->
-                    FilterChip(
-                        selected = item == selected,
-                        onClick = { onSelected(item) },
-                        label = { Text(label(item)) }
-                    )
-                }
-            }
+    FlowRow(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        items.forEach { item ->
+            FilterChip(
+                selected = item == selected,
+                onClick = { onSelected(item) },
+                label = { Text(label(item)) }
+            )
         }
     }
 }
@@ -1542,16 +1805,20 @@ internal fun <T> SimpleSelector(
     label: String,
     options: List<T>,
     optionText: (T) -> String,
-    onSelected: (T) -> Unit
+    onSelected: (T) -> Unit,
+    fillWidth: Boolean = false,
+    minHeight: Dp = 0.dp
 ) {
     var expanded by remember { mutableStateOf(false) }
 
-    Box {
+    Box(modifier = if (fillWidth) Modifier.fillMaxWidth() else Modifier) {
         OutlinedButton(
             onClick = { expanded = true },
+            modifier = (if (fillWidth) Modifier.fillMaxWidth() else Modifier)
+                .heightIn(min = minHeight),
             shape = RoundedCornerShape(12.dp)
         ) {
-            Text(label)
+            Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
 
         DropdownMenu(
@@ -1571,14 +1838,11 @@ internal fun <T> SimpleSelector(
     }
 }
 
+/** Lossless for finite Double values: never round a small quantity to zero. */
 internal fun formatDisplayNumber(value: Double): String {
-    if (kotlin.math.abs(value - value.toInt()) < 0.00001) {
-        return value.toInt().toString()
-    }
-
-    return String.format(
-        Locale.forLanguageTag("da-DK"),
-        "%.2f",
-        value
-    ).trimEnd('0').trimEnd(',')
+    if (!value.isFinite()) return value.toString()
+    return java.math.BigDecimal.valueOf(value)
+        .stripTrailingZeros()
+        .toPlainString()
+        .replace('.', ',')
 }

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Report release vs R8 benchmark DEX sizes; reject missing/ineffective shrinking.
+"""Compare unoptimized baseline and R8-optimized production release DEX sizes.
 
-APK byte sizes are a build artifact comparison, NOT a measured startup benefit.
-For runtime validity install the R8-enabled benchmark APK on a spare phone.
+This detects missing/ineffective shrinking, not Google Play's distinct 25%
+obfuscation/optimization/shrinking metrics or measured runtime improvements.
+Use an actual release-like APK on a spare phone to verify startup and flows.
 """
 from __future__ import annotations
 
@@ -17,7 +18,8 @@ def dex_metrics(apk: Path) -> dict[str, int]:
     if not apk.is_file():
         raise FileNotFoundError(
             f"DEX comparison requires an APK file, but got {apk!s}. "
-            "Build the release baseline with :app:assembleRelease."
+            "Build the baseline with :app:assembleUnoptimized and "
+            "production APK with :app:assembleRelease."
         )
     with zipfile.ZipFile(apk) as archive:
         dex_entries = [
@@ -48,18 +50,22 @@ def dex_metrics(apk: Path) -> dict[str, int]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--release", type=Path, required=True)
-    parser.add_argument("--optimized", type=Path, required=True)
+    parser.add_argument(
+        "--baseline", "--release", dest="baseline", type=Path, required=True,
+        help="Unoptimized comparison APK (--release is a deprecated alias)"
+    )
+    parser.add_argument("--optimized", type=Path, required=True,
+                        help="Actual R8-enabled production release APK")
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
 
-    release = dex_metrics(args.release)
+    baseline = dex_metrics(args.baseline)
     optimized = dex_metrics(args.optimized)
-    saved = release["dex_uncompressed_bytes"] - optimized["dex_uncompressed_bytes"]
-    percent = 100 * saved / release["dex_uncompressed_bytes"]
+    saved = baseline["dex_uncompressed_bytes"] - optimized["dex_uncompressed_bytes"]
+    percent = 100 * saved / baseline["dex_uncompressed_bytes"]
     report = {
-        "unoptimized_release": release,
-        "r8_benchmark": optimized,
+        "unoptimized_baseline": baseline,
+        "r8_production_release": optimized,
         "dex_bytes_saved": saved,
         "dex_size_reduction_percent": round(percent, 2),
     }
@@ -70,7 +76,7 @@ def main() -> None:
         args.report.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
     if saved <= 0:
-        raise SystemExit("R8 benchmark DEX must be smaller than unoptimized release")
+        raise SystemExit("R8 production release DEX must be smaller than unoptimized baseline")
 
 
 if __name__ == "__main__":
