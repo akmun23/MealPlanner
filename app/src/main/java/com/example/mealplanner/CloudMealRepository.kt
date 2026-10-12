@@ -179,6 +179,21 @@ private data class PantryRow(
 )
 
 @Serializable
+private data class PantryLotRow(
+    val id: String,
+    @SerialName("household_id") val householdId: String,
+    @SerialName("ingredient_id") val ingredientId: String,
+    @SerialName("original_amount_base") val originalBase: Double,
+    @SerialName("remaining_amount_base") val remainingBase: Double,
+    val opened: Boolean = false,
+    @SerialName("legacy_unknown") val legacyUnknown: Boolean = false,
+    @SerialName("product_id") val productId: String? = null,
+    @SerialName("purchase_event_key") val purchaseEventKey: String? = null,
+    @SerialName("best_before") val bestBefore: String? = null,
+    @SerialName("lot_version") val version: Long = 1L
+)
+
+@Serializable
 private data class SettingsRow(
     @SerialName("household_id") val householdId: String,
     @SerialName("sandwich_recipe_id") val sandwichRecipeId: String? = null
@@ -253,6 +268,7 @@ data class CloudSnapshot(
     val recipeCategories: List<RecipeCategoryOption>,
     val recipes: List<Recipe>,
     val pantry: Map<String, Double>,
+    val pantryLots: List<PantryLot> = emptyList(),
     val dayModes: Map<DayOfWeek, DayMode>,
     val dayMaxPrepMinutes: Map<DayOfWeek, Int?>,
     val plan: Map<DayOfWeek, String?>,
@@ -301,7 +317,7 @@ internal enum class CloudSyncDomain {
 internal fun syncDomainForTable(table: String): CloudSyncDomain? =
     when (table) {
         "ingredients",
-        "ingredient_protein_flags",
+        "ingredient_protein_flags", "ingredient_unit_conversions",
         "shopping_categories" -> CloudSyncDomain.INGREDIENTS
 
         "recipe_categories",
@@ -312,7 +328,7 @@ internal fun syncDomainForTable(table: String): CloudSyncDomain? =
         "recipe_ingredients",
         "recipe_pantry_prerequisites" -> CloudSyncDomain.RECIPES
 
-        "pantry_items" -> CloudSyncDomain.PANTRY
+        "pantry_items", "pantry_lots" -> CloudSyncDomain.PANTRY
 
         "household_settings",
         "weekly_plans",
@@ -497,6 +513,9 @@ class CloudMealRepository(
             val pantryDeferred = async {
                 loadPantrySnapshot()
             }
+            val pantryLotsDeferred = async {
+                loadPantryLotsSnapshot()
+            }
             val weekDeferred = async {
                 loadWeekSnapshot(weekStart)
             }
@@ -511,6 +530,7 @@ class CloudMealRepository(
             val ingredients = ingredientsDeferred.await()
             val recipes = recipesDeferred.await()
             val pantry = pantryDeferred.await()
+            val pantryLots = pantryLotsDeferred.await()
             val week = weekDeferred.await()
             val history = historyDeferred.await()
             val shopping = loadShoppingSnapshot(
@@ -525,6 +545,7 @@ class CloudMealRepository(
                     recipes.recipeCategories,
                 recipes = recipes.recipes,
                 pantry = pantry,
+                pantryLots = pantryLots,
                 dayModes = week.dayModes,
                 dayMaxPrepMinutes =
                     week.dayMaxPrepMinutes,
@@ -796,6 +817,46 @@ class CloudMealRepository(
             }.decodeList<PantryRow>()
                 .associate { it.ingredientId to it.amountBase }
         }
+
+    internal suspend fun loadPantryLotsSnapshot(): List<PantryLot> =
+        withContext(Dispatchers.IO) {
+            supabase.from("pantry_lots").select {
+                filter { eq("household_id", householdId) }
+            }.decodeList<PantryLotRow>().map { row ->
+                PantryLot(
+                    id = row.id,
+                    ingredientId = row.ingredientId,
+                    originalBase = row.originalBase,
+                    remainingBase = row.remainingBase,
+                    opened = row.opened,
+                    legacyUnknown = row.legacyUnknown,
+                    productId = row.productId,
+                    purchaseEventKey = row.purchaseEventKey,
+                    bestBefore = row.bestBefore,
+                    version = row.version
+                )
+            }
+        }
+
+    suspend fun upsertPantryLot(lot: PantryLot) = withContext(Dispatchers.IO) {
+        require(lot.remainingBase >= 0.0 && lot.originalBase > 0.0 &&
+            lot.remainingBase <= lot.originalBase && lot.originalBase <= 1e10)
+        supabase.from("pantry_lots").upsert(
+            PantryLotRow(
+                id = lot.id,
+                householdId = householdId,
+                ingredientId = lot.ingredientId,
+                originalBase = lot.originalBase,
+                remainingBase = lot.remainingBase,
+                opened = lot.opened,
+                legacyUnknown = lot.legacyUnknown,
+                productId = lot.productId,
+                purchaseEventKey = lot.purchaseEventKey,
+                bestBefore = lot.bestBefore,
+                version = lot.version
+            )
+        ) { onConflict = "id" }
+    }
 
     internal suspend fun loadWeekSnapshot(weekStart: LocalDate = currentWeekStart()): CloudWeekSnapshot =
         withContext(Dispatchers.IO) {
@@ -1398,6 +1459,7 @@ class CloudMealRepository(
         val watchedTables = listOf(
             "ingredients",
             "ingredient_protein_flags",
+            "ingredient_unit_conversions",
             "shopping_categories",
             "recipe_categories",
             "recipe_category_assignments",
@@ -1407,6 +1469,7 @@ class CloudMealRepository(
             "recipe_ingredients",
             "recipe_pantry_prerequisites",
             "pantry_items",
+            "pantry_lots",
             "household_settings",
             "weekly_plans",
             "planned_meals",
