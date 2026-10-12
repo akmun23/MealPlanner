@@ -18,8 +18,7 @@ internal class ThemePreferences(context: Context) {
 
     fun load(): ThemeMode = preferences.getString("theme_mode", null)
         ?.let { stored ->
-            @Suppress("EnumValuesSoftDeprecate")
-            ThemeMode.values().firstOrNull { it.name == stored }
+            ThemeMode.entries.firstOrNull { it.name == stored }
         } ?: ThemeMode.SYSTEM
 
     fun save(mode: ThemeMode) {
