@@ -34,6 +34,8 @@ import java.text.NumberFormat
 import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.math.roundToLong
 
 private val da = Locale.forLanguageTag("da-DK")
@@ -401,15 +403,11 @@ internal fun BilkaPurchaseDialog(
                                 // The database may have committed even if the network
                                 // lost its response. Verify the week before inviting
                                 // the user to try again or manually credit the stock.
-                                val confirmed = BilkaPrejClient.shoppingContext(
-                                    state.householdIdentifier, weekId
-                                ).getOrNull()?.let { latest ->
-                                    runCatching {
-                                        decodeBilkaShoppingContext(latest)
-                                            .purchase(ingredient.id)?.purchasedAmountBase
-                                    }.getOrNull()
-                                }
-                                if (confirmed != null && confirmed > 0.0) {
+                                val confirmed = BilkaPrejClient.purchaseStatus(
+                                    state.householdIdentifier, weekId, checkoutId
+                                ).getOrNull()?.get("confirmed")
+                                    ?.jsonPrimitive?.booleanOrNull == true
+                                if (confirmed) {
                                     state.refreshNow()
                                     onSaved()
                                 } else {
