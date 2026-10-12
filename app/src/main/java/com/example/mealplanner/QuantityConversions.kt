@@ -169,6 +169,38 @@ internal object RecipeQuantityRules {
             preferred.labelFor(preferred.fromBase(requirement.amountBase))
     }
 
+    /**
+     * The legacy editor cannot yet express cross-dimension recipe units.
+     * It temporarily presents them in the ingredient's base dimension.
+     * Editing a recipe title/notes must not silently rewrite an unchanged
+     * "1 pack" snapshot into "200 g". A real quantity change uses the new
+     * editor amount, and supported native units remain freely editable.
+     */
+    fun retainUneditableSnapshot(
+        previous: RecipeIngredient?,
+        edited: RecipeIngredient,
+        ingredient: Ingredient
+    ): RecipeIngredient {
+        if (previous == null ||
+            previous.ingredientId != edited.ingredientId ||
+            !hasValidSnapshot(previous)
+        ) return edited
+
+        val nativeUnit = MeasurementUnit.entries.firstOrNull {
+            it.name == previous.displayUnitCode
+        }
+        if (nativeUnit != null && nativeUnit.quantityType == ingredient.quantityType) {
+            return edited
+        }
+
+        if (!edited.amountBase.isFinite() ||
+            abs(previous.amountBase - edited.amountBase) >
+            max(0.000001, abs(previous.amountBase) * 1e-8)
+        ) return edited
+
+        return previous
+    }
+
     fun legacyEditableAmount(requirement: RecipeIngredient, ingredient: Ingredient): Pair<Double, MeasurementUnit> {
         if (hasValidSnapshot(requirement)) {
             val unit = MeasurementUnit.entries.firstOrNull {
