@@ -2264,9 +2264,9 @@ class MealPlannerState(
         // appear as independent shopping-list rows (one row per ingredient).
         val manualItems = ManualShoppingRules.additionalItems(
             planned = plannedItems,
-            ingredients = ingredients.toList(),
-            pantry = pantry.toMap(),
-            inclusion = shoppingIncluded.toMap()
+            ingredients = ingredients,
+            pantry = pantry,
+            inclusion = shoppingIncluded
         )
         return (plannedItems + manualItems).sortedWith(
             compareBy(
