@@ -1861,7 +1861,7 @@ internal fun IngredientEditorScreen(
             state.canChangeIngredientQuantityType(existing.id, type)
     val originalForm = remember(ingredientId) {
         listOf(name, type, preferredUnit, isProtein, neverBuy, shoppingCategoryId, imageUri,
-            conversionProfiles.toList(), conversionUnit, conversionFactorText, conversionEstimated)
+            conversionProfiles.toList())
     }
     var changesSeen by rememberSaveable(ingredientId) { mutableStateOf(false) }
     val hasUnsavedChanges = changesSeen ||
@@ -1873,7 +1873,7 @@ internal fun IngredientEditorScreen(
                 neverBuy,
                 shoppingCategoryId,
                 imageUri,
-                conversionProfiles.toList(), conversionUnit, conversionFactorText, conversionEstimated
+                conversionProfiles.toList()
             ) != originalForm
     androidx.compose.runtime.LaunchedEffect(hasUnsavedChanges) {
         if (hasUnsavedChanges) changesSeen = true
