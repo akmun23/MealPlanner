@@ -17,3 +17,6 @@ local.properties
 # Generated Android release artifacts; obtain bundles/mappings from CI instead.
 /app/release/
 **/build/
+
+# Local Android Studio device selection (host-specific path/serial).
+/.idea/deploymentTargetSelector.xml
