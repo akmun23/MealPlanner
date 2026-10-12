@@ -338,3 +338,218 @@ end;
 $body$;
 revoke all on function public.consume_pantry_lots(uuid,uuid,numeric) from public, anon;
 grant execute on function public.consume_pantry_lots(uuid,uuid,numeric) to authenticated;
+
+
+-- Exactly-once lot consumption. A repeated WorkManager delivery of the
+-- same household transaction token returns the original result.
+create table if not exists public.pantry_lot_consumptions (
+    transaction_key uuid not null,
+    household_id uuid not null,
+    ingredient_id uuid not null,
+    amount_base numeric not null check (amount_base > 0),
+    created_at timestamptz not null default now(),
+    primary key (household_id, transaction_key, ingredient_id)
+);
+revoke all on public.pantry_lot_consumptions from public, anon, authenticated;
+alter table public.pantry_lot_consumptions enable row level security;
+create or replace function public.consume_pantry_lots_once(
+    p_household_id uuid, p_ingredient_id uuid,
+    p_amount_base numeric, p_transaction_key uuid
+) returns numeric language plpgsql security definer set search_path = ''
+as $body$
+declare prior numeric;
+begin
+    if not private.is_household_member(p_household_id) then
+        raise exception 'not a household member';
+    end if;
+    if p_transaction_key is null or p_amount_base is null
+       or p_amount_base <= 0 or p_amount_base > 10000000000
+       then raise exception 'invalid amount or idempotency key'; end if;
+    insert into public.pantry_lot_consumptions(
+        transaction_key, household_id, ingredient_id, amount_base
+    ) values (p_transaction_key, p_household_id, p_ingredient_id, p_amount_base)
+    on conflict do nothing;
+    if not found then
+        select amount_base into prior from public.pantry_lot_consumptions
+        where transaction_key = p_transaction_key
+          and household_id = p_household_id
+          and ingredient_id = p_ingredient_id;
+        if prior is distinct from p_amount_base then
+            raise exception 'reused transaction with different amount';
+        end if;
+        return prior;
+    end if;
+    -- The atomic consumption RPC raises on insufficient stock. In that case
+    -- the just-inserted receipt is rolled back in the same transaction.
+    perform public.consume_pantry_lots(p_household_id, p_ingredient_id, p_amount_base);
+    return p_amount_base;
+end;
+$body$;
+revoke all on function public.consume_pantry_lots_once(uuid,uuid,numeric,uuid)
+    from public, anon;
+grant execute on function public.consume_pantry_lots_once(uuid,uuid,numeric,uuid)
+    to authenticated;
+
+-- Exactly-once purchase ID independent of week/ingredient: allow multiple
+-- intentional purchases during the same week but not a duplicated retry.
+create table if not exists public.pantry_purchase_events (
+    id uuid primary key,
+    household_id uuid not null,
+    weekly_plan_id uuid not null,
+    ingredient_id uuid not null,
+    product_id text,
+    manual_product_name text,
+    package_count integer,
+    purchased_amount_base numeric not null
+        check (purchased_amount_base > 0 and purchased_amount_base <= 10000000),
+    paid_total_ore bigint,
+    created_at timestamptz not null default now(),
+    foreign key (ingredient_id, household_id)
+        references public.ingredients(id, household_id) on delete cascade
+);
+revoke all on public.pantry_purchase_events from public, anon, authenticated;
+alter table public.pantry_purchase_events enable row level security;
+
+-- Legacy edge clients still call the original one-per-week SQL endpoint.
+-- Preserve its contract but turn its stock credit into concrete lot(s)
+-- rather than independently adding to the old pantry_items counter.
+create or replace function public.bilka_record_purchase(
+ p_household_id uuid, p_weekly_plan_id uuid, p_ingredient_id uuid,
+ p_product_id text, p_manual_product_name text, p_package_count integer,
+ p_purchased_amount_base numeric, p_paid_total_ore bigint
+) returns numeric language plpgsql security definer set search_path = ''
+as $body$
+declare v_added numeric; v_packs integer; v_n integer; v_piece numeric;
+begin
+ if (p_product_id is null) = (p_manual_product_name is null)
+    then raise exception 'product selection required'; end if;
+ if p_purchased_amount_base is null or p_purchased_amount_base <= 0
+    or p_purchased_amount_base > 10000000 then raise exception 'invalid amount'; end if;
+ if p_package_count is not null and (p_package_count < 1 or p_package_count > 500)
+    then raise exception 'invalid packages'; end if;
+ if p_product_id is not null and p_package_count is null
+    then raise exception 'package count required'; end if;
+ if p_paid_total_ore is not null and (p_paid_total_ore < 0 or p_paid_total_ore > 1000000000)
+    then raise exception 'invalid price'; end if;
+ if not exists(select 1 from public.weekly_plans
+    where id=p_weekly_plan_id and household_id=p_household_id)
+    then raise exception 'unknown week'; end if;
+ if not exists(select 1 from public.ingredients
+    where id=p_ingredient_id and household_id=p_household_id)
+    then raise exception 'unknown ingredient'; end if;
+ insert into public.shopping_product_overrides(
+    household_id,weekly_plan_id,ingredient_id,product_id,manual_product_name,
+    package_count,purchased_amount_base,paid_total_ore
+ ) values(
+    p_household_id,p_weekly_plan_id,p_ingredient_id,p_product_id,
+    p_manual_product_name,p_package_count,p_purchased_amount_base,p_paid_total_ore
+ ) on conflict(weekly_plan_id,ingredient_id) do update set
+    product_id=excluded.product_id,
+    manual_product_name=excluded.manual_product_name,
+    package_count=excluded.package_count,
+    purchased_amount_base=excluded.purchased_amount_base,
+    paid_total_ore=excluded.paid_total_ore,updated_at=now()
+    where public.shopping_product_overrides.purchased_amount_base is null
+ returning purchased_amount_base into v_added;
+ if v_added is null then raise exception 'already recorded'; end if;
+ v_packs := coalesce(p_package_count, 1);
+ for v_n in 1..v_packs loop
+    v_piece := case when v_n = v_packs then
+        v_added - (v_added / v_packs) * (v_packs - 1)
+        else v_added / v_packs end;
+    insert into public.pantry_lots(
+        household_id, ingredient_id, product_id, purchase_event_key,
+        original_amount_base, remaining_amount_base
+    ) values (
+        p_household_id, p_ingredient_id, p_product_id,
+        'legacy-bilka:' || p_weekly_plan_id || ':' || p_ingredient_id || ':' || v_n,
+        v_piece, v_piece
+    );
+ end loop;
+ return v_added;
+end;
+$body$;
+revoke all on function public.bilka_record_purchase(uuid,uuid,uuid,text,text,integer,numeric,bigint)
+ from public,anon,authenticated;
+grant execute on function public.bilka_record_purchase(uuid,uuid,uuid,text,text,integer,numeric,bigint)
+ to service_role;
+
+create or replace function public.bilka_record_purchase_v2(
+ p_purchase_id uuid, p_household_id uuid, p_weekly_plan_id uuid, p_ingredient_id uuid,
+ p_product_id text, p_manual_product_name text, p_package_count integer,
+ p_purchased_amount_base numeric, p_paid_total_ore bigint
+) returns numeric language plpgsql security definer set search_path = ''
+as $body$
+declare prior public.pantry_purchase_events%rowtype;
+        n integer; packs integer; piece numeric;
+begin
+ if p_purchase_id is null then raise exception 'purchase identifier required'; end if;
+ if (p_product_id is null) = (p_manual_product_name is null)
+    then raise exception 'product selection required'; end if;
+ if p_purchased_amount_base is null or p_purchased_amount_base <= 0
+    or p_purchased_amount_base > 10000000 then raise exception 'invalid amount'; end if;
+ if p_package_count is not null and (p_package_count < 1 or p_package_count > 500)
+    then raise exception 'invalid packages'; end if;
+ if p_product_id is not null and p_package_count is null
+    then raise exception 'package count required'; end if;
+ if p_paid_total_ore is not null and (p_paid_total_ore < 0 or p_paid_total_ore > 1000000000)
+    then raise exception 'invalid price'; end if;
+ if not exists(select 1 from public.weekly_plans
+    where id=p_weekly_plan_id and household_id=p_household_id)
+    then raise exception 'unknown week'; end if;
+ if not exists(select 1 from public.ingredients
+    where id=p_ingredient_id and household_id=p_household_id)
+    then raise exception 'unknown ingredient'; end if;
+ insert into public.pantry_purchase_events(
+    id, household_id, weekly_plan_id, ingredient_id, product_id,
+    manual_product_name, package_count, purchased_amount_base, paid_total_ore
+ ) values (
+    p_purchase_id,p_household_id,p_weekly_plan_id,p_ingredient_id,
+    p_product_id,p_manual_product_name,p_package_count,p_purchased_amount_base,p_paid_total_ore
+ ) on conflict (id) do nothing;
+ if not found then
+    select * into prior from public.pantry_purchase_events where id=p_purchase_id;
+    if prior.household_id is distinct from p_household_id
+       or prior.weekly_plan_id is distinct from p_weekly_plan_id
+       or prior.ingredient_id is distinct from p_ingredient_id
+       or prior.product_id is distinct from p_product_id
+       or prior.manual_product_name is distinct from p_manual_product_name
+       or prior.package_count is distinct from p_package_count
+       or prior.purchased_amount_base is distinct from p_purchased_amount_base
+       then raise exception 'purchase identifier reused with different content'; end if;
+    return prior.purchased_amount_base;
+ end if;
+ -- Maintain compatibility with last-selected purchase shown in the shopping UI.
+ insert into public.shopping_product_overrides(
+    household_id,weekly_plan_id,ingredient_id,product_id,manual_product_name,
+    package_count,purchased_amount_base,paid_total_ore
+ ) values (
+    p_household_id,p_weekly_plan_id,p_ingredient_id,p_product_id,
+    p_manual_product_name,p_package_count,p_purchased_amount_base,p_paid_total_ore
+ ) on conflict(weekly_plan_id,ingredient_id) do update set
+    product_id=excluded.product_id,
+    manual_product_name=excluded.manual_product_name,
+    package_count=excluded.package_count,
+    purchased_amount_base=excluded.purchased_amount_base,
+    paid_total_ore=excluded.paid_total_ore,updated_at=now();
+ packs := coalesce(p_package_count, 1);
+ for n in 1..packs loop
+    piece := case when n=packs then p_purchased_amount_base -
+        (p_purchased_amount_base / packs) * (packs - 1)
+        else p_purchased_amount_base / packs end;
+    insert into public.pantry_lots(
+        household_id,ingredient_id,product_id,purchase_event_key,
+        original_amount_base,remaining_amount_base
+    ) values (
+        p_household_id,p_ingredient_id,p_product_id,
+        'v2-bilka:' || p_purchase_id || ':' || n,
+        piece,piece
+    );
+ end loop;
+ return p_purchased_amount_base;
+end;
+$body$;
+revoke all on function public.bilka_record_purchase_v2(uuid,uuid,uuid,uuid,text,text,integer,numeric,bigint)
+ from public,anon,authenticated;
+grant execute on function public.bilka_record_purchase_v2(uuid,uuid,uuid,uuid,text,text,integer,numeric,bigint)
+ to service_role;
