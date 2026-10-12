@@ -157,4 +157,22 @@ class QuantityPlanningRulesTest {
         assertEquals(4, actuallyOverThree.packageCount)
     }
 
+    @Test
+    fun litrePreferredDisplayDoesNotChangeMillilitreCanonicalBase() {
+        val juice = ingredient("juice", QuantityType.VOLUME)
+        assertEquals(MeasurementUnit.MILLILITRE,
+            juice.quantityType.baseMeasurementUnit())
+        val confirmedCan = listOf(
+            IngredientUnitConversion(QuantityUnit.CAN, 330.0)
+        )
+        val recipe = RecipeQuantityRules.freeze(
+            juice, 2.0, QuantityUnit.CAN, confirmedCan
+        )!!
+        assertEquals(660.0, recipe.amountBase, 0.000001)
+        val plan = QuantityPlanningRules.planPackages(
+            juice, 660.0, 0.0, QuantityUnit.CAN, confirmedCan
+        )!!
+        assertEquals(2, plan.packageCount)
+    }
+
 }
