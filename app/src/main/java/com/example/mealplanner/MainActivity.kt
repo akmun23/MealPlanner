@@ -1334,8 +1334,7 @@ private fun SettingsScreen(
                     )
                     Spacer(Modifier.height(8.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        @Suppress("EnumValuesSoftDeprecate")
-                        ThemeMode.values().forEach { choice ->
+                        ThemeMode.entries.forEach { choice ->
                             FilterChip(
                                 selected = themeMode == choice,
                                 onClick = { onThemeModeChange(choice) },
