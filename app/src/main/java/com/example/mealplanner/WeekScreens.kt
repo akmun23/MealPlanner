@@ -1237,7 +1237,7 @@ fun DayCard(
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(
                                 Icons.Filled.DragHandle,
-                                contentDescription = "Flyt ${recipe?.name} fra ${day.danishName()}",
+                                contentDescription = "Flyt ${recipe.name} fra ${day.danishName()}",
                                 tint = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.size(20.dp)
                             )
