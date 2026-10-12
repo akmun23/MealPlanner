@@ -65,6 +65,73 @@ class MealPlannerBenchmark {
     )
 
     /**
+     * Read-only release-like crash regression. Run on a spare phone with a
+     * signed-in/prepared household. Opening a page is enough to reproduce
+     * the reported release crash; never save, modify or delete user data.
+     *
+     * Unlike app/src/androidTest, this executes against the R8-optimized
+     * non-debuggable benchmark variant, matching the Play release's shrinker.
+     */
+    @Test
+    fun subpageNavigationSmoke() = rule.measureRepeated(
+        packageName = PACKAGE_NAME,
+        metrics = listOf(FrameTimingMetric()),
+        compilationMode = CompilationMode.None(),
+        startupMode = StartupMode.WARM,
+        iterations = 1,
+        setupBlock = {
+            val device = UiDevice.getInstance(
+                InstrumentationRegistry.getInstrumentation()
+            )
+            check(device.wait(Until.hasObject(By.desc("Indstillinger")), 10_000)) {
+                "Prepare and sign in to a household before the navigation smoke test."
+            }
+        },
+        measureBlock = {
+            val device = UiDevice.getInstance(
+                InstrumentationRegistry.getInstrumentation()
+            )
+            device.findObject(By.desc("Indstillinger")).click()
+            check(device.wait(Until.hasObject(By.text("Indstillinger")), 8_000)) {
+                "App crashed or Settings failed to open."
+            }
+            check(device.wait(Until.hasObject(By.desc("Tilbage")), 8_000)) {
+                "Settings subpage scaffold did not appear."
+            }
+            device.pressBack()
+            check(device.wait(Until.hasObject(By.text("Opskrifter")), 8_000)) {
+                "App crashed while returning from Settings."
+            }
+
+            device.findObject(By.text("Opskrifter")).click()
+            check(device.wait(Until.hasObject(By.text("Ny opskrift")), 8_000)) {
+                "Recipes tab did not become ready."
+            }
+            device.findObject(By.text("Ny opskrift")).click()
+            check(device.wait(Until.hasObject(By.desc("Tilbage")), 8_000)) {
+                "App crashed or new-recipe subpage failed to open."
+            }
+            device.pressBack()
+            check(device.wait(Until.hasObject(By.text("Lager")), 8_000)) {
+                "App crashed while returning from recipe editor."
+            }
+
+            device.findObject(By.text("Lager")).click()
+            check(device.wait(Until.hasObject(By.text("Ny ingrediens")), 8_000)) {
+                "Pantry tab did not become ready."
+            }
+            device.findObject(By.text("Ny ingrediens")).click()
+            check(device.wait(Until.hasObject(By.desc("Tilbage")), 8_000)) {
+                "App crashed or new-ingredient subpage failed to open."
+            }
+            device.pressBack()
+            check(device.wait(Until.hasObject(By.text("Madplan")), 8_000)) {
+                "App crashed while returning from ingredient editor."
+            }
+        }
+    )
+
+    /**
      * Separate measurements for the two long lists, instead of only testing
      * tab transitions. Use a populated household with representative photos
      * so these tests reproduce the scrolling pauses reported on devices.
