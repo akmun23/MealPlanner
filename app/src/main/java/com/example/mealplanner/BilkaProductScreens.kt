@@ -84,7 +84,8 @@ internal data class BilkaListDefault(
 internal data class BilkaProductCatalog(
     val candidates: List<BilkaListCandidate>,
     val defaults: List<BilkaListDefault>,
-    val products: List<BilkaProduct>
+    val products: List<BilkaProduct>,
+    val parseWarnings: List<String> = emptyList()
 ) {
     // Preindex once when the catalog arrives; rows should not repeatedly scan
     // every suggestion and product during fast scrolling or recomposition.
@@ -107,19 +108,46 @@ internal data class BilkaProductCatalog(
 }
 
 private val bilkaParser = Json { ignoreUnknownKeys = true }
-internal fun parseBilkaCatalog(value: JsonObject) = BilkaProductCatalog(
-    candidates = bilkaParser.decodeFromJsonElement(
-        value.getValue("candidates").jsonArray
-    ),
-    defaults = bilkaParser.decodeFromJsonElement(
-        value.getValue("defaults").jsonArray
-    ),
-    products = bilkaParser.decodeFromJsonElement(
-        value.getValue("products").jsonArray
-    )
+/**
+ * A single malformed/pre-stripped API row must not blank the full catalogue.
+ * Missing top-level arrays still fail clearly instead of appearing as empty.
+ */
+private data class BilkaParsedRows<T>(
+    val rows: List<T>,
+    val rejected: Int
 )
+
+private inline fun <reified T> decodeBilkaRows(
+    raw: JsonObject,
+    field: String
+): BilkaParsedRows<T> {
+    val source = raw.getValue(field).jsonArray
+    val decoded = source.mapNotNull { element ->
+        runCatching {
+            bilkaParser.decodeFromJsonElement<T>(element)
+        }.getOrNull()
+    }
+    return BilkaParsedRows(decoded, source.size - decoded.size)
+}
+
+internal fun parseBilkaCatalog(value: JsonObject): BilkaProductCatalog {
+    val candidates = decodeBilkaRows<BilkaListCandidate>(value, "candidates")
+    val defaults = decodeBilkaRows<BilkaListDefault>(value, "defaults")
+    val products = decodeBilkaRows<BilkaProduct>(value, "products")
+    return BilkaProductCatalog(
+        candidates = candidates.rows,
+        defaults = defaults.rows,
+        products = products.rows,
+        parseWarnings = buildList {
+            if (candidates.rejected > 0) add("${candidates.rejected} produktforslag")
+            if (defaults.rejected > 0) add("${defaults.rejected} faste varevalg")
+            if (products.rejected > 0) add("${products.rejected} varer")
+        }
+    )
+}
+
 internal fun parseBilkaIngredients(value: JsonObject): List<BilkaListIngredient> =
-    bilkaParser.decodeFromJsonElement(value.getValue("items").jsonArray)
+    decodeBilkaRows<BilkaListIngredient>(value, "items").rows
 
 /**
  * The overview's ingredient list and product catalog are independent.
@@ -138,9 +166,15 @@ internal fun decodeBilkaOverview(
     val errors = mutableListOf<String>()
     val rows = status.fold(
         onSuccess = { raw ->
-            runCatching { parseBilkaIngredients(raw) }
-                .onFailure { errors += "Ingrediensoversigten kunne ikke læses." }
-                .getOrNull()
+            runCatching {
+                val parsed = decodeBilkaRows<BilkaListIngredient>(raw, "items")
+                if (parsed.rejected > 0) {
+                    errors += "${parsed.rejected} ingredienser kunne ikke læses. De øvrige vises."
+                }
+                parsed.rows
+            }.onFailure {
+                errors += "Ingrediensoversigten mangler feltet 'items' eller har ugyldigt format."
+            }.getOrNull()
         },
         onFailure = {
             errors += "Ingredienser kunne ikke hentes. ${it.message ?: "Prøv igen."}"
@@ -150,7 +184,14 @@ internal fun decodeBilkaOverview(
     val catalog = products.fold(
         onSuccess = { raw ->
             runCatching { parseBilkaCatalog(raw) }
-                .onFailure { errors += "Produktkataloget kunne ikke læses." }
+                .onSuccess { catalog ->
+                    if (catalog.parseWarnings.isNotEmpty()) {
+                        errors += "Ugyldige Bilka-poster: ${catalog.parseWarnings.joinToString()}. De øvrige vises."
+                    }
+                }
+                .onFailure {
+                    errors += "Produktkatalogets felter mangler eller har ugyldigt format."
+                }
                 .getOrNull()
         },
         onFailure = {
