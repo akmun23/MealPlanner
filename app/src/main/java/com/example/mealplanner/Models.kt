@@ -105,7 +105,10 @@ data class Ingredient(
     val isProtein: Boolean = false,
     val neverBuy: Boolean = false,
     val imageUri: String? = null,
-    val imagePath: String? = null
+    val imagePath: String? = null,
+    // Household-approved conversions are synced separately from ingredients,
+    // cached with the ingredient and keyed by ingredient UUID on the server.
+    val unitConversions: List<IngredientUnitConversion> = emptyList()
 )
 
 /**
@@ -188,7 +191,13 @@ enum class DayMode {
 data class DraftRequirement(
     val ingredientId: String,
     val amount: Double,
-    val unit: MeasurementUnit
+    // Physical native unit used for legacy pantry requirements.
+    val unit: MeasurementUnit,
+    // A frozen recipe display can also use a confirmed cross-dimension unit.
+    // Keeping this separate avoids reinterpreting old PACKAGE pantry numbers.
+    val displayUnit: QuantityUnit? = null,
+    val displayFactor: Double? = null,
+    val displayApproximate: Boolean = false
 )
 
 data class ShoppingItem(
