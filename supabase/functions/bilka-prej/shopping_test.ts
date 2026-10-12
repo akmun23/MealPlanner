@@ -1,4 +1,4 @@
-import { recordPurchase, shoppingContext, CheckoutError } from "./shopping_server.ts";
+import { recordPurchase, shoppingContext, purchaseConfirmed, CheckoutError } from "./shopping_server.ts";
 import { ALLOWED_BILKA_RPCS } from "./rpc_allowlist.ts";
 
 const householdId = "43d180fe-eef9-48c0-bd28-b6f0f9c88391";
@@ -52,6 +52,30 @@ Deno.test("checkout reads only the current household and week", async () => {
   equal(result.overrides.length, 0);
   assertTrue(methods.some((x) => x.includes("household_id=eq." + householdId)), "Household filter missing");
   assertTrue(methods.some((x) => x.includes("weekly_plan_id=eq." + weekId)), "Week filter missing");
+});
+
+Deno.test("checkout status verifies exact event, not the last week purchase", async () => {
+  const { shopping } = backend();
+  const requestedId = "25e0c5b7-a1d4-4890-9ba9-4311ef845aaa";
+  const earlierId = "25e0c5b7-a1d4-4890-9ba9-4311ef845aab";
+  const originalAdmin = shopping.admin;
+  shopping.admin = async (path: string, method: "GET" | "POST") => {
+    if (path.includes("/pantry_purchase_events?")) {
+      if (!path.includes("id=eq." + requestedId)) {
+        throw new Error("Checkout status was not scoped to exact event");
+      }
+      return [{ id: earlierId, purchased_amount_base: 1000 }];
+    }
+    return originalAdmin(path, method);
+  };
+  const status = await purchaseConfirmed(shopping, weekId, requestedId);
+  equal(status.confirmed, false);
+  equal(status.purchaseId, requestedId);
+  let invalid = "";
+  try {
+    await purchaseConfirmed(shopping, weekId, "untrusted-token");
+  } catch (e) { invalid = (e as CheckoutError).code; }
+  equal(invalid, "invalid_purchase_id");
 });
 
 Deno.test("two full bags are recorded as two kilograms, not the 1.2kg shortage", async () => {
