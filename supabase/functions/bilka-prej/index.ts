@@ -32,6 +32,7 @@ type Payload = {
   page?: unknown;
   enabled?: unknown;
   weekId?: unknown;
+  purchaseId?: unknown;
   manualProductName?: unknown;
   packageCount?: unknown;
   amountBase?: unknown;
@@ -396,6 +397,7 @@ Deno.serve(async (req) => {
           { admin: adminRequest, rpc, householdId },
           {
             weekId: input.weekId,
+            purchaseId: typeof input.purchaseId === "string" ? input.purchaseId : null,
             ingredientId: input.ingredientId,
             productId: typeof input.productId === "string" ? input.productId : null,
             manualProductName: typeof input.manualProductName === "string"
