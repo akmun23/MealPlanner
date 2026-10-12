@@ -84,7 +84,7 @@ private val recipeStepSaver = listSaver<SnapshotStateList<RecipeInstructionStep>
 )
 private val recipeDraftSaver = listSaver<SnapshotStateList<DraftRequirement>, String>(
     save = { drafts ->
-        drafts.flatMap { draft ->
+        listOf("recipe-draft-v2") + drafts.flatMap { draft ->
             listOf(
                 draft.ingredientId, draft.amount.toString(), draft.unit.name,
                 draft.displayUnit?.name ?: "",
@@ -95,9 +95,12 @@ private val recipeDraftSaver = listSaver<SnapshotStateList<DraftRequirement>, St
     },
     restore = { stored ->
         mutableStateListOf<DraftRequirement>().apply {
-            // Old save-state bundles contained three fields per requirement.
-            val stride = if (stored.size % 6 == 0) 6 else 3
-            stored.chunked(stride).filter { it.size == stride }.forEach { parts ->
+            // Never guess from list length: an old bundle with exactly two
+            // 3-field ingredients has the same length as one new 6-field row.
+            val versioned = stored.firstOrNull() == "recipe-draft-v2"
+            val stride = if (versioned) 6 else 3
+            val payload = if (versioned) stored.drop(1) else stored
+            payload.chunked(stride).filter { it.size == stride }.forEach { parts ->
                 val amount = parts[1].toDoubleOrNull()
                 val unit = MeasurementUnit.entries.find { it.name == parts[2] }
                 if (amount != null && unit != null) {
