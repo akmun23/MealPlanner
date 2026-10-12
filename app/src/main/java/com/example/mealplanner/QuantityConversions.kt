@@ -185,9 +185,13 @@ internal object RecipeQuantityRules {
     fun retainUneditableSnapshot(
         previous: RecipeIngredient?,
         edited: RecipeIngredient,
-        ingredient: Ingredient
+        ingredient: Ingredient,
+        displayExplicitlyEdited: Boolean = false
     ): RecipeIngredient {
-        if (previous == null ||
+        // A deliberate unit selection must win even when the physical amount
+        // stays the same (for example 1 frozen pack -> 200 g or 0.2 kg).
+        if (displayExplicitlyEdited ||
+            previous == null ||
             previous.ingredientId != edited.ingredientId ||
             !hasValidSnapshot(previous)
         ) return edited
