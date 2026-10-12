@@ -152,4 +152,52 @@ class QueuedMutationTest {
 
         assertTrue(weekly.key() != household.key())
     }
+    @Test
+    fun householdConversionChangesAreDurableAndDoNotOverwriteMetadata() {
+        val profile = IngredientUnitConversion(
+            QuantityUnit.PACK, 150.0, approximate = false
+        )
+        val mutation = QueuedMutation.SaveIngredientConversions(
+            ingredientId = "ham",
+            conversions = listOf(profile),
+            expectedRevision = 4L,
+            transactionId = "fixed-conversion-event"
+        )
+        assertEquals(
+            mutation,
+            QueuedMutationCodec.decode(QueuedMutationCodec.encode(mutation))
+        )
+        assertEquals("ingredient-conversion:fixed-conversion-event", mutation.key())
+        assertEquals(setOf(CloudSyncDomain.INGREDIENTS), mutation.domains())
+        val parent = QueuedMutation.UpsertIngredient(Ingredient(
+            id = "ham", name = "Skinke", quantityType = QuantityType.MASS,
+            preferredUnit = MeasurementUnit.GRAM
+        ))
+        assertTrue(parent.priority() < mutation.priority())
+        assertTrue(mutation.priority() <
+            QueuedMutation.UpsertRecipe(Recipe(id = "recipe", name = "Ret")).priority())
+    }
+
+    @Test
+    fun lotAndConsumptionMutationsSurviveOfflineRestartWithSameIdempotencyKey() {
+        val lot = PantryLot(
+            id = "package-1", ingredientId = "pasta",
+            originalBase = 500.0, remainingBase = 300.0, opened = true,
+            version = 2L
+        )
+        val edit = QueuedMutation.UpsertPantryLot(
+            lot = lot, expectedVersion = 1L, transactionId = "fixed-lot-event"
+        )
+        val consume = QueuedMutation.ConsumePantryLots(
+            ingredientId = "pasta", amountBase = 200.0,
+            transactionId = "fixed-meal-event"
+        )
+        assertEquals(edit, QueuedMutationCodec.decode(QueuedMutationCodec.encode(edit)))
+        assertEquals(consume, QueuedMutationCodec.decode(QueuedMutationCodec.encode(consume)))
+        assertEquals("pantry-lot:fixed-lot-event", edit.key())
+        assertEquals("pantry-consumption:fixed-meal-event:pasta", consume.key())
+        assertEquals(setOf(CloudSyncDomain.PANTRY), edit.domains())
+        assertEquals(setOf(CloudSyncDomain.PANTRY), consume.domains())
+    }
+
 }
