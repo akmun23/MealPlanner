@@ -213,7 +213,8 @@ data class PantryLot(
     val productId: String? = null,
     val purchaseEventKey: String? = null,
     val bestBefore: String? = null,
-    val version: Long = 1L
+    val version: Long = 1L,
+    val createdAt: String = ""
 )
 
 data class ShoppingItem(
