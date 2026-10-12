@@ -105,7 +105,7 @@ begin
         if factor <= 0 or factor > 1000000000 then
             raise exception 'invalid conversion factor';
         end if;
-        if jsonb_typeof(profile->'approximate') not in ('true','false') then
+        if jsonb_typeof(profile->'approximate') is distinct from 'boolean' then
             raise exception 'approximation flag required';
         end if;
         approximate := (profile->>'approximate')::boolean;
