@@ -7,11 +7,31 @@ package com.example.mealplanner
  */
 internal object RecipeRequirementRules {
     fun combineIngredients(rows: List<RecipeIngredient>): List<RecipeIngredient> {
-        val amounts = linkedMapOf<String, Double>()
-        for ((ingredientId, amountBase) in rows) {
-            amounts[ingredientId] = (amounts[ingredientId] ?: 0.0) + amountBase
+        val groups = linkedMapOf<String, MutableList<RecipeIngredient>>()
+        rows.forEach { row ->
+            groups.getOrPut(row.ingredientId) { mutableListOf() }.add(row)
         }
-        return amounts.map { (id, amount) -> RecipeIngredient(id, amount) }
+        return groups.map { (id, group) ->
+            if (group.size == 1) return@map group.single()
+            val sumBase = group.sumOf { it.amountBase }
+            // Only preserve a human-readable unit when ALL duplicate rows use
+            // the same validated frozen conversion. Otherwise retaining one
+            // display label would misrepresent the physical sum.
+            val first = group.first()
+            val canCombineDisplay = group.all {
+                RecipeQuantityRules.hasValidSnapshot(it) &&
+                    it.displayUnitCode == first.displayUnitCode &&
+                    it.basePerDisplayUnit == first.basePerDisplayUnit
+            }
+            if (canCombineDisplay) {
+                first.copy(
+                    amountBase = sumBase,
+                    displayAmount = group.sumOf { it.displayAmount!! }
+                )
+            } else {
+                RecipeIngredient(id, sumBase)
+            }
+        }
     }
 
     fun combinePrerequisites(rows: List<RecipePantryPrerequisite>): List<RecipePantryPrerequisite> {
