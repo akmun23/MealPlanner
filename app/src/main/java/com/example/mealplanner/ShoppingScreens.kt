@@ -97,20 +97,15 @@ fun ShoppingScreen(state: MealPlannerState) {
             }
             catalogJob.await() to weeklyJob.await()
         }
-        if (catalog.isSuccess && weekly.isSuccess) {
-            runCatching {
-                bilkaCatalog = parseBilkaCatalog(catalog.getOrThrow())
-                bilkaContext = decodeBilkaShoppingContext(weekly.getOrThrow())
-            }.onFailure {
-                bilkaCatalog = null
-                bilkaContext = null
-                bilkaLoadError = true
-            }
-        } else {
-            bilkaCatalog = null
-            bilkaContext = null
-            bilkaLoadError = true
-        }
+        // Preserve any successfully fetched portion of this week's Bilka
+        // information. A failing catalogue request must not also erase the
+        // shopping context (including already registered purchases), or vice
+        // versa. Purchases are still guarded whenever either fetch fails.
+        val catalogParsed = catalog.mapCatching(::parseBilkaCatalog)
+        val weeklyParsed = weekly.mapCatching(::decodeBilkaShoppingContext)
+        catalogParsed.getOrNull()?.let { bilkaCatalog = it }
+        weeklyParsed.getOrNull()?.let { bilkaContext = it }
+        bilkaLoadError = catalogParsed.isFailure || weeklyParsed.isFailure
         bilkaLoading = false
     }
 
