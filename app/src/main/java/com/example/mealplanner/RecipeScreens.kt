@@ -45,6 +45,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.derivedStateOf
@@ -57,6 +58,8 @@ import androidx.compose.runtime.snapshots.SnapshotStateList
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -304,6 +307,7 @@ private fun RecipeListCard(
     Card(
         modifier = Modifier
             .fillMaxWidth()
+            .semantics { contentDescription = "Åbn opskrift: ${recipe.name}" }
             .clickable(onClick = onClick),
         shape = RoundedCornerShape(18.dp),
         colors = CardDefaults.cardColors(
@@ -547,7 +551,10 @@ internal fun RecipeDetailScreen(
     }
 
     if (recipe == null) {
-        onBack()
+        // Navigating in the composition phase can invalidate Compose snapshots.
+        // Return after composition if a recipe was removed by a cloud refresh.
+        LaunchedEffect(recipeId) { onBack() }
+        Text("Opskriften findes ikke længere.")
         return
     }
 
@@ -895,6 +902,12 @@ internal fun RecipeEditorScreen(
 
     val existing = recipeId?.let { id ->
         state.recipes.find { it.id == id }
+    }
+    if (recipeId != null && existing == null) {
+        // A deleted recipe must not silently turn an Edit action into New.
+        LaunchedEffect(recipeId) { onBack() }
+        Text("Opskriften findes ikke længere.")
+        return
     }
 
     var name by rememberSaveable(recipeId) { mutableStateOf(existing?.name ?: "") }
@@ -1670,6 +1683,12 @@ internal fun IngredientEditorScreen(
 ) {
     val existing = ingredientId?.let { id ->
         state.ingredients.find { it.id == id }
+    }
+    if (ingredientId != null && existing == null) {
+        // A deleted ingredient must not silently turn an Edit into New.
+        LaunchedEffect(ingredientId) { onBack() }
+        Text("Ingrediensen findes ikke længere.")
+        return
     }
 
     var name by rememberSaveable(ingredientId) {
