@@ -45,12 +45,31 @@ private fun productLabel(product: BilkaProduct): String =
             if (product.packageQuantity != null && product.packageUnit != null)
                 " · " + product.packageQuantity + " " + product.packageUnit else ""
 
+internal fun confirmedProfilePurchaseHint(item: ShoppingItem): String? {
+    val ingredient = item.ingredient
+    val packaging = listOf(QuantityUnit.PACK, QuantityUnit.CAN)
+        .firstOrNull { unit ->
+            ingredient.unitConversions.count { it.unit == unit } == 1
+        } ?: return null
+    val plan = QuantityPlanningRules.planPackages(
+        ingredient, item.requiredBase, item.pantryBase,
+        packaging, ingredient.unitConversions
+    ) ?: return null
+    if (plan.packageCount == 0) return "Pakkeplan: nok på Lager"
+    return "Pakkeplan: ${plan.packageCount} × ${formatDisplayNumber(plan.basePerPackage)} " +
+        ingredient.quantityType.baseMeasurementUnit().symbol +
+        if (plan.conversionApproximate) " (anslået)" else "" +
+        " · forventet overskud ${formatDisplayNumber(plan.surplusBase)} " +
+        ingredient.quantityType.baseMeasurementUnit().symbol
+}
+
 internal fun bilkaShoppingLine(
     item: ShoppingItem,
     context: BilkaShoppingContext?,
     catalog: BilkaProductCatalog?
 ): String? {
-    if (context == null || catalog == null) return null
+    val householdHint = confirmedProfilePurchaseHint(item)
+    if (context == null || catalog == null) return householdHint
     val recorded = context.purchase(item.ingredient.id)
     if (recorded?.purchasedAmountBase != null) {
         return "Seneste køb på Lager: " +
@@ -59,8 +78,8 @@ internal fun bilkaShoppingLine(
                 (recorded.paidTotalOre?.let { " · Betalt: " + kroner(it) } ?: "") +
                 " · Nyt køb kan registreres"
     }
-    val standard = context.default(item.ingredient.id) ?: return null
-    val product = catalog.product(standard.productId) ?: return null
+    val standard = context.default(item.ingredient.id) ?: return householdHint
+    val product = catalog.product(standard.productId) ?: return householdHint
     val amount = BilkaPackageMath.applicablePackBase(
         item.ingredient, product, standard.packageBaseAmountOverride
     )
