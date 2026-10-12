@@ -729,7 +729,7 @@ private fun AddPurchasedToPantryDialog(
 
     var amountText by remember(ingredient.id, item.pantryBase) {
         mutableStateOf(
-            formatDisplayNumber(
+            if (item.manualOnly) "" else formatDisplayNumber(
                 unit.fromBase(suggestedBase)
             )
         )
