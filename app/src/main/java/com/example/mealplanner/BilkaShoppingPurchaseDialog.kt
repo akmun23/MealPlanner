@@ -96,12 +96,12 @@ internal fun BilkaPurchaseDialog(
     val ingredient = item.ingredient
     val defaultRow = shopping.default(ingredient.id)
     val previous = shopping.purchase(ingredient.id)
-    val candidates = catalog.productsFor(ingredient.id)
-        .filter { p ->
-            p.quantityKind == null || p.quantityKind.name == ingredient.quantityType.name
-        }
-    val initial = previous?.productId ?: defaultRow?.productId
-    ?: candidates.firstOrNull()?.id
+    val candidates = PurchaseDialogRules.compatibleProducts(
+        ingredient, catalog.productsFor(ingredient.id)
+    )
+    val initial = PurchaseDialogRules.selectedProductId(
+        candidates, previous?.productId, defaultRow?.productId
+    )
 
     val scope = rememberCoroutineScope()
     var selectedId by remember(ingredient.id) { mutableStateOf(initial) }
@@ -109,7 +109,10 @@ internal fun BilkaPurchaseDialog(
         mutableStateOf(initial == null || previous?.manualProductName != null)
     }
     var manualName by remember(ingredient.id) {
-        mutableStateOf(previous?.manualProductName ?: "")
+        // A catalogue-less ingredient is a legitimate manually named purchase.
+        // Let the user correct the name; do not leave the checkout button
+        // disabled by a blank default name.
+        mutableStateOf(previous?.manualProductName ?: ingredient.name)
     }
     var units by remember(ingredient.id) { mutableStateOf(ingredient.preferredUnit) }
     val currentProduct = candidates.firstOrNull { it.id == selectedId }
@@ -130,8 +133,9 @@ internal fun BilkaPurchaseDialog(
         mutableStateOf(
             formatDisplayNumber(
                 ingredient.preferredUnit.fromBase(
-                    BilkaPackageMath.missing(item.requiredBase, item.pantryBase)
-                        .coerceAtLeast(1.0)
+                    PurchaseDialogRules.suggestedPurchasedBase(
+                        item.requiredBase, item.pantryBase, ingredient.preferredUnit
+                    )
                 )
             )
         )
@@ -145,7 +149,7 @@ internal fun BilkaPurchaseDialog(
     val count = packageCountText.toIntOrNull()
     val baseAmount = if (!manual && packBase != null && count != null)
         BilkaPackageMath.purchasedBase(packBase, count)
-    else parseDanishDecimal(amountText)?.takeIf { it > 0.0 }?.let(units::toBase)
+    else PurchaseDialogRules.validPurchasedAmount(amountText, units)
     val estimated = if (!manual && count != null)
         BilkaPackageMath.estimatedCostOre(currentProduct?.priceOre, count)
     else null
@@ -238,9 +242,20 @@ internal fun BilkaPurchaseDialog(
                         }
                     }
                 }
+                if (candidates.isEmpty()) {
+                    Text(
+                        "Ingen passende Bilka-vare er tilgængelig i kataloget. " +
+                            "Registrér det købte manuelt nedenfor.",
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
                 FilterChip(
                     selected = manual,
-                    onClick = { manual = true; if (!priceEdited) paidText = "" },
+                    onClick = {
+                        manual = true
+                        if (manualName.isBlank()) manualName = ingredient.name
+                        if (!priceEdited) paidText = ""
+                    },
                     label = { Text("Anden vare denne gang") }
                 )
 
@@ -305,6 +320,23 @@ internal fun BilkaPurchaseDialog(
                     modifier = Modifier.fillMaxWidth(),
                     singleLine = true
                 )
+                if (!valid && !saving) {
+                    Text(
+                        when {
+                            manual && manualName.trim().length < 2 ->
+                                "Angiv navnet på den vare, du har købt."
+                            !manual && currentProduct == null ->
+                                "Vælg en tilgængelig vare eller brug manuel registrering."
+                            !manual && (count == null || count !in 1..500) ->
+                                "Angiv mellem 1 og 500 hele pakker."
+                            baseAmount == null || baseAmount > 10_000_000.0 ->
+                                "Angiv en positiv købt mængde i den valgte enhed."
+                            else -> "Kontrollér den indtastede pris."
+                        },
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         },
