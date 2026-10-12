@@ -2,13 +2,14 @@ package com.example.mealplanner
 
 import kotlin.math.abs
 import kotlin.math.max
+import kotlinx.serialization.Serializable
 
 /**
  * Extensible input vocabulary. These are labels, not storage dimensions.
  * GARLIC_CLOVE / GARLIC_HEAD deliberately have NO universal conversion:
  * one garlic head does not contain a fixed number of cloves.
  */
-internal enum class QuantityUnit(val symbol: String, val nativeUnit: MeasurementUnit?) {
+enum class QuantityUnit(val symbol: String, val nativeUnit: MeasurementUnit?) {
     GRAM("g", MeasurementUnit.GRAM),
     KILOGRAM("kg", MeasurementUnit.KILOGRAM),
     MILLILITRE("ml", MeasurementUnit.MILLILITRE),
@@ -40,10 +41,13 @@ internal enum class QuantityUnit(val symbol: String, val nativeUnit: Measurement
  * The base is still legacy g/ml/pieces/packs until an explicit, separate
  * per-ingredient base migration. Never reinterpret historical stock silently.
  */
-internal data class IngredientUnitConversion(
+@Serializable
+data class IngredientUnitConversion(
     val unit: QuantityUnit,
     val baseAmountPerUnit: Double,
-    val approximate: Boolean = false
+    val approximate: Boolean = false,
+    val source: String = "household-confirmed",
+    val revision: Long = 1L
 )
 
 /**
