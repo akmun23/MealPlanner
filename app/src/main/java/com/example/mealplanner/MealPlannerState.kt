@@ -2107,6 +2107,33 @@ class MealPlannerState(
             return false
         }
 
+        val consumptionMutations = mutableListOf<QueuedMutation>()
+        var projectedLots = pantryLots.toList()
+        // A stable meal-transaction UUID deduplicates concurrent phone
+        // submissions, as well as retries after a lost network response.
+        val mealTransactionId = UUID.nameUUIDFromBytes(
+            "${householdId}:${date}:${recipeId}".toByteArray(Charsets.UTF_8)
+        ).toString()
+        remaining.forEach { (ingredientId, newBase) ->
+            val oldBase = pantry[ingredientId] ?: 0.0
+            val spent = (oldBase - newBase).coerceAtLeast(0.0)
+            if (spent <= 0.0) return@forEach
+            if (projectedLots.any { it.ingredientId == ingredientId &&
+                    it.remainingBase > 0.0 }) {
+                val after = PantryLotRules.consume(projectedLots, ingredientId, spent)
+                if (after == null) {
+                    lastError = "Lagerpakkerne stemmer ikke med den viste beholdning. Opdatér lageret."
+                    return false
+                }
+                projectedLots = after
+                consumptionMutations += QueuedMutation.ConsumePantryLots(
+                    ingredientId, spent, mealTransactionId
+                )
+            } else {
+                consumptionMutations += QueuedMutation.SetPantry(ingredientId, newBase)
+            }
+        }
+        syncListByKey(pantryLots, projectedLots, PantryLot::id)
         remaining.forEach { (ingredientId, value) -> pantry[ingredientId] = value }
         history.add(MealHistoryEntry(recipeId, date))
         // Completion and the persisted day lock share an offline outbox batch.
@@ -2115,9 +2142,7 @@ class MealPlannerState(
             weeklyPlanId?.let(::weekStateMutation)
         } else null
         enqueueMutations(
-            remaining.map { (ingredientId, amountBase) ->
-                QueuedMutation.SetPantry(ingredientId = ingredientId, amountBase = amountBase)
-            } + QueuedMutation.SetMealEaten(
+            consumptionMutations + QueuedMutation.SetMealEaten(
                 eatenOn = date.toString(), recipeId = recipeId
             ) + listOfNotNull(lockMutation)
         )
