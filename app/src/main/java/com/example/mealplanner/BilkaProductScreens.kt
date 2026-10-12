@@ -107,48 +107,6 @@ internal data class BilkaProductCatalog(
             .associate { it.productId to it.displayRank }
 }
 
-private val bilkaParser = Json { ignoreUnknownKeys = true }
-/**
- * A single malformed/pre-stripped API row must not blank the full catalogue.
- * Missing top-level arrays still fail clearly instead of appearing as empty.
- */
-private data class BilkaParsedRows<T>(
-    val rows: List<T>,
-    val rejected: Int
-)
-
-private inline fun <reified T> decodeBilkaRows(
-    raw: JsonObject,
-    field: String
-): BilkaParsedRows<T> {
-    val source = raw.getValue(field).jsonArray
-    val decoded = source.mapNotNull { element ->
-        runCatching {
-            bilkaParser.decodeFromJsonElement<T>(element)
-        }.getOrNull()
-    }
-    return BilkaParsedRows(decoded, source.size - decoded.size)
-}
-
-internal fun parseBilkaCatalog(value: JsonObject): BilkaProductCatalog {
-    val candidates = decodeBilkaRows<BilkaListCandidate>(value, "candidates")
-    val defaults = decodeBilkaRows<BilkaListDefault>(value, "defaults")
-    val products = decodeBilkaRows<BilkaProduct>(value, "products")
-    return BilkaProductCatalog(
-        candidates = candidates.rows,
-        defaults = defaults.rows,
-        products = products.rows,
-        parseWarnings = buildList {
-            if (candidates.rejected > 0) add("${candidates.rejected} produktforslag")
-            if (defaults.rejected > 0) add("${defaults.rejected} faste varevalg")
-            if (products.rejected > 0) add("${products.rejected} varer")
-        }
-    )
-}
-
-internal fun parseBilkaIngredients(value: JsonObject): List<BilkaListIngredient> =
-    decodeBilkaRows<BilkaListIngredient>(value, "items").rows
-
 /**
  * The overview's ingredient list and product catalog are independent.
  * Losing one response must not hide data retrieved from the other.
@@ -167,7 +125,7 @@ internal fun decodeBilkaOverview(
     val rows = status.fold(
         onSuccess = { raw ->
             runCatching {
-                val parsed = decodeBilkaRows<BilkaListIngredient>(raw, "items")
+                val parsed = parseBilkaIngredientRows(raw)
                 if (parsed.rejected > 0) {
                     errors += "${parsed.rejected} ingredienser kunne ikke læses. De øvrige vises."
                 }

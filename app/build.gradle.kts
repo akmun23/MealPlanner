@@ -43,8 +43,8 @@ android {
         applicationId = "com.mealplan.mealplanner"
         minSdk = 26
         targetSdk = 37
-        versionCode = 7
-        versionName = "1.2.3"
+        versionCode = 8
+        versionName = "1.2.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField(

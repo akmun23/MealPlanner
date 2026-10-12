@@ -192,8 +192,14 @@ internal object BilkaPrejClient {
                         "Varen er ikke et godkendt Bilka-forslag til denne ingrediens."
                     "invalid_product_choice", "not_a_suggested_product" ->
                         "Denne vare er ikke længere tilgængelig. Opdatér produktlisten."
+                    "unpriced_product" ->
+                        "Varen kan ses, men mangler en BilkaToGo-pris og kan ikke vælges som fast vare."
+                    "unknown_action" ->
+                        "Bilka-serveren er ikke opdateret til denne funktion endnu."
+                    "prej_unavailable", "invalid_provider_response" ->
+                        "Prej svarer ikke med brugbare produktdata lige nu."
                     "prej_burst_limit" -> "For mange kald. Prøv igen senere"
-                    else -> "Bilka API er ikke tilgængeligt lige nu"
+                    else -> "Bilka API kunne ikke gennemføre forespørgslen ($code)."
                 })
             }
             result
