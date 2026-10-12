@@ -31,6 +31,8 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.add
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.booleanOrNull
 import kotlinx.serialization.json.contentOrNull
@@ -1092,35 +1094,9 @@ class CloudMealRepository(
             onConflict = "id"
         }
 
-        // The conversion profile is independent of the old ingredients row.
-        // Pre-upgrade clients keep working without touching these new rows.
-        require(ingredient.unitConversions.map { it.unit }.distinct().size ==
-            ingredient.unitConversions.size) { "Duplicate ingredient conversion unit" }
-        require(ingredient.unitConversions.all {
-            it.baseAmountPerUnit.isFinite() && it.baseAmountPerUnit > 0.0 &&
-                it.baseAmountPerUnit <= 1e9 && it.revision >= 1L
-        }) { "Invalid ingredient conversion" }
-        supabase.from("ingredient_unit_conversions").delete {
-            filter {
-                eq("household_id", householdId)
-                eq("ingredient_id", ingredient.id)
-            }
-        }
-        if (ingredient.unitConversions.isNotEmpty()) {
-            supabase.from("ingredient_unit_conversions").upsert(
-                ingredient.unitConversions.map { conversion ->
-                    IngredientConversionProfileRow(
-                        householdId = householdId,
-                        ingredientId = ingredient.id,
-                        unitCode = conversion.unit.name,
-                        baseAmountPerUnit = conversion.baseAmountPerUnit,
-                        approximate = conversion.approximate,
-                        source = conversion.source,
-                        revision = conversion.revision
-                    )
-                }
-            ) { onConflict = "household_id,ingredient_id,unit_code" }
-        }
+        // Conversion profiles have their own versioned write path. An
+        // unrelated ingredient-name/image change must never delete or
+        // overwrite a profile edited on another phone.
 
         supabase.from("ingredient_protein_flags").upsert(
             IngredientProteinRow(
@@ -1135,6 +1111,40 @@ class CloudMealRepository(
         ingredient.copy(
             imagePath = finalImage.first,
             imageUri = finalImage.second
+        )
+    }
+
+    suspend fun saveIngredientConversionsOnce(
+        ingredientId: String,
+        expectedRevision: Long,
+        conversions: List<IngredientUnitConversion>,
+        transactionId: String
+    ) = withContext(Dispatchers.IO) {
+        require(expectedRevision >= 0L && conversions.size <= 30)
+        require(conversions.map { it.unit }.distinct().size == conversions.size)
+        require(conversions.all {
+            it.baseAmountPerUnit.isFinite() &&
+                it.baseAmountPerUnit > 0.0 && it.baseAmountPerUnit <= 1e9 &&
+                it.source.isNotBlank() && it.source.length <= 120
+        })
+        supabase.postgrest.rpc(
+            function = "save_ingredient_conversions_once",
+            parameters = buildJsonObject {
+                put("p_household_id", householdId)
+                put("p_ingredient_id", ingredientId)
+                put("p_expected_revision", expectedRevision)
+                put("p_event_id", transactionId)
+                put("p_profiles", buildJsonArray {
+                    conversions.forEach { profile ->
+                        add(buildJsonObject {
+                            put("unit_code", profile.unit.name)
+                            put("base_amount_per_unit", profile.baseAmountPerUnit)
+                            put("approximate", profile.approximate)
+                            put("source", profile.source)
+                        })
+                    }
+                })
+            }
         )
     }
 
