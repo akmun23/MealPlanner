@@ -70,4 +70,21 @@ class BilkaOverviewLoadTest {
         assertNull(result.error)
         assertEquals("Letmælk", result.catalog?.productsFor("milk")?.single()?.name)
     }
+    @Test
+    fun malformedProductRecordKeepsValidProductsVisible() {
+        val catalogResponse = raw(
+            """{"candidates":[{"ingredient_id":"milk","product_id":"123"}],
+                "defaults":[],"products":[
+                {"id":"123","name":"Letmælk"},
+                {"id":"345","name":"Anden vare","quantity_kind":"INVALID_ENUM"}]}"""
+        )
+        val result = decodeBilkaOverview(
+            Result.success(ingredients),
+            Result.success(catalogResponse)
+        )
+        assertEquals("Letmælk", result.catalog?.product("123")?.name)
+        assertEquals(listOf("1 varer"), result.catalog?.parseWarnings)
+        assertNotNull(result.error)
+    }
+
 }
