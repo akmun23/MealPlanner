@@ -64,7 +64,7 @@ class QuantityConversionFoundationTest {
         )!!
         assertEquals(12.0, requirement.amountBase, 0.000001)
         assertTrue(requirement.conversionApproximate)
-        assertEquals("2 spsk.", RecipeQuantityRules.amountAndUnit(requirement, paprika))
+        assertEquals("2 spsk. (omregning anslået)", RecipeQuantityRules.amountAndUnit(requirement, paprika))
     }
 
     @Test
