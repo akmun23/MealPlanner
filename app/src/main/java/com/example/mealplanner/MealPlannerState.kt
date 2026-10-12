@@ -1663,7 +1663,7 @@ class MealPlannerState(
             ) ?: return@mapNotNull null
         }
 
-        if (converted.isEmpty()) return null
+        if (converted.size != requirements.size) return null
 
         val convertedPrerequisites = if (mealType == MealType.DINNER) {
             pantryPrerequisites.mapNotNull { draft ->
