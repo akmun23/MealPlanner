@@ -316,6 +316,27 @@ create trigger pantry_items_legacy_reconcile
 after insert or update of amount_base on public.pantry_items
 for each row execute function private.reconcile_old_pantry_write();
 
+-- Old versions can DELETE an aggregate row when emptying inventory.
+-- Mirror this intentional deletion into the package ledger. Nested calls
+-- from a lot transaction do not affect the legacy aggregate.
+create or replace function private.reconcile_old_pantry_delete()
+returns trigger language plpgsql security definer set search_path = ''
+as $body$
+begin
+    if pg_trigger_depth() > 1 then return old; end if;
+    delete from public.pantry_lots
+    where household_id = old.household_id
+      and ingredient_id = old.ingredient_id;
+    return old;
+end;
+$body$;
+revoke all on function private.reconcile_old_pantry_delete()
+    from public, anon, authenticated;
+drop trigger if exists pantry_items_legacy_delete on public.pantry_items;
+create trigger pantry_items_legacy_delete
+after delete on public.pantry_items
+for each row execute function private.reconcile_old_pantry_delete();
+
 -- Consumption is one atomic transaction, preferring opened/expiring lots.
 -- Direct UPDATE is guarded by RLS; this RPC also checks household membership.
 create or replace function public.consume_pantry_lots(
