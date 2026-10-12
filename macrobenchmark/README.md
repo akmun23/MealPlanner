@@ -110,3 +110,13 @@ useful for testing benchmark plumbing but **not** trustworthy performance measur
 is not a substitute for the production-optimized app.
 
 Official guide: https://developer.android.com/topic/performance/benchmarking/macrobenchmark-overview
+
+## Play Console: R8-mapping og native symboler
+
+Release anmoder om `ndk.debugSymbolLevel = "FULL"`, så tilgængelige native symboler pakkes med i App Bundle. Før Play-upload verificeres den **faktiske** AAB med:
+
+```bash
+python3 scripts/check_release_bundle_metadata.py app/build/outputs/bundle/release/app-release.aab
+```
+
+Kontrollen fejler, hvis R8-mapping ikke findes i bundlen, og advarer, hvis native biblioteker ikke har tilgængelige fejlretningssymboler. Se `docs/play-console-symbol-files-20261011.md` for upload af versionskorrekte mapping/symbolfiler og kendte begrænsninger.
