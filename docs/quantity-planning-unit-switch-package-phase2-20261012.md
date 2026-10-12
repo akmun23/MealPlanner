@@ -25,3 +25,9 @@ Ingen profiloprettelse i UI, database-/Room-persistens, offline outbox, husstand
 ## Test- og sikkerhedsgate
 
 Kør `gradlew.bat :app:compileDebugKotlin :app:testDebugUnitTest :app:assembleDebug :app:assembleBenchmark` med den relevante Supabase staging-konfiguration. Kræv både ældre klienter og synk på to testtelefoner, inden mængdeændringerne bliver en produktionsegenskab. Der er endnu ingen grøn Android-build; GitHub Actions fejler indtil videre uden udførte trin.
+
+## Kvalitetssikring og UI-finpudsning
+
+- Opskriftsdetaljer med en **anslået** fysisk omregning viser nu teksten `(omregning anslået)`, også efter et efterfølgende enhedsskift.
+- Omregningskonflikter behandles som manglende faktor (fail closed), så fremtidige offline-merge-fejl ikke kan vælge en vilkårlig pakkestørrelse.
+- Kilde- og testfiler er gennemgået med syntaktisk delimiterkontrol. Det **erstatter ikke** Kotlin-kompilering eller en kørt JUnit-suite.
