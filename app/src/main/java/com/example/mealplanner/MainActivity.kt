@@ -122,7 +122,7 @@ private val AppColors = lightColorScheme(
     surface = Color(0xFFFFFFFF),
     surfaceVariant = Color(0xFFE9EEE9),
     onSurfaceVariant = Color(0xFF4E5750),
-    outline = Color(0xFFBBC4BC)
+    outline = Color(0xFFBBC4BC),
 )
 
 internal val DarkAppColors = darkColorScheme(
@@ -272,8 +272,9 @@ fun MealPlannerApp(
         bilkaSettingsReturnPage = from
         page = AppPage.BilkaApiSettings
     }
+
     var showSyncConflictDialog by remember {
-        mutableStateOf(false)
+        mutableStateOf(value = false)
     }
     val pantryListState = rememberLazyListState()
     val tabStateHolder = rememberSaveableStateHolder()
@@ -283,7 +284,7 @@ fun MealPlannerApp(
         derivedStateOf {
             state.shoppingItems().count { item ->
                 state.isShoppingIncluded(item.ingredient.id) &&
-                    state.shoppingChecked[item.ingredient.id] != true
+                        state.shoppingChecked[item.ingredient.id] != true
             }
         }
     }
@@ -313,6 +314,7 @@ fun MealPlannerApp(
             is AppPage.RecipeDetail -> null
             is AppPage.RecipeEditor ->
                 current.recipeId?.let { AppPage.RecipeDetail(it) }
+
             null -> null
         }
     }
@@ -378,224 +380,227 @@ fun MealPlannerApp(
 
     Box(modifier = Modifier.fillMaxSize()) {
         when (val current = page) {
-        AppPage.MealHistory -> MealHistoryScreen(
-            state = state,
-            onBack = { navigateBack() }
-        )
+            AppPage.MealHistory -> MealHistoryScreen(
+                state = state,
+                onBack = { navigateBack() }
+            )
 
-        AppPage.Settings -> SettingsScreen(
-            household = household,
-            state = state,
-            onBack = { navigateBack() },
-            onRenameHousehold = onRenameHousehold,
-            onIngredientCategories = { page = AppPage.IngredientCategories },
-            onRecipeCategories = { page = AppPage.RecipeCategories },
-            onPlannerSettings = { page = AppPage.PlannerSettings },
-            onBilkaApiSettings = { openBilkaSettings(AppPage.Settings) },
-            onBilkaProducts = { page = AppPage.BilkaProducts },
-            onSyncStatus = { page = AppPage.SyncStatus },
-            onDataBackup = { page = AppPage.DataBackup },
-            themeMode = themeMode,
-            onThemeModeChange = onThemeModeChange,
-            onLogout = onLogout
-        )
+            AppPage.Settings -> SettingsScreen(
+                household = household,
+                state = state,
+                onBack = { navigateBack() },
+                onRenameHousehold = onRenameHousehold,
+                onIngredientCategories = { page = AppPage.IngredientCategories },
+                onRecipeCategories = { page = AppPage.RecipeCategories },
+                onPlannerSettings = { page = AppPage.PlannerSettings },
+                onBilkaApiSettings = { openBilkaSettings(AppPage.Settings) },
+                onBilkaProducts = { page = AppPage.BilkaProducts },
+                onSyncStatus = { page = AppPage.SyncStatus },
+                onDataBackup = { page = AppPage.DataBackup },
+                themeMode = themeMode,
+                onThemeModeChange = onThemeModeChange,
+                onLogout = onLogout
+            )
 
-        AppPage.BilkaProducts -> BilkaProductsScreen(
-            householdId = household.id,
-            onBack = { navigateBack() },
-            onImport = { openBilkaSettings(AppPage.BilkaProducts) },
-            onPick = { ingredientId, ingredientName ->
-                page = AppPage.BilkaProductPicker(ingredientId, ingredientName)
-            }
-        )
+            AppPage.BilkaProducts -> BilkaProductsScreen(
+                householdId = household.id,
+                onBack = { navigateBack() },
+                onImport = { openBilkaSettings(AppPage.BilkaProducts) },
+                onPick = { ingredientId, ingredientName ->
+                    page = AppPage.BilkaProductPicker(ingredientId, ingredientName)
+                }
+            )
 
-        is AppPage.BilkaProductPicker -> BilkaProductPickerScreen(
-            householdId = household.id,
-            ingredientId = current.ingredientId,
-            ingredientName = current.ingredientName,
-            onBack = { navigateBack() },
-            onSaved = {
-                state.refreshNow()
-                page = AppPage.BilkaProducts
-            },
-            onImport = { openBilkaSettings(current) }
-        )
-
-        AppPage.BilkaApiSettings -> BilkaApiSettingsScreen(
-            householdId = household.id,
-            onBack = { navigateBack() },
-            onViewProducts = { page = AppPage.BilkaProducts }
-        )
-
-        AppPage.PlannerSettings -> PlannerSettingsScreen(
-            state = state,
-            onBack = { navigateBack() }
-        )
-
-        AppPage.SyncStatus -> SyncStatusScreen(
-            state = state,
-            onBack = { navigateBack() }
-        )
-
-        AppPage.DataBackup -> DataBackupScreen(
-            state = state,
-            onBack = { navigateBack() }
-        )
-
-        AppPage.IngredientCategories -> IngredientCategoriesScreen(
-            state = state,
-            onBack = { navigateBack() }
-        )
-
-        AppPage.RecipeCategories -> RecipeCategoriesScreen(
-            state = state,
-            onBack = { navigateBack() }
-        )
-
-        is AppPage.IngredientEditor -> IngredientEditorScreen(
-            state = state,
-            ingredientId = current.ingredientId,
-            onBack = { navigateBack() },
-            onSaved = { page = null }
-        )
-
-        is AppPage.RecipeDetail -> RecipeDetailScreen(
-            state = state,
-            recipeId = current.recipeId,
-            onBack = { navigateBack() },
-            onEdit = { page = AppPage.RecipeEditor(current.recipeId) }
-        )
-
-        is AppPage.RecipeEditor -> RecipeEditorScreen(
-            state = state,
-            recipeId = current.recipeId,
-            initialMealType = current.initialMealType,
-            onBack = { navigateBack() },
-            onSaved = { savedId ->
-                page = savedId?.let { AppPage.RecipeDetail(it) }
-            }
-        )
-
-        null -> {
-            Scaffold(
-                containerColor = MaterialTheme.colorScheme.background,
-                topBar = {
-                    AppHeader(
-                        onSettings = { page = AppPage.Settings }
-                    )
+            is AppPage.BilkaProductPicker -> BilkaProductPickerScreen(
+                householdId = household.id,
+                ingredientId = current.ingredientId,
+                ingredientName = current.ingredientName,
+                onBack = { navigateBack() },
+                onSaved = {
+                    state.refreshNow()
+                    page = AppPage.BilkaProducts
                 },
-                bottomBar = {
-                    // Give the editor the full height when the keyboard is open.
-                    if (!WindowInsets.isImeVisible) {
-                    NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
-                        AppTab.entries.forEach { item ->
-                            val isShopping = item == AppTab.SHOPPING
-                            NavigationBarItem(
-                                selected = item == tab,
-                                onClick = {
-                                    tab = item
-                                    scope.launch {
-                                        pagerState.scrollToPage(item.ordinal)
-                                    }
-                                },
-                                icon = {
-                                    if (isShopping && missingShoppingCount > 0) {
-                                        BadgedBox(
-                                            badge = {
-                                                Badge {
-                                                    Text(
-                                                        if (missingShoppingCount > 99) "99+" else missingShoppingCount.toString(),
-                                                        style = MaterialTheme.typography.labelSmall
+                onImport = { openBilkaSettings(current) }
+            )
+
+            AppPage.BilkaApiSettings -> BilkaApiSettingsScreen(
+                householdId = household.id,
+                onBack = { navigateBack() },
+                onViewProducts = { page = AppPage.BilkaProducts }
+            )
+
+            AppPage.PlannerSettings -> PlannerSettingsScreen(
+                state = state,
+                onBack = { navigateBack() }
+            )
+
+            AppPage.SyncStatus -> SyncStatusScreen(
+                state = state,
+                onBack = { navigateBack() }
+            )
+
+            AppPage.DataBackup -> DataBackupScreen(
+                state = state,
+                onBack = { navigateBack() }
+            )
+
+            AppPage.IngredientCategories -> IngredientCategoriesScreen(
+                state = state,
+                onBack = { navigateBack() }
+            )
+
+            AppPage.RecipeCategories -> RecipeCategoriesScreen(
+                state = state,
+                onBack = { navigateBack() }
+            )
+
+            is AppPage.IngredientEditor -> IngredientEditorScreen(
+                state = state,
+                ingredientId = current.ingredientId,
+                onBack = { navigateBack() },
+                onSaved = { page = null }
+            )
+
+            is AppPage.RecipeDetail -> RecipeDetailScreen(
+                state = state,
+                recipeId = current.recipeId,
+                onBack = { navigateBack() },
+                onEdit = { page = AppPage.RecipeEditor(current.recipeId) }
+            )
+
+            is AppPage.RecipeEditor -> RecipeEditorScreen(
+                state = state,
+                recipeId = current.recipeId,
+                initialMealType = current.initialMealType,
+                onBack = { navigateBack() },
+                onSaved = { savedId ->
+                    page = savedId?.let { AppPage.RecipeDetail(it) }
+                }
+            )
+
+            null -> {
+                Scaffold(
+                    containerColor = MaterialTheme.colorScheme.background,
+                    topBar = {
+                        AppHeader(
+                            onSettings = { page = AppPage.Settings }
+                        )
+                    },
+                    bottomBar = {
+                        // Give the editor the full height when the keyboard is open.
+                        if (!WindowInsets.isImeVisible) {
+                            NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
+                                AppTab.entries.forEach { item ->
+                                    val isShopping = item == AppTab.SHOPPING
+                                    NavigationBarItem(
+                                        selected = item == tab,
+                                        onClick = {
+                                            tab = item
+                                            scope.launch {
+                                                pagerState.scrollToPage(item.ordinal)
+                                            }
+                                        },
+                                        icon = {
+                                            if (isShopping && missingShoppingCount > 0) {
+                                                BadgedBox(
+                                                    badge = {
+                                                        Badge {
+                                                            Text(
+                                                                if (missingShoppingCount > 99) "99+" else missingShoppingCount.toString(),
+                                                                style = MaterialTheme.typography.labelSmall
+                                                            )
+                                                        }
+                                                    }
+                                                ) {
+                                                    Icon(
+                                                        item.icon,
+                                                        contentDescription = item.label
                                                     )
                                                 }
+                                            } else {
+                                                Icon(
+                                                    item.icon,
+                                                    contentDescription = item.label
+                                                )
                                             }
-                                        ) {
-                                            Icon(
-                                                item.icon,
-                                                contentDescription = item.label
+                                        },
+                                        label = {
+                                            Text(
+                                                item.label,
+                                                fontWeight = if (item == tab) FontWeight.Bold else FontWeight.Normal
                                             )
                                         }
-                                    } else {
-                                        Icon(
-                                            item.icon,
-                                            contentDescription = item.label
-                                        )
-                                    }
-                                },
-                                label = {
-                                    Text(
-                                        item.label,
-                                        fontWeight = if (item == tab) FontWeight.Bold else FontWeight.Normal
                                     )
                                 }
-                            )
+                            }
                         }
                     }
-                    }
-                }
-            ) { padding ->
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(padding)
-                ) {
-                    if (state.isLoading) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.align(Alignment.Center)
-                        )
-                    } else {
-                        HorizontalPager(
-                            state = pagerState,
-                            // Only compose the visible tab; other lists build on demand.
-                            beyondViewportPageCount = 0,
-                            modifier = Modifier.fillMaxSize()
-                        ) { pageIndex ->
-                            val visibleTab = AppTab.entries[pageIndex]
-                            tabStateHolder.SaveableStateProvider(visibleTab.name) {
-                            when (visibleTab) {
-                                AppTab.WEEK -> WeekScreen(
-                                    state = state,
-                                    onMealHistory = { page = AppPage.MealHistory },
-                                    onOpenRecipe = {
-                                        page = AppPage.RecipeDetail(it)
-                                    },
-                                    onNewLunchRecipe = {
-                                        page = AppPage.RecipeEditor(
-                                            recipeId = null,
-                                            initialMealType = MealType.LUNCH
+                ) { padding ->
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(padding)
+                    ) {
+                        if (state.isLoading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.align(Alignment.Center)
+                            )
+                        } else {
+                            HorizontalPager(
+                                state = pagerState,
+                                // Only compose the visible tab; other lists build on demand.
+                                beyondViewportPageCount = 0,
+                                modifier = Modifier.fillMaxSize()
+                            ) { pageIndex ->
+                                val visibleTab = AppTab.entries[pageIndex]
+                                tabStateHolder.SaveableStateProvider(visibleTab.name) {
+                                    when (visibleTab) {
+                                        AppTab.WEEK -> WeekScreen(
+                                            state = state,
+                                            onMealHistory = { page = AppPage.MealHistory },
+                                            onOpenRecipe = {
+                                                page = AppPage.RecipeDetail(it)
+                                            },
+                                            onNewLunchRecipe = {
+                                                page = AppPage.RecipeEditor(
+                                                    recipeId = null,
+                                                    initialMealType = MealType.LUNCH
+                                                )
+                                            }
                                         )
+
+                                        AppTab.RECIPES -> RecipesScreen(
+                                            state = state,
+                                            onAddRecipe = { page = AppPage.RecipeEditor(null) },
+                                            onOpenRecipe = { page = AppPage.RecipeDetail(it) }
+                                        )
+
+                                        AppTab.PANTRY -> PantryScreen(
+                                            state = state,
+                                            listState = pantryListState,
+                                            onAddIngredient = {
+                                                page = AppPage.IngredientEditor(null)
+                                            },
+                                            onEditIngredient = {
+                                                page = AppPage.IngredientEditor(it)
+                                            }
+                                        )
+
+                                        AppTab.SHOPPING -> ShoppingScreen(state)
                                     }
-                                )
-                                AppTab.RECIPES -> RecipesScreen(
-                                    state = state,
-                                    onAddRecipe = { page = AppPage.RecipeEditor(null) },
-                                    onOpenRecipe = { page = AppPage.RecipeDetail(it) }
-                                )
-                                AppTab.PANTRY -> PantryScreen(
-                                    state = state,
-                                    listState = pantryListState,
-                                    onAddIngredient = {
-                                        page = AppPage.IngredientEditor(null)
-                                    },
-                                    onEditIngredient = {
-                                        page = AppPage.IngredientEditor(it)
-                                    }
-                                )
-                                AppTab.SHOPPING -> ShoppingScreen(state)
-                            }
+                                }
                             }
                         }
                     }
                 }
             }
-        }
         }
 
         // Keep transient feedback above the navigation bar (or the editor's
         // fixed save action), rather than at hard-coded screen coordinates.
-        val overlayBottom = when {
-            page is AppPage.RecipeEditor -> 84.dp
-            page == null && !WindowInsets.isImeVisible -> 86.dp
+        val overlayBottom = when (page) {
+            is AppPage.RecipeEditor -> 84.dp
+            null -> if (!WindowInsets.isImeVisible) 86.dp else 16.dp
             else -> 16.dp
         }
         val hasSyncStatus = state.syncIndicator != SyncIndicator.IDLE
@@ -725,10 +730,10 @@ private fun RecipeCategoriesScreen(
     var categoryName by remember { mutableStateOf("") }
     val recipeCategoryNameAvailable =
         categoryName.isBlank() ||
-            state.isRecipeCategoryNameAvailable(
-                name = categoryName,
-                excludingId = editing?.id
-            )
+                state.isRecipeCategoryNameAvailable(
+                    name = categoryName,
+                    excludingId = editing?.id
+                )
 
     if (showAdd || editing != null) {
         AlertDialog(
@@ -778,7 +783,7 @@ private fun RecipeCategoriesScreen(
                     },
                     enabled =
                         categoryName.trim().isNotBlank() &&
-                            recipeCategoryNameAvailable
+                                recipeCategoryNameAvailable
                 ) {
                     Text("Gem")
                 }
@@ -899,10 +904,10 @@ private fun IngredientCategoriesScreen(
 
     val ingredientCategoryNameAvailable =
         categoryName.isBlank() ||
-            state.isIngredientCategoryNameAvailable(
-                name = categoryName,
-                excludingId = editing?.id
-            )
+                state.isIngredientCategoryNameAvailable(
+                    name = categoryName,
+                    excludingId = editing?.id
+                )
 
     val activeDialog = showAdd || editing != null
     if (activeDialog) {
@@ -953,7 +958,7 @@ private fun IngredientCategoriesScreen(
                     },
                     enabled =
                         categoryName.trim().isNotBlank() &&
-                            ingredientCategoryNameAvailable
+                                ingredientCategoryNameAvailable
                 ) {
                     Text("Gem")
                 }
@@ -1133,8 +1138,8 @@ private fun SettingsScreen(
                     },
                     enabled =
                         !renameBusy &&
-                            homeName.trim().isNotBlank() &&
-                            homeName.trim() != household.name
+                                homeName.trim().isNotBlank() &&
+                                homeName.trim() != household.name
                 ) {
                     Text("Gem")
                 }
@@ -1191,7 +1196,7 @@ private fun SettingsScreen(
                     },
                     enabled =
                         !feedbackBusy &&
-                            feedback.trim().length >= 3
+                                feedback.trim().length >= 3
                 ) {
                     Text("Send")
                 }
@@ -1353,11 +1358,9 @@ private fun SettingsScreen(
                                 val clipboard = context.getSystemService(
                                     Context.CLIPBOARD_SERVICE
                                 ) as ClipboardManager
-                                clipboard.setPrimaryClip(
-                                    ClipData.newPlainText(
-                                        "Invitationskode",
-                                        household.joinCode
-                                    )
+                                clipboard.primaryClip = ClipData.newPlainText(
+                                    "Invitationskode",
+                                    household.joinCode
                                 )
                                 Toast.makeText(
                                     context,

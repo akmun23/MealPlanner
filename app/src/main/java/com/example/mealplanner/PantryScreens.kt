@@ -131,7 +131,7 @@ fun PantryScreen(
                 SimpleSelector(
                     label = selectedCategory?.name ?: "Alle kategorier",
                     options = listOf<IngredientCategory?>(null) +
-                        state.ingredientCategories.sortedBy { it.name.lowercase() },
+                            state.ingredientCategories.sortedBy { it.name.lowercase() },
                     optionText = { it?.name ?: "Alle kategorier" },
                     onSelected = { selectedCategoryId = it?.id },
                     fillWidth = true
@@ -168,8 +168,8 @@ fun PantryScreen(
         if (filtered.isEmpty()) {
             item {
                 val isFiltered = searchQuery.isNotBlank() || selectedCategoryId != null ||
-                    stockFilter != PantryStockFilter.ALL ||
-                    sortOrder != PantrySortOrder.NAME_ASC
+                        stockFilter != PantryStockFilter.ALL ||
+                        sortOrder != PantrySortOrder.NAME_ASC
 
                 EmptyCard(
                     title = if (state.ingredients.isEmpty()) "Ingen ingredienser endnu" else "Ingen ingredienser fundet",

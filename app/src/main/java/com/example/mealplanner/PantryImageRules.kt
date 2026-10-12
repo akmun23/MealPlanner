@@ -12,6 +12,6 @@ internal object PantryImageRules {
         manualImageUri?.takeIf { it.isNotBlank() }
             ?: bilkaImageUrl?.takeIf {
                 it.startsWith("https://", ignoreCase = true) ||
-                    it.startsWith("http://", ignoreCase = true)
+                        it.startsWith("http://", ignoreCase = true)
             }
 }

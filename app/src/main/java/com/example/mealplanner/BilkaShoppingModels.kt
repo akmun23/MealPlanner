@@ -13,6 +13,7 @@ internal data class BilkaShoppingDefault(
     @SerialName("product_id") val productId: String,
     @SerialName("package_base_amount_override") val packageBaseAmountOverride: Double? = null
 )
+
 @Serializable
 internal data class BilkaShoppingPurchase(
     @SerialName("ingredient_id") val ingredientId: String,
@@ -22,6 +23,7 @@ internal data class BilkaShoppingPurchase(
     @SerialName("purchased_amount_base") val purchasedAmountBase: Double? = null,
     @SerialName("paid_total_ore") val paidTotalOre: Long? = null
 )
+
 internal data class BilkaShoppingContext(
     val defaults: List<BilkaShoppingDefault>,
     val purchases: List<BilkaShoppingPurchase>
@@ -32,6 +34,7 @@ internal data class BilkaShoppingContext(
     fun purchase(ingredientId: String): BilkaShoppingPurchase? =
         purchases.firstOrNull { it.ingredientId == ingredientId }
 }
+
 private fun JsonObject.field(name: String): String? =
     (this[name] as? JsonPrimitive)?.contentOrNull
 

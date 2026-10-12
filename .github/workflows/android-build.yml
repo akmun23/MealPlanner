@@ -64,7 +64,7 @@ jobs:
           cat dex-optimization-report.json >> "$GITHUB_STEP_SUMMARY"
 
       # Emulator startup has proved unreliable on hosted runners and previously
-      # stalled until the workflow was cancelled. Keep build/R8 verification
+      # stalled until the workflow was canceled. Keep build/R8 verification
       # deterministic. Emulator runtime validation is a separate, explicitly
       # opt-in workflow (.github/workflows/r8-emulator-smoke.yml).
       - name: Check optional emulator smoke script syntax

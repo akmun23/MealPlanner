@@ -249,7 +249,8 @@ data class CloudSnapshot(
     val weeklySandwichRecipeId: String?,
     val sandwichDay: DayOfWeek?,
     val history: List<MealHistoryEntry>,
-    val viewWeekStart: LocalDate = LocalDate.now().with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+    val viewWeekStart: LocalDate = LocalDate.now()
+        .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
 ) {
     companion object {
         val EMPTY = CloudSnapshot(
@@ -1306,6 +1307,7 @@ class CloudMealRepository(
         )
     }
 
+    @OptIn(kotlinx.coroutines.FlowPreview::class)
     internal suspend fun startRealtime(
         scope: CoroutineScope,
         onEvent: suspend (CloudRealtimeEvent) -> Unit

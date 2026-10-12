@@ -108,11 +108,17 @@ class BilkaSelectionRulesTest {
         )
         assertEquals(emptyList<BilkaProduct>(), catalog.productsFor("flour"))
     }
+
     @Test
     fun relevanceSortPutsActualCreamBeforeLiqueurAndSweetsWithoutHidingAnything() {
         val items = listOf(
             item("liqueur", "A", 800.0, BilkaUnitPriceBasis.L).copy(name = "Flødelikør 17%"),
-            item("chocolate", "B", 700.0, BilkaUnitPriceBasis.PIECE).copy(name = "Proteinbar Flødebolle"),
+            item(
+                "chocolate",
+                "B",
+                700.0,
+                BilkaUnitPriceBasis.PIECE
+            ).copy(name = "Proteinbar Flødebolle"),
             item("cream", "C", 1900.0, BilkaUnitPriceBasis.L).copy(name = "Arla Piskefløde 38%"),
             item("plain", "D", 2200.0, BilkaUnitPriceBasis.L).copy(name = "Fløde")
         )
@@ -151,10 +157,14 @@ class BilkaSelectionRulesTest {
 
     @Test
     fun matchingIngredientDoesNotTreatANamePrefixAsACompleteMatch() {
-        assertTrue(BilkaSelectionRules.ingredientNameScore("Fløde", "Arla Fløde 38%") >
-            BilkaSelectionRules.ingredientNameScore("Fløde", "Flødebolle"))
-        assertTrue(BilkaSelectionRules.ingredientNameScore("Mælk", "Sødmælk") >
-            BilkaSelectionRules.ingredientNameScore("Mælk", "Mælkebøttefjerner"))
+        assertTrue(
+            BilkaSelectionRules.ingredientNameScore("Fløde", "Arla Fløde 38%") >
+                    BilkaSelectionRules.ingredientNameScore("Fløde", "Flødebolle")
+        )
+        assertTrue(
+            BilkaSelectionRules.ingredientNameScore("Mælk", "Sødmælk") >
+                    BilkaSelectionRules.ingredientNameScore("Mælk", "Mælkebøttefjerner")
+        )
         assertTrue(BilkaSelectionRules.ingredientNameScore("Agurk", "Agurkeplanter") <= 0)
     }
 

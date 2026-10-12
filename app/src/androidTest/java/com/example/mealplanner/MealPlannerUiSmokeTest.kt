@@ -17,7 +17,8 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class MealPlannerUiSmokeTest {
-    @get:Rule val composeRule = createComposeRule()
+    @get:Rule
+    val composeRule = createComposeRule()
 
     @Test
     fun searchCanBeEnteredAndCleared() {

@@ -54,7 +54,7 @@ internal fun MealHistoryScreen(
             text = {
                 Text(
                     "Et færdigregistreret måltid er låst. En rettelse i historikken " +
-                        "justerer ikke lagerforbruget. Lås kun op, hvis registreringen er forkert."
+                            "justerer ikke lagerforbruget. Lås kun op, hvis registreringen er forkert."
                 )
             },
             confirmButton = {
@@ -73,7 +73,7 @@ internal fun MealHistoryScreen(
         val available = state.recipes
             .filter {
                 it.mealType == MealType.DINNER &&
-                    (search.isBlank() || it.name.contains(search, ignoreCase = true))
+                        (search.isBlank() || it.name.contains(search, ignoreCase = true))
             }
             .sortedBy { it.name.lowercase() }
 
@@ -140,19 +140,19 @@ internal fun MealHistoryScreen(
             item {
                 Text(
                     "Registrér det, I faktisk spiste. Kun disse måltider " +
-                        "skal tælle som historik, når næste madplan genereres.",
+                            "skal tælle som historik, når næste madplan genereres.",
                     style = MaterialTheme.typography.bodyMedium
                 )
                 Text(
                     "Ældre historik kan indeholde retter, som appen tidligere " +
-                        "registrerede automatisk. Du kan rette dem her.",
+                            "registrerede automatisk. Du kan rette dem her.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 6.dp, bottom = 8.dp)
                 )
                 Text(
                     "Hvis du retter eller fjerner et spist måltid her, ændres " +
-                        "lagerbeholdningen ikke automatisk.",
+                            "lagerbeholdningen ikke automatisk.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(bottom = 8.dp)

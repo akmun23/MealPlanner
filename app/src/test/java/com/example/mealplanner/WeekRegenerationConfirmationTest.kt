@@ -9,25 +9,31 @@ class WeekRegenerationConfirmationTest {
 
     @Test
     fun firstGenerationDoesNotPromptWhenNoMealsArePlanned() {
-        assertFalse(WeekRules.needsRegenerationConfirmation(
-            currentPlan = orderedWeekDays.associateWith { null as String? },
-            sandwichRecipeId = null
-        ))
+        assertFalse(
+            WeekRules.needsRegenerationConfirmation(
+                currentPlan = orderedWeekDays.associateWith { null as String? },
+                sandwichRecipeId = null
+            )
+        )
     }
 
     @Test
     fun asksBeforeReplacingAnExistingMealPlan() {
-        assertTrue(WeekRules.needsRegenerationConfirmation(
-            currentPlan = mapOf(DayOfWeek.MONDAY to "recipe-id"),
-            sandwichRecipeId = null
-        ))
+        assertTrue(
+            WeekRules.needsRegenerationConfirmation(
+                currentPlan = mapOf(DayOfWeek.MONDAY to "recipe-id"),
+                sandwichRecipeId = null
+            )
+        )
     }
 
     @Test
     fun asksWhenOnlyTheHouseholdSandwichHasBeenChosen() {
-        assertTrue(WeekRules.needsRegenerationConfirmation(
-            currentPlan = emptyMap(),
-            sandwichRecipeId = "sandwich-id"
-        ))
+        assertTrue(
+            WeekRules.needsRegenerationConfirmation(
+                currentPlan = emptyMap(),
+                sandwichRecipeId = "sandwich-id"
+            )
+        )
     }
 }

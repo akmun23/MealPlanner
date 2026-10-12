@@ -70,6 +70,7 @@ class BilkaOverviewLoadTest {
         assertNull(result.error)
         assertEquals("Letmælk", result.catalog?.productsFor("milk")?.single()?.name)
     }
+
     @Test
     fun malformedProductRecordKeepsValidProductsVisible() {
         val catalogResponse = raw(
@@ -89,15 +90,17 @@ class BilkaOverviewLoadTest {
 
     @Test
     fun unknownProviderEnumKeepsProductVisibleWithUnknownUnitKind() {
-        val decoded = parseBilkaCatalog(raw(
-            """
+        val decoded = parseBilkaCatalog(
+            raw(
+                """
             {"candidates":[],"defaults":[],"products":[
               {"id":"bilkatogo:123","name":"Ny Bilka-vare",
                "quantity_kind":"FUTURE_KIND","unit_price_basis":"FUTURE_BASIS",
                "price_ore":2595}
             ]}
             """.trimIndent()
-        ))
+            )
+        )
         assertEquals(1, decoded.products.size)
         assertNull(decoded.products.single().quantityKind)
         assertNull(decoded.products.single().unitPriceBasis)
@@ -107,10 +110,12 @@ class BilkaOverviewLoadTest {
 
     @Test
     fun snakeCaseIngredientStatusAndOptionalFieldsStillShowRow() {
-        val decoded = parseBilkaIngredients(raw(
-            """{"items":[{"ingredient_id":"milk","name":"Mælk","state":"READY",
+        val decoded = parseBilkaIngredients(
+            raw(
+                """{"items":[{"ingredient_id":"milk","name":"Mælk","state":"READY",
                "candidate_count":3}, {"ingredientId":"bread","name":"Brød"}]}"""
-        ))
+            )
+        )
         assertEquals(listOf("milk", "bread"), decoded.map { it.ingredientId })
         assertEquals(3, decoded.first().candidateCount)
         assertEquals("PENDING", decoded.last().state)

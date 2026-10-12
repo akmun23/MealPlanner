@@ -14,8 +14,8 @@ internal object ShoppingRetentionRules {
             .filter { old ->
                 val current = afterById[old.ingredient.id]
                 current != null &&
-                    old.requiredBase == current.requiredBase &&
-                    old.pantryBase == current.pantryBase
+                        old.requiredBase == current.requiredBase &&
+                        old.pantryBase == current.pantryBase
             }
             .map { it.ingredient.id }
             .toSet()

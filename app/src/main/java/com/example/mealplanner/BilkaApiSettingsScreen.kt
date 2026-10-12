@@ -34,11 +34,7 @@ import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
-private data class BilkaIngredientStatus(
-    val name: String,
-    val state: String,
-    val suggestions: Int
-)
+
 
 private fun JsonObject?.bilkaNumber(field: String): Int =
     this?.get(field)?.jsonPrimitive?.content?.toIntOrNull() ?: 0
@@ -181,9 +177,9 @@ internal fun BilkaApiSettingsScreen(
                         if (!verified) {
                             Text(
                                 "Nøglen er gemt, men endnu ikke verificeret. " +
-                                    "Det bruger ét Prej-kald at verificere den. " +
-                                    "Når din dagskvote er brugt, kan du kontrollere den " +
-                                    "efter næste nulstilling kl. 00.00 UTC.",
+                                        "Det bruger ét Prej-kald at verificere den. " +
+                                        "Når din dagskvote er brugt, kan du kontrollere den " +
+                                        "efter næste nulstilling kl. 00.00 UTC.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
@@ -259,17 +255,19 @@ internal fun BilkaApiSettingsScreen(
                                             apiKey = ""
                                             keyInputOpen = false
                                             connected = true
-                                            verified = response.bilkaText("verificationPending") != "true"
+                                            verified =
+                                                response.bilkaText("verificationPending") != "true"
                                             suffix = response.bilkaText("keyLastFour")
                                             BilkaPrejClient.status().onSuccess(::applyStatus)
-                                            message = if (response.bilkaText("verificationPending") == "true") {
-                                                "Den nye nøgle er gemt krypteret, men ikke " +
-                                                    "verificeret. Dagens kvote er brugt, så " +
-                                                    "søgninger kan først genoptages efter " +
-                                                    "næste kvotenulstilling og nøglekontrol."
-                                            } else {
-                                                "Din Prej-konto er nu forbundet."
-                                            }
+                                            message =
+                                                if (response.bilkaText("verificationPending") == "true") {
+                                                    "Den nye nøgle er gemt krypteret, men ikke " +
+                                                            "verificeret. Dagens kvote er brugt, så " +
+                                                            "søgninger kan først genoptages efter " +
+                                                            "næste kvotenulstilling og nøglekontrol."
+                                                } else {
+                                                    "Din Prej-konto er nu forbundet."
+                                                }
                                         }
                                         .onFailure { message = it.message }
                                     busy = false
@@ -322,9 +320,9 @@ internal fun BilkaApiSettingsScreen(
                         if (discoveryQuotaExhausted && pending > 0) {
                             Text(
                                 "Søgningen er sat på pause: dagens Prej-kvote til " +
-                                    "produktimport er brugt. $pending ingredienser er " +
-                                    "endnu ikke færdigsøgt – det betyder ikke, at Bilka " +
-                                    "mangler varerne. Du kan fortsætte næste UTC-dag.",
+                                        "produktimport er brugt. $pending ingredienser er " +
+                                        "endnu ikke færdigsøgt – det betyder ikke, at Bilka " +
+                                        "mangler varerne. Du kan fortsætte næste UTC-dag.",
                                 color = MaterialTheme.colorScheme.error,
                                 style = MaterialTheme.typography.bodyMedium
                             )
@@ -340,9 +338,9 @@ internal fun BilkaApiSettingsScreen(
 
                     Text(
                         "Automatisk massesøgning er sat på pause, fordi Prej " +
-                            "gav forkerte varer og brugte for mange API-kald. " +
-                            "Ingen nye kald foretages uden at du selv søger " +
-                            "på en bestemt ingrediens.",
+                                "gav forkerte varer og brugte for mange API-kald. " +
+                                "Ingen nye kald foretages uden at du selv søger " +
+                                "på en bestemt ingrediens.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
@@ -358,11 +356,13 @@ internal fun BilkaApiSettingsScreen(
                             !verified -> "Kontrollér den gemte nøgle før manuel varesøgning."
                             importStatus != null && pending == 0 && ready > 0 ->
                                 "Du kan nu vælge mærke og størrelse i produktoversigten."
+
                             importStatus != null && pending == 0 ->
                                 "Der mangler ingen automatiske søgninger lige nu."
+
                             else ->
                                 "Vi søger efter ingrediensernes faktiske navne. " +
-                                "Resultater gemmes, og du kan fortsætte senere uden at starte forfra."
+                                        "Resultater gemmes, og du kan fortsætte senere uden at starte forfra."
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -374,7 +374,7 @@ internal fun BilkaApiSettingsScreen(
                 SectionCard("Vælg dine faste BilkaToGo-varer") {
                     Text(
                         "Se alle ingredienser og sammenlign konkrete Bilka-varer " +
-                            "på den selvstændige produktside.",
+                                "på den selvstændige produktside.",
                         style = MaterialTheme.typography.bodySmall
                     )
                     Button(
@@ -426,7 +426,7 @@ internal fun BilkaApiSettingsScreen(
                                     }
                                 },
                                 enabled = !busy && nightlyLoaded &&
-                                    ((verified && schedulerReady) || nightlyEnabled)
+                                        ((verified && schedulerReady) || nightlyEnabled)
                             )
                         }
                         nightlyLastRun?.let { last ->
@@ -438,7 +438,7 @@ internal fun BilkaApiSettingsScreen(
                         }
                         Text(
                             "Bruger kun din egen Prej-kvote. " +
-                                "Aktivering kræver, at serverens tidsplan er klar.",
+                                    "Aktivering kræver, at serverens tidsplan er klar.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -453,7 +453,8 @@ internal fun BilkaApiSettingsScreen(
                                 BilkaPrejClient.refresh(householdId)
                                     .onSuccess { info ->
                                         val count = info.bilkaNumber("updated")
-                                        message = "$count valgte Bilka-produkter fik opdateret pris."
+                                        message =
+                                            "$count valgte Bilka-produkter fik opdateret pris."
                                         BilkaPrejClient.status().onSuccess(::applyStatus)
                                     }
                                     .onFailure { message = it.message }

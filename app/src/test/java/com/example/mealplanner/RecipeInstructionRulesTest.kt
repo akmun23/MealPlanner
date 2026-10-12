@@ -15,24 +15,29 @@ class RecipeInstructionRulesTest {
 
     @Test
     fun mainStepsAndSubstepsHaveExpectedLabels() {
-        assertEquals(listOf("1.", "1.a", "1.b", "2."),
+        assertEquals(
+            listOf("1.", "1.a", "1.b", "2."),
             RecipeInstructionRules.numbered(steps).map { it.first })
     }
 
     @Test
     fun movingMainStepMovesItsSubstepsAsOneBlock() {
         val moved = RecipeInstructionRules.move(steps, 0, 1)
-        assertEquals(listOf("main-2", "main-1", "sub-1", "sub-2"),
+        assertEquals(
+            listOf("main-2", "main-1", "sub-1", "sub-2"),
             moved.map { it.id })
-        assertEquals(listOf("1.", "2.", "2.a", "2.b"),
+        assertEquals(
+            listOf("1.", "2.", "2.a", "2.b"),
             RecipeInstructionRules.numbered(moved).map { it.first })
     }
 
     @Test
     fun deletingParentAlsoRemovesItsChildren() {
-        assertEquals(listOf("main-2"),
+        assertEquals(
+            listOf("main-2"),
             RecipeInstructionRules.remove(steps, 0).map { it.id })
-        assertEquals(listOf("main-1", "sub-2", "main-2"),
+        assertEquals(
+            listOf("main-1", "sub-2", "main-2"),
             RecipeInstructionRules.remove(steps, 1).map { it.id })
     }
 

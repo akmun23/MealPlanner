@@ -601,7 +601,7 @@ class WeeklyPlannerTest {
         assertTrue(
             "planner should avoid two chicken recipes when beef is available",
             !(selected.contains(chickenA.id) &&
-                selected.contains(chickenB.id))
+                    selected.contains(chickenB.id))
         )
     }
 

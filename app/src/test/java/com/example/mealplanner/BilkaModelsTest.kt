@@ -106,13 +106,17 @@ class BilkaModelsTest {
             packageBaseAmountOverride = 1000.0
         )
 
-        assertEquals(job, Json.decodeFromString(
-            BilkaDiscoveryJob.serializer(),
-            Json.encodeToString(BilkaDiscoveryJob.serializer(), job)
-        ))
-        assertEquals(favorite, Json.decodeFromString(
-            IngredientBilkaDefault.serializer(),
-            Json.encodeToString(IngredientBilkaDefault.serializer(), favorite)
-        ))
+        assertEquals(
+            job, Json.decodeFromString(
+                BilkaDiscoveryJob.serializer(),
+                Json.encodeToString(BilkaDiscoveryJob.serializer(), job)
+            )
+        )
+        assertEquals(
+            favorite, Json.decodeFromString(
+                IngredientBilkaDefault.serializer(),
+                Json.encodeToString(IngredientBilkaDefault.serializer(), favorite)
+            )
+        )
     }
 }

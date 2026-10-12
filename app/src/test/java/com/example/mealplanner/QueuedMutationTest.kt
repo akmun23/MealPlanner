@@ -107,15 +107,15 @@ class QueuedMutationTest {
 
         assertTrue(
             QueuedMutation.UpsertIngredientCategory(category).priority() <
-                QueuedMutation.UpsertIngredient(ingredient).priority()
+                    QueuedMutation.UpsertIngredient(ingredient).priority()
         )
         assertTrue(
             QueuedMutation.UpsertIngredient(ingredient).priority() <
-                QueuedMutation.UpsertRecipe(recipe).priority()
+                    QueuedMutation.UpsertRecipe(recipe).priority()
         )
         assertTrue(
             QueuedMutation.UpsertRecipe(recipe).priority() <
-                week.priority()
+                    week.priority()
         )
         assertTrue(week.priority() < shopping.priority())
     }

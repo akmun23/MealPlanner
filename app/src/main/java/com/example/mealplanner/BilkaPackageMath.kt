@@ -5,7 +5,11 @@ import kotlin.math.max
 
 /** Shopping amounts use the ingredient's canonical base unit (g, ml, pieces, packs). */
 internal object BilkaPackageMath {
-    fun applicablePackBase(ingredient: Ingredient, product: BilkaProduct, correction: Double? = null): Double? {
+    fun applicablePackBase(
+        ingredient: Ingredient,
+        product: BilkaProduct,
+        correction: Double? = null
+    ): Double? {
         val kind = product.quantityKind ?: return null
         if (kind.name != ingredient.quantityType.name) return null
         val amount = correction ?: product.packageBaseAmount

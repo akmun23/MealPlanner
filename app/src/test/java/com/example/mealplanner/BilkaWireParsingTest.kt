@@ -17,8 +17,9 @@ class BilkaWireParsingTest {
 
     @Test
     fun decodesLiveCatalogFieldsAndNullableValues() {
-        val catalog = parseBilkaCatalog(obj(
-            """
+        val catalog = parseBilkaCatalog(
+            obj(
+                """
             {
               "candidates": [
                 {"ingredient_id":"ingredient-1","product_id":"bilkatogo:120",
@@ -41,7 +42,8 @@ class BilkaWireParsingTest {
               ]
             }
             """.trimIndent()
-        ))
+            )
+        )
         val product = catalog.product("bilkatogo:120")!!
         assertEquals("bilkatogo:120", catalog.defaultId("ingredient-1"))
         assertEquals(4, catalog.ranks("ingredient-1")["bilkatogo:120"])
@@ -58,8 +60,9 @@ class BilkaWireParsingTest {
 
     @Test
     fun decodesDiscoveryStatusWithoutUnknownFieldsCrashing() {
-        val ingredients = parseBilkaIngredients(obj(
-            """
+        val ingredients = parseBilkaIngredients(
+            obj(
+                """
             {
               "total":2,"chosen":1,
               "items":[
@@ -71,7 +74,8 @@ class BilkaWireParsingTest {
               ]
             }
             """.trimIndent()
-        ))
+            )
+        )
         assertEquals(listOf("milk", "bread"), ingredients.map { it.ingredientId })
         assertEquals(3, ingredients.first().candidateCount)
         assertEquals("READY", ingredients.last().state)
@@ -85,13 +89,15 @@ class BilkaWireParsingTest {
 
     @Test
     fun unsupportedEnumDoesNotRemoveOtherwiseValidProduct() {
-        val catalog = parseBilkaCatalog(obj(
-            """
+        val catalog = parseBilkaCatalog(
+            obj(
+                """
             {"candidates":[],"defaults":[],"products":[
                {"id":"99","name":"Ny vare",
                 "quantity_kind":"UNEXPECTED","unit_price_basis":"UNEXPECTED"}]}
             """.trimIndent()
-        ))
+            )
+        )
         assertEquals(1, catalog.products.size)
         assertNull(catalog.products.first().quantityKind)
         assertNull(catalog.products.first().unitPriceBasis)

@@ -57,7 +57,7 @@ internal fun FinishMealDialog(
             val available = (state.pantry[ingredient.id] ?: 0.0).coerceAtLeast(0.0)
             val suggested = minOf(needed, available)
             amounts[ingredient.id] = (suggested > 0.0) to
-                formatDisplayNumber(ingredient.preferredUnit.fromBase(suggested))
+                    formatDisplayNumber(ingredient.preferredUnit.fromBase(suggested))
         }
     }
 
@@ -92,9 +92,9 @@ internal fun FinishMealDialog(
                 Text(recipe.name, fontWeight = FontWeight.SemiBold)
                 Text(
                     "Markér det, du faktisk har brugt fra lageret, og ret eventuelt " +
-                        "mængderne. Kun markerede varer trækkes fra. " +
-                        "Du kan også markere retten som spist uden lagerforbrug. " +
-                        "Når du gemmer, låses dagens ret i madplanen.",
+                            "mængderne. Kun markerede varer trækkes fra. " +
+                            "Du kan også markere retten som spist uden lagerforbrug. " +
+                            "Når du gemmer, låses dagens ret i madplanen.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -107,9 +107,9 @@ internal fun FinishMealDialog(
                     val amountBase = parseDanishDecimal(entered)
                         ?.let { ingredient.preferredUnit.toBase(it) }
                     val invalid = checked && (
-                        amountBase == null || !amountBase.isFinite() ||
-                            amountBase <= 0.0 || amountBase > stock
-                    )
+                            amountBase == null || !amountBase.isFinite() ||
+                                    amountBase <= 0.0 || amountBase > stock
+                            )
                     Column {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Checkbox(
@@ -123,7 +123,7 @@ internal fun FinishMealDialog(
                                 Text(ingredient.name, fontWeight = FontWeight.Medium)
                                 Text(
                                     "Opskrift: ${state.formatBaseAmount(ingredient, needed)} · " +
-                                        "Lager: ${state.formatBaseAmount(ingredient, stock)}",
+                                            "Lager: ${state.formatBaseAmount(ingredient, stock)}",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                 )

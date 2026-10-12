@@ -78,6 +78,7 @@ internal abstract class LocalStateDao {
     protected abstract suspend fun insertPantry(
         entities: List<LocalPantryEntity>
     )
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     abstract suspend fun upsertSnapshot(
         entity: HouseholdSnapshotEntity
@@ -165,8 +166,8 @@ internal object MealPlannerDatabaseProvider {
                 // missing migration. Fail visibly instead of losing user data.
                 .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                 .build().also {
-                instance = it
-            }
+                    instance = it
+                }
         }
 
     internal val MIGRATION_1_2 = object : Migration(1, 2) {

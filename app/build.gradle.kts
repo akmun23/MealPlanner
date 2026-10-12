@@ -107,6 +107,12 @@ android {
     }
 }
 
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    compilerOptions {
+        allWarningsAsErrors.set(true)
+    }
+}
+
 room {
     schemaDirectory("$projectDir/schemas")
 }
@@ -165,11 +171,11 @@ dependencies {
     testImplementation(libs.robolectric)
 
     androidTestImplementation(platform(libs.androidx.compose.bom))
-    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.runner)
 
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(
         libs.androidx.compose.ui.tooling
     )

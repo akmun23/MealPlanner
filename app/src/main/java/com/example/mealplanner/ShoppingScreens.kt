@@ -140,8 +140,8 @@ fun ShoppingScreen(state: MealPlannerState) {
                 text = {
                     Text(
                         "Købet kan allerede være lagt på Lager fra en anden enhed. " +
-                            "Prøv igen, eller brug manuel registrering, hvis du er sikker på, " +
-                            "at varen endnu ikke er registreret."
+                                "Prøv igen, eller brug manuel registrering, hvis du er sikker på, " +
+                                "at varen endnu ikke er registreret."
                     )
                 },
                 confirmButton = {
@@ -161,7 +161,7 @@ fun ShoppingScreen(state: MealPlannerState) {
             )
         } else if (!state.isLocalMode && weekId != null && catalog != null && selection != null &&
             (catalog.productsFor(item.ingredient.id).isNotEmpty() ||
-                selection.default(item.ingredient.id) != null)
+                    selection.default(item.ingredient.id) != null)
         ) {
             BilkaPurchaseDialog(
                 weekId = weekId,
@@ -399,7 +399,7 @@ fun ShoppingScreen(state: MealPlannerState) {
                     items(
                         items = uncategorized,
                         key = { "missing-${it.ingredient.id}" },
-                            contentType = { "shopping-line" }
+                        contentType = { "shopping-line" }
                     ) { item ->
                         ShoppingItemCard(
                             item = item,
@@ -522,7 +522,7 @@ private fun ShoppingItemCard(
                         maxLines = 2,
                         overflow = TextOverflow.Ellipsis,
                         textDecoration = if (checked) TextDecoration.LineThrough
-                            else TextDecoration.None
+                        else TextDecoration.None
                     )
                     Text(
                         "Mangler ${state.formatBaseAmount(ingredient, missingBase)}",
@@ -531,7 +531,7 @@ private fun ShoppingItemCard(
                     )
                     Text(
                         "Behov ${state.formatBaseAmount(ingredient, item.requiredBase)} · " +
-                            "Lager ${state.formatBaseAmount(ingredient, item.pantryBase)}",
+                                "Lager ${state.formatBaseAmount(ingredient, item.pantryBase)}",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 2

@@ -20,10 +20,7 @@ enum class BilkaUnitPriceBasis {
     KG, L, PIECE, PACK
 }
 
-@Serializable
-enum class BilkaCandidateStatus {
-    SUGGESTED,
-}
+
 
 @Serializable
 enum class BilkaDiscoveryStatus {

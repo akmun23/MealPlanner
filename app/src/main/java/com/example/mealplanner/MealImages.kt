@@ -72,11 +72,11 @@ internal class SignedMealImageUrls private constructor(context: Context) {
                         .createSignedUrl(path, 24.hours)
                 }
                 preferences.edit {
-                        putString("url:$path", signed)
-                            .putLong(
-                                "expires:$path",
-                                now + 23L * 60L * 60L * 1000L
-                            )
+                    putString("url:$path", signed)
+                        .putLong(
+                            "expires:$path",
+                            now + 23L * 60L * 60L * 1000L
+                        )
                 }
                 signed
             } catch (cancelled: CancellationException) {
@@ -91,7 +91,7 @@ internal class SignedMealImageUrls private constructor(context: Context) {
 
     fun invalidate(path: String) {
         preferences.edit {
-                remove("url:$path")
+            remove("url:$path")
                 .remove("expires:$path")
         }
         locks.remove(path)

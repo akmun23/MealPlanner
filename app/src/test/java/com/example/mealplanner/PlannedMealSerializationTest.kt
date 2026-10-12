@@ -4,7 +4,6 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
-import kotlinx.serialization.json.parseToJsonElement
 import kotlinx.serialization.json.jsonObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -43,9 +42,11 @@ class PlannedMealSerializationTest {
     fun bothLockValuesRoundTrip() {
         for (locked in listOf(false, true)) {
             val expected = row(locked)
-            assertEquals(expected, json.decodeFromString<PlannedMealRow>(
-                json.encodeToString(expected)
-            ))
+            assertEquals(
+                expected, json.decodeFromString<PlannedMealRow>(
+                    json.encodeToString(expected)
+                )
+            )
         }
     }
 

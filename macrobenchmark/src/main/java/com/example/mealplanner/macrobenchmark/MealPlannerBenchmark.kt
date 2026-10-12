@@ -20,7 +20,8 @@ import org.junit.runner.RunWith
  */
 @RunWith(AndroidJUnit4::class)
 class MealPlannerBenchmark {
-    @get:Rule val rule = MacrobenchmarkRule()
+    @get:Rule
+    val rule = MacrobenchmarkRule()
 
     @Test
     fun coldStartup() = rule.measureRepeated(
