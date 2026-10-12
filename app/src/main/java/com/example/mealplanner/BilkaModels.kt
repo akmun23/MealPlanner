@@ -12,7 +12,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 enum class BilkaQuantityKind {
-    MASS, VOLUME,
+    MASS, VOLUME, COUNT, PACKAGE
 }
 
 @Serializable
