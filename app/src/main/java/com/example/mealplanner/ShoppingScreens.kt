@@ -624,6 +624,8 @@ private fun AddPurchasedToPantryDialog(
         )
     }
 
+    val purchasedBase = PurchaseDialogRules.validPurchasedAmount(amountText, unit)
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Til lager") },
@@ -645,8 +647,16 @@ private fun AddPurchasedToPantryDialog(
                     },
                     label = { Text("Købt mængde") },
                     modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
+                    singleLine = true,
+                    isError = purchasedBase == null
                 )
+                if (purchasedBase == null) {
+                    Text(
+                        "Angiv en positiv købt mængde (maks. 10.000.000 grundenheder).",
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                }
 
                 SimpleSelector(
                     label = unit.selectorLabel(),
@@ -668,21 +678,17 @@ private fun AddPurchasedToPantryDialog(
             }
         },
         confirmButton = {
-            val validAmount = parseDanishDecimal(amountText)
-                ?.takeIf {
-                    PurchaseDialogRules.validPurchasedAmount(amountText, unit) != null
-                }
             Button(
                 onClick = {
-                    val amount = validAmount ?: return@Button
+                    val amount = purchasedBase ?: return@Button
                     state.addPantryAmount(
                         ingredientId = ingredient.id,
-                        amount = amount,
+                        amount = unit.fromBase(amount),
                         unit = unit
                     )
                     onDismiss()
                 },
-                enabled = validAmount != null
+                enabled = purchasedBase != null
             ) {
                 Text("Tilføj")
             }
