@@ -888,6 +888,31 @@ class CloudMealRepository(
         )
     }
 
+    suspend fun completeMealWithLotsOnce(
+        eatenOn: LocalDate,
+        recipeId: String,
+        deductions: Map<String, Double>,
+        transactionId: String
+    ) = withContext(Dispatchers.IO) {
+        require(deductions.size <= 200 && deductions.values.all {
+            it.isFinite() && it > 0.0 && it <= 1e10
+        })
+        supabase.postgrest.rpc(
+            function = "complete_meal_with_lots_once",
+            parameters = buildJsonObject {
+                put("p_household_id", householdId)
+                put("p_eaten_on", eatenOn.toString())
+                put("p_recipe_id", recipeId)
+                put("p_event_id", transactionId)
+                put("p_deductions", buildJsonObject {
+                    deductions.forEach { (ingredientId, amount) ->
+                        put(ingredientId, amount)
+                    }
+                })
+            }
+        )
+    }
+
     suspend fun consumePantryLotsOnce(
         ingredientId: String, amountBase: Double, transactionId: String
     ) = withContext(Dispatchers.IO) {
