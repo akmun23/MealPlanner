@@ -322,6 +322,12 @@ internal sealed interface QueuedMutation {
     ) : QueuedMutation
 
     @Serializable
+    @SerialName("upsert_pantry_lot")
+    data class UpsertPantryLot(
+        val lot: PantryLot
+    ) : QueuedMutation
+
+    @Serializable
     @SerialName("set_pantry")
     data class SetPantry(
         val ingredientId: String,
@@ -432,6 +438,9 @@ internal fun QueuedMutation.key(): String = when (this) {
     is QueuedMutation.SetPantry ->
         "pantry:$ingredientId"
 
+    is QueuedMutation.UpsertPantryLot ->
+        "pantry-lot:${lot.id}"
+
     is QueuedMutation.SetWeekState ->
         "week:$weeklyPlanId"
 
@@ -467,6 +476,7 @@ internal fun QueuedMutation.priority(): Int = when (this) {
     is QueuedMutation.UpsertRecipe -> 30
 
     is QueuedMutation.SetPantry,
+    is QueuedMutation.UpsertPantryLot,
     is QueuedMutation.SetWeekState,
     is QueuedMutation.SetHouseholdSandwich,
     is QueuedMutation.SetDayPrep,
@@ -510,7 +520,8 @@ internal fun QueuedMutation.domains(): Set<CloudSyncDomain> = when (this) {
     is QueuedMutation.DeleteRecipeCategory ->
         setOf(CloudSyncDomain.RECIPES)
 
-    is QueuedMutation.SetPantry ->
+    is QueuedMutation.SetPantry,
+    is QueuedMutation.UpsertPantryLot ->
         setOf(CloudSyncDomain.PANTRY)
 
     is QueuedMutation.SetWeekState,
@@ -551,7 +562,8 @@ internal fun QueuedMutation.domainMask(): Int = when (this) {
     is QueuedMutation.DeleteRecipeCategory ->
         domainMask(CloudSyncDomain.RECIPES)
 
-    is QueuedMutation.SetPantry ->
+    is QueuedMutation.SetPantry,
+    is QueuedMutation.UpsertPantryLot ->
         domainMask(CloudSyncDomain.PANTRY)
 
     is QueuedMutation.SetWeekState,
@@ -989,6 +1001,10 @@ private suspend fun applyQueuedMutation(
                 eatenOn = java.time.LocalDate.parse(mutation.eatenOn),
                 recipeId = mutation.recipeId
             )
+        }
+
+        is QueuedMutation.UpsertPantryLot -> {
+            repository.upsertPantryLot(mutation.lot)
         }
 
         is QueuedMutation.SetPantry -> {
