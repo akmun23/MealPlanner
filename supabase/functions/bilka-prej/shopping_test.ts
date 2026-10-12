@@ -19,7 +19,9 @@ function backend(opts: { selected?: string; match?: string; kind?: string | null
     householdId,
     rpc: async (name: string, args: Record<string, unknown>): Promise<unknown> => {
       methods.push("RPC " + name);
-      if (name !== "bilka_record_purchase") throw new Error("unexpected RPC");
+      if (name !== "bilka_record_purchase" && name !== "bilka_record_purchase_v2") {
+        throw new Error("unexpected RPC");
+      }
       purchases.push(args);
       return args.p_purchased_amount_base;
     },
@@ -66,6 +68,27 @@ Deno.test("two full bags are recorded as two kilograms, not the 1.2kg shortage",
   equal(purchases[0].p_paid_total_ore, 3800);
   assertTrue(methods.every((m) => !m.startsWith("POST /rest/v1/ingredient_bilka_defaults")),
     "One-time shopping purchase must not change permanent default");
+});
+
+Deno.test("repeat purchases use a stable event key and v2 RPC", async () => {
+  const { shopping, methods, purchases } = backend();
+  const eventId = "25e0c5b7-a1d4-4890-9ba9-4311ef845aaa";
+  await recordPurchase(shopping, {
+    weekId, ingredientId, purchaseId: eventId,
+    productId: "42", packageCount: 1, amountBase: 1000,
+  });
+  equal(purchases[0].p_purchase_id, eventId);
+  assertTrue(methods.includes("RPC bilka_record_purchase_v2"),
+    "Versioned checkout needs the transaction-safe v2 RPC");
+
+  let result = "";
+  try {
+    await recordPurchase(shopping, {
+      weekId, ingredientId, purchaseId: "not-a-uuid",
+      productId: "42", packageCount: 1, amountBase: 1000,
+    });
+  } catch (e) { result = (e as CheckoutError).code; }
+  equal(result, "invalid_purchase_id");
 });
 
 Deno.test("one-off alternative candidate is accepted but permanent default unchanged", async () => {
@@ -147,6 +170,7 @@ Deno.test("UUID validation accepts the canonical five groups and rejects malform
 
 Deno.test("atomic purchase RPC is allowed, arbitrary service RPCs stay denied", () => {
   equal(ALLOWED_BILKA_RPCS.has("bilka_record_purchase"), true);
+  equal(ALLOWED_BILKA_RPCS.has("bilka_record_purchase_v2"), true);
   equal(ALLOWED_BILKA_RPCS.has("bilka_update_prices_only"), true);
   equal(ALLOWED_BILKA_RPCS.has("pg_read_file"), false);
 });
