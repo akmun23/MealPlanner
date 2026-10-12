@@ -269,6 +269,7 @@ internal fun PantryAmountDialog(
     val physicalUnit = MeasurementUnit.defaultFor(ingredient.quantityType)
     var newPackSizeText by remember(ingredient.id) { mutableStateOf("") }
     var newPackageCountText by remember(ingredient.id) { mutableStateOf("1") }
+    var newPackBestBefore by remember(ingredient.id) { mutableStateOf("") }
     var newPackOpened by remember(ingredient.id) { mutableStateOf(false) }
 
     var unit by remember(ingredient.id) {
@@ -418,6 +419,17 @@ internal fun PantryAmountDialog(
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true
                     )
+                    OutlinedTextField(
+                        value = newPackBestBefore,
+                        onValueChange = { value ->
+                            newPackBestBefore = value.filter {
+                                it.isDigit() || it == '-'
+                            }.take(10)
+                        },
+                        label = { Text("Bedst før (ÅÅÅÅ-MM-DD, valgfrit)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Allerede åbnet", modifier = Modifier.weight(1f))
                         Switch(checked = newPackOpened, onCheckedChange = {
@@ -426,11 +438,16 @@ internal fun PantryAmountDialog(
                     }
                     val packageBase = parseDanishDecimal(newPackSizeText)
                     val count = newPackageCountText.toIntOrNull()
+                    val dateValid = newPackBestBefore.isBlank() ||
+                        runCatching {
+                            java.time.LocalDate.parse(newPackBestBefore)
+                        }.isSuccess
                     Button(
                         onClick = {
                             if (packageBase != null && count != null &&
                                 state.addPantryPackages(
-                                    ingredient.id, count, packageBase, physicalUnit, newPackOpened
+                                    ingredient.id, count, packageBase, physicalUnit, newPackOpened,
+                                    newPackBestBefore.takeIf { it.isNotBlank() }
                                 )
                             ) {
                                 newPackSizeText = ""
@@ -438,7 +455,8 @@ internal fun PantryAmountDialog(
                             }
                         },
                         enabled = packageBase != null && packageBase.isFinite() &&
-                            packageBase > 0.0 && count != null && count in 1..100
+                            packageBase > 0.0 && count != null && count in 1..100 &&
+                            dateValid
                     ) { Text("Tilføj pakker") }
                 }
             }
