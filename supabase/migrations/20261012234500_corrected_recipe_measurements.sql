@@ -98,11 +98,11 @@ begin
     for profile in select value from jsonb_array_elements(p_profiles) loop
         unit_code := profile->>'unit_code';
         if unit_code not in ('PACK','CAN') then
-            select base_amount_per_unit into previous_factor
-            from public.ingredient_unit_conversions
-            where household_id = p_household_id
-              and ingredient_id = p_ingredient_id
-              and unit_code = profile->>'unit_code';
+            select c.base_amount_per_unit into previous_factor
+            from public.ingredient_unit_conversions c
+            where c.household_id = p_household_id
+              and c.ingredient_id = p_ingredient_id
+              and c.unit_code = profile->>'unit_code';
             if found then
                 factor := (profile->>'base_amount_per_unit')::numeric;
                 approximate := (profile->>'approximate')::boolean;
