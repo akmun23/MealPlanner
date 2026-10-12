@@ -2344,6 +2344,12 @@ class MealPlannerState(
         val existing = ingredients.firstOrNull {
             it.name.trim().equals(normalized, ignoreCase = true)
         }
+        if (existing?.neverBuy == true) {
+            // The server intentionally rejects purchase credit for neverBuy.
+            // Do not add a line that the user will be unable to record.
+            lastError = "Ingrediensen er markeret 'Køb aldrig'. Ret dette på ingrediensen først."
+            return false
+        }
         if (existing != null && shoppingItems().any {
                 it.ingredient.id == existing.id && isShoppingIncluded(existing.id)
             }
