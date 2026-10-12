@@ -9,6 +9,7 @@ import kotlinx.serialization.Serializable
  * GARLIC_CLOVE / GARLIC_HEAD deliberately have NO universal conversion:
  * one garlic head does not contain a fixed number of cloves.
  */
+@Serializable
 enum class QuantityUnit(val symbol: String, val nativeUnit: MeasurementUnit?) {
     GRAM("g", MeasurementUnit.GRAM),
     KILOGRAM("kg", MeasurementUnit.KILOGRAM),
