@@ -600,6 +600,7 @@ create table if not exists public.pantry_lot_mutation_receipts (
     lot_id uuid not null,
     expected_version bigint not null,
     resulting_version bigint not null,
+    payload_hash text not null,
     created_at timestamptz not null default now()
 );
 revoke all on public.pantry_lot_mutation_receipts from public,anon,authenticated;
