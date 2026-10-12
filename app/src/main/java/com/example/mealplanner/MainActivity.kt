@@ -270,9 +270,7 @@ fun MealPlannerApp(
     var bilkaSettingsReturnPage by remember { mutableStateOf<AppPage>(AppPage.Settings) }
     fun openBilkaSettings(from: AppPage) {
         bilkaSettingsReturnPage = from
-        scope.launch {
-            page = AppPage.BilkaApiSettings
-        }
+        page = AppPage.BilkaApiSettings
     }
 
     var showSyncConflictDialog by remember {
@@ -301,8 +299,7 @@ fun MealPlannerApp(
     }
 
     fun navigateBack() {
-        scope.launch {
-            page = when (val current = page) {
+        page = when (val current = page) {
                 AppPage.Settings -> null
                 AppPage.MealHistory -> null
                 AppPage.PlannerSettings -> AppPage.Settings
@@ -320,7 +317,6 @@ fun MealPlannerApp(
 
                 null -> null
             }
-        }
     }
 
     BackHandler(enabled = page != null) {
@@ -394,13 +390,13 @@ fun MealPlannerApp(
                 state = state,
                 onBack = { navigateBack() },
                 onRenameHousehold = onRenameHousehold,
-                onIngredientCategories = { scope.launch { page = AppPage.IngredientCategories } },
-                onRecipeCategories = { scope.launch { page = AppPage.RecipeCategories } },
-                onPlannerSettings = { scope.launch { page = AppPage.PlannerSettings } },
+                onIngredientCategories = { page = AppPage.IngredientCategories },
+                onRecipeCategories = { page = AppPage.RecipeCategories },
+                onPlannerSettings = { page = AppPage.PlannerSettings },
                 onBilkaApiSettings = { openBilkaSettings(AppPage.Settings) },
-                onBilkaProducts = { scope.launch { page = AppPage.BilkaProducts } },
-                onSyncStatus = { scope.launch { page = AppPage.SyncStatus } },
-                onDataBackup = { scope.launch { page = AppPage.DataBackup } },
+                onBilkaProducts = { page = AppPage.BilkaProducts },
+                onSyncStatus = { page = AppPage.SyncStatus },
+                onDataBackup = { page = AppPage.DataBackup },
                 themeMode = themeMode,
                 onThemeModeChange = onThemeModeChange,
                 onLogout = onLogout
@@ -488,9 +484,7 @@ fun MealPlannerApp(
                     topBar = {
                         AppHeader(
                             onSettings = {
-                                scope.launch {
-                                    page = AppPage.Settings
-                                }
+                                page = AppPage.Settings
                             }
                         )
                     },
