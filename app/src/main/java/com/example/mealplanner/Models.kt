@@ -186,7 +186,9 @@ data class DraftRequirement(
 data class ShoppingItem(
     val ingredient: Ingredient,
     val requiredBase: Double,
-    val pantryBase: Double
+    val pantryBase: Double,
+    /** Added to the shared list independently of recipes for this week. */
+    val manualOnly: Boolean = false
 )
 
 data class MealHistoryEntry(

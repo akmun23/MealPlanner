@@ -929,9 +929,16 @@ class MealPlannerState(
             sandwichDay = sandwichDay?.name
         )
 
+    private fun manuallyAddedShoppingIds(): Set<String> =
+        shoppingItems().asSequence()
+            .filter { it.manualOnly }
+            .map { it.ingredient.id }
+            .toSet()
+
     private fun persistWeek(
         clearChecks: Boolean = false,
-        updateHouseholdSandwich: Boolean = false
+        updateHouseholdSandwich: Boolean = false,
+        retainManualIds: Set<String> = emptySet()
     ) {
         val id = weeklyPlanId ?: return
 
@@ -950,6 +957,14 @@ class MealPlannerState(
                 shoppingChecked.clear()
                 shoppingIncluded.clear()
                 add(QueuedMutation.ClearShopping(id))
+                // Regenerating meals clears only recipe-derived shopping
+                // selections; explicitly added household items remain.
+                retainManualIds.forEach { ingredientId ->
+                    if (ingredients.any { it.id == ingredientId }) {
+                        shoppingIncluded[ingredientId] = true
+                        add(QueuedMutation.SetShoppingIncluded(id, ingredientId, true))
+                    }
+                }
             }
         }
 
@@ -1016,6 +1031,43 @@ class MealPlannerState(
             lockedDays.add(day)
         }
         persistWeek()
+    }
+
+
+    /** A meal may be moved only while both calendar dates are editable. */
+    fun canMoveDinner(source: DayOfWeek, destination: DayOfWeek): Boolean =
+        !isWeekChanging && !isPlanning && weeklyPlanId != null &&
+            WeekMealMoveRules.allowed(
+                source = source,
+                destination = destination,
+                plan = plan,
+                dayModes = dayModes,
+                lockedDays = orderedWeekDays.filterTo(mutableSetOf()) { isDayLocked(it) },
+                sandwichDay = sandwichDay,
+                sandwichRecipeId = weeklySandwichRecipeId
+            )
+
+    /**
+     * Swap two day assignments without changing selected recipes or shopping
+     * totals. Persist both days in a single week-state mutation for partners.
+     */
+    fun moveDinner(source: DayOfWeek, destination: DayOfWeek): Boolean {
+        if (!canMoveDinner(source, destination)) {
+            lastError = "Vælg to dage, som ikke er låst, spist eller markeret som ude."
+            return false
+        }
+        val swapped = WeekMealMoveRules.swappedPlan(source, destination, plan)
+        val newSandwichDay = WeekMealMoveRules.movedSandwichDay(
+            source, destination, sandwichDay
+        )
+        Snapshot.withMutableSnapshot {
+            plan[source] = swapped[source]
+            plan[destination] = swapped[destination]
+            sandwichDay = newSandwichDay
+        }
+        // Shopping selections stay intact: all seven dinner quantities are unchanged.
+        persistWeek()
+        return true
     }
 
     fun setRecipeForDay(day: DayOfWeek, recipeId: String?) {
@@ -1504,6 +1556,7 @@ class MealPlannerState(
             sourceUrl = sourceUrl
         ) ?: return false
 
+        val retainedManual = manuallyAddedShoppingIds()
         recipes[index] = updated
 
         var weekChanged = false
@@ -1531,6 +1584,8 @@ class MealPlannerState(
         if (weekChanged) {
             shoppingChecked.clear()
             shoppingIncluded.clear()
+            retainedManual.filter { id -> ingredients.any { it.id == id } }
+                .forEach { shoppingIncluded[it] = true }
         }
 
         val mutations = buildList {
@@ -1554,6 +1609,9 @@ class MealPlannerState(
                 )
                 add(weekStateMutation(currentPlanId))
                 add(QueuedMutation.ClearShopping(currentPlanId))
+                shoppingIncluded.filterValues { it }.keys.forEach { ingredientId ->
+                    add(QueuedMutation.SetShoppingIncluded(currentPlanId, ingredientId, true))
+                }
             }
         }
 
@@ -1649,6 +1707,7 @@ class MealPlannerState(
 
     fun deleteRecipe(recipeId: String) {
         val recipe = recipes.find { it.id == recipeId } ?: return
+        val retainedManual = manuallyAddedShoppingIds()
 
         recipes.removeAll { it.id == recipeId }
         selectedLunchRecipeIds.remove(recipeId)
@@ -1663,6 +1722,8 @@ class MealPlannerState(
 
         shoppingChecked.clear()
         shoppingIncluded.clear()
+        retainedManual.filter { id -> ingredients.any { it.id == id } }
+            .forEach { shoppingIncluded[it] = true }
 
         val mutations = buildList {
             val planId = weeklyPlanId
@@ -1680,6 +1741,9 @@ class MealPlannerState(
                 )
                 add(weekStateMutation(planId))
                 add(QueuedMutation.ClearShopping(planId))
+                shoppingIncluded.filterValues { it }.keys.forEach { ingredientId ->
+                    add(QueuedMutation.SetShoppingIncluded(planId, ingredientId, true))
+                }
             }
 
             add(
@@ -1701,12 +1765,10 @@ class MealPlannerState(
         }
         if (weeklySandwichRecipeId == null && sandwichDay == null) return
 
+        val retainedManual = manuallyAddedShoppingIds()
         weeklySandwichRecipeId = null
         sandwichDay = null
-        shoppingChecked.clear()
-        shoppingIncluded.clear()
-
-        persistWeek(clearChecks = true)
+        persistWeek(clearChecks = true, retainManualIds = retainedManual)
     }
 
     fun setWeeklySandwichRecipe(recipeId: String) {
@@ -1726,14 +1788,13 @@ class MealPlannerState(
             return
         }
 
+        val retainedManual = manuallyAddedShoppingIds()
         weeklySandwichRecipeId = recipeId
         sandwichDay = targetDay
-
-        shoppingChecked.clear()
-        shoppingIncluded.clear()
         persistWeek(
             clearChecks = true,
-            updateHouseholdSandwich = true
+            updateHouseholdSandwich = true,
+            retainManualIds = retainedManual
         )
     }
 
@@ -1757,6 +1818,7 @@ class MealPlannerState(
             return
         }
 
+        val retainedManual = manuallyAddedShoppingIds()
         syncMap(
             target = dayModes,
             incoming = result.modes
@@ -1767,9 +1829,7 @@ class MealPlannerState(
             lockedDays.remove(day)
         }
 
-        shoppingChecked.clear()
-        shoppingIncluded.clear()
-        persistWeek(clearChecks = true)
+        persistWeek(clearChecks = true, retainManualIds = retainedManual)
     }
 
     fun setDayMaxPrepMinutes(
@@ -2014,6 +2074,7 @@ class MealPlannerState(
         val sandwichRecipe = weeklySandwichRecipeId
         val currentSandwichDay = sandwichDay
         val weekStartSnapshot = displayedWeekStart
+        val retainedManual = manuallyAddedShoppingIds()
 
         isPlanning = true
         scope.launch {
@@ -2037,10 +2098,7 @@ class MealPlannerState(
 
                 plan.putAll(result.plan)
                 sandwichDay = result.sandwichDay
-                shoppingChecked.clear()
-                shoppingIncluded.clear()
-
-                persistWeek(clearChecks = true)
+                persistWeek(clearChecks = true, retainManualIds = retainedManual)
             } catch (_: Exception) {
                 lastError =
                     "Madplanen kunne ikke opdateres. Prøv igen."
@@ -2075,6 +2133,7 @@ class MealPlannerState(
             .filter { it.isProtein }
             .map { it.id }
             .toSet()
+        val retainedManual = manuallyAddedShoppingIds()
 
         isPlanning = true
         scope.launch {
@@ -2098,9 +2157,7 @@ class MealPlannerState(
 
                 if (isWeekRegenerationLocked() || isCompletedDayLocked(day)) return@launch
                 plan.putAll(updated)
-                shoppingChecked.clear()
-                shoppingIncluded.clear()
-                persistWeek(clearChecks = true)
+                persistWeek(clearChecks = true, retainManualIds = retainedManual)
             } catch (_: Exception) {
                 lastError =
                     "Retten kunne ikke skiftes. Prøv igen."
@@ -2124,11 +2181,9 @@ class MealPlannerState(
             return
         }
 
+        val retainedManual = manuallyAddedShoppingIds()
         sandwichDay = nextDay
-
-        shoppingChecked.clear()
-        shoppingIncluded.clear()
-        persistWeek(clearChecks = true)
+        persistWeek(clearChecks = true, retainManualIds = retainedManual)
     }
 
     fun sandwichDay(): DayOfWeek? = sandwichDay
@@ -2193,7 +2248,7 @@ class MealPlannerState(
         val ingredientsById = ingredients.associateBy { it.id }
         val categoriesById = ingredientCategories.associateBy { it.id }
 
-        return totals.mapNotNull { (ingredientId, requiredBase) ->
+        val plannedItems = totals.mapNotNull { (ingredientId, requiredBase) ->
             val ingredient = ingredientsById[ingredientId]
                 ?: return@mapNotNull null
             if (!ShoppingIngredientRules.isAutomaticallyPurchased(ingredient)) return@mapNotNull null
@@ -2203,7 +2258,17 @@ class MealPlannerState(
                 requiredBase = requiredBase,
                 pantryBase = pantry[ingredientId] ?: 0.0
             )
-        }.sortedWith(
+        }
+        // Existing shopping_inclusions already syncs across household members.
+        // Explicitly included ingredient IDs that are not needed by recipes
+        // appear as independent shopping-list rows (one row per ingredient).
+        val manualItems = ManualShoppingRules.additionalItems(
+            planned = plannedItems,
+            ingredients = ingredients,
+            pantry = pantry,
+            inclusion = shoppingIncluded
+        )
+        return (plannedItems + manualItems).sortedWith(
             compareBy(
                 {
                     categoriesById[it.ingredient.shoppingCategoryId]
@@ -2229,46 +2294,89 @@ class MealPlannerState(
         }
     }
 
+    private fun persistLunchChange(retainedManual: Set<String>) {
+        val planId = weeklyPlanId ?: return
+        shoppingChecked.clear()
+        shoppingIncluded.clear()
+        retainedManual.forEach { id ->
+            if (ingredients.any { it.id == id }) shoppingIncluded[id] = true
+        }
+        enqueueMutations(buildList {
+            add(QueuedMutation.ReplaceLunch(planId, selectedLunchRecipeIds.toList()))
+            add(QueuedMutation.ClearShopping(planId))
+            shoppingIncluded.filterValues { it }.keys.forEach { id ->
+                add(QueuedMutation.SetShoppingIncluded(planId, id, true))
+            }
+        })
+    }
+
     fun addLunchRecipe(recipeId: String) {
         if (!canEditWeek()) return
         val recipe = recipes.find {
             it.id == recipeId && it.mealType == MealType.LUNCH
         } ?: return
-
         if (recipe.id in selectedLunchRecipeIds) return
 
+        val retainedManual = manuallyAddedShoppingIds()
         selectedLunchRecipeIds += recipe.id
-        shoppingChecked.clear()
-        shoppingIncluded.clear()
-
-        val planId = weeklyPlanId ?: return
-        enqueueMutations(
-            listOf(
-                QueuedMutation.ReplaceLunch(
-                    weeklyPlanId = planId,
-                    recipeIds = selectedLunchRecipeIds.toList()
-                ),
-                QueuedMutation.ClearShopping(planId)
-            )
-        )
+        persistLunchChange(retainedManual)
     }
 
     fun removeLunchRecipe(recipeId: String) {
-        if (!canEditWeek()) return
-        if (!selectedLunchRecipeIds.remove(recipeId)) return
+        if (!canEditWeek() || recipeId !in selectedLunchRecipeIds) return
+        val retainedManual = manuallyAddedShoppingIds()
+        selectedLunchRecipeIds.remove(recipeId)
+        persistLunchChange(retainedManual)
+    }
 
-        shoppingChecked.clear()
-        shoppingIncluded.clear()
-        val planId = weeklyPlanId ?: return
+    /**
+     * Adds a recipe-independent line to the current household week's list.
+     * Reuses an existing ingredient (case-insensitive) or creates it and
+     * enqueues the ingredient before the shopping inclusion mutation.
+     */
+    fun addShoppingIngredient(name: String, type: QuantityType): Boolean {
+        if (!canEditWeek()) return false
+        val normalized = name.normalizedDisplayName()
+        if (normalized.isBlank()) {
+            lastError = "Skriv navnet på den vare, der mangler."
+            return false
+        }
+        val existing = ingredients.firstOrNull {
+            it.name.trim().equals(normalized, ignoreCase = true)
+        }
+        if (existing?.neverBuy == true) {
+            // The server intentionally rejects purchase credit for neverBuy.
+            // Do not add a line that the user will be unable to record.
+            lastError = "Ingrediensen er markeret 'Køb aldrig'. Ret dette på ingrediensen først."
+            return false
+        }
+        if (existing != null && shoppingItems().any {
+                it.ingredient.id == existing.id && isShoppingIncluded(existing.id)
+            }
+        ) {
+            lastError = "${existing.name} står allerede på indkøbslisten."
+            return false
+        }
+        val ingredient = existing ?: Ingredient(
+            id = UUID.randomUUID().toString(),
+            name = normalized,
+            quantityType = type,
+            preferredUnit = MeasurementUnit.defaultFor(type)
+        ).also { ingredients.add(it) }
+
+        shoppingIncluded[ingredient.id] = true
+        shoppingChecked[ingredient.id] = false
+        val id = weeklyPlanId ?: return false
+        // One durable outbox batch guarantees that a newly created ingredient
+        // is synced before its shopping inclusion's foreign key is referenced.
         enqueueMutations(
-            listOf(
-                QueuedMutation.ReplaceLunch(
-                    weeklyPlanId = planId,
-                    recipeIds = selectedLunchRecipeIds.toList()
-                ),
-                QueuedMutation.ClearShopping(planId)
-            )
+            buildList {
+                if (existing == null) add(QueuedMutation.UpsertIngredient(ingredient))
+                add(QueuedMutation.SetShoppingIncluded(id, ingredient.id, true))
+                add(QueuedMutation.SetShoppingChecked(id, ingredient.id, false))
+            }
         )
+        return true
     }
 
     fun isShoppingIncluded(ingredientId: String): Boolean =
