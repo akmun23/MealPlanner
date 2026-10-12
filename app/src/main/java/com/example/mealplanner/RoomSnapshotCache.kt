@@ -329,7 +329,8 @@ private data class CachedRecipeIngredient(
     val amountBase: Double,
     val displayAmount: Double? = null,
     val displayUnitCode: String? = null,
-    val basePerDisplayUnit: Double? = null
+    val basePerDisplayUnit: Double? = null,
+    val conversionApproximate: Boolean = false
 )
 
 @Serializable
@@ -475,7 +476,8 @@ internal object RoomSnapshotCodec {
                         amountBase = it.amountBase,
                         displayAmount = it.displayAmount,
                         displayUnitCode = it.displayUnitCode,
-                        basePerDisplayUnit = it.basePerDisplayUnit
+                        basePerDisplayUnit = it.basePerDisplayUnit,
+                        conversionApproximate = it.conversionApproximate
                     )
                 },
                 pantryPrerequisites = recipe.pantryPrerequisites.map {
@@ -558,7 +560,8 @@ internal object RoomSnapshotCodec {
                             amountBase = it.amountBase,
                             displayAmount = it.displayAmount,
                             displayUnitCode = it.displayUnitCode,
-                            basePerDisplayUnit = it.basePerDisplayUnit
+                            basePerDisplayUnit = it.basePerDisplayUnit,
+                            conversionApproximate = it.conversionApproximate
                         )
                     },
                     pantryPrerequisites =
