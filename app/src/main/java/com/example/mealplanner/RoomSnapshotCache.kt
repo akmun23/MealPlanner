@@ -326,7 +326,10 @@ private data class CachedCategory(
 @Serializable
 private data class CachedRecipeIngredient(
     val ingredientId: String,
-    val amountBase: Double
+    val amountBase: Double,
+    val displayAmount: Double? = null,
+    val displayUnitCode: String? = null,
+    val basePerDisplayUnit: Double? = null
 )
 
 @Serializable
@@ -469,7 +472,10 @@ internal object RoomSnapshotCodec {
                 ingredients = recipe.ingredients.map {
                     CachedRecipeIngredient(
                         ingredientId = it.ingredientId,
-                        amountBase = it.amountBase
+                        amountBase = it.amountBase,
+                        displayAmount = it.displayAmount,
+                        displayUnitCode = it.displayUnitCode,
+                        basePerDisplayUnit = it.basePerDisplayUnit
                     )
                 },
                 pantryPrerequisites = recipe.pantryPrerequisites.map {
@@ -549,7 +555,10 @@ internal object RoomSnapshotCodec {
                     ingredients = recipe.ingredients.map {
                         RecipeIngredient(
                             ingredientId = it.ingredientId,
-                            amountBase = it.amountBase
+                            amountBase = it.amountBase,
+                            displayAmount = it.displayAmount,
+                            displayUnitCode = it.displayUnitCode,
+                            basePerDisplayUnit = it.basePerDisplayUnit
                         )
                     },
                     pantryPrerequisites =
