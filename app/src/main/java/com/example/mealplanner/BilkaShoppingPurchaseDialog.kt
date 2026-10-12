@@ -58,7 +58,7 @@ internal fun confirmedProfilePurchaseHint(item: ShoppingItem): String? {
     if (plan.packageCount == 0) return "Pakkeplan: nok på Lager"
     return "Pakkeplan: ${plan.packageCount} × ${formatDisplayNumber(plan.basePerPackage)} " +
         ingredient.quantityType.baseMeasurementUnit().symbol +
-        if (plan.conversionApproximate) " (anslået)" else "" +
+        (if (plan.conversionApproximate) " (anslået)" else "") +
         " · forventet overskud ${formatDisplayNumber(plan.surplusBase)} " +
         ingredient.quantityType.baseMeasurementUnit().symbol
 }
