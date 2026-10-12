@@ -929,9 +929,16 @@ class MealPlannerState(
             sandwichDay = sandwichDay?.name
         )
 
+    private fun manuallyAddedShoppingIds(): Set<String> =
+        shoppingItems().asSequence()
+            .filter { it.manualOnly }
+            .map { it.ingredient.id }
+            .toSet()
+
     private fun persistWeek(
         clearChecks: Boolean = false,
-        updateHouseholdSandwich: Boolean = false
+        updateHouseholdSandwich: Boolean = false,
+        retainManualIds: Set<String> = emptySet()
     ) {
         val id = weeklyPlanId ?: return
 
@@ -950,6 +957,14 @@ class MealPlannerState(
                 shoppingChecked.clear()
                 shoppingIncluded.clear()
                 add(QueuedMutation.ClearShopping(id))
+                // Regenerating meals clears only recipe-derived shopping
+                // selections; explicitly added household items remain.
+                retainManualIds.forEach { ingredientId ->
+                    if (ingredients.any { it.id == ingredientId }) {
+                        shoppingIncluded[ingredientId] = true
+                        add(QueuedMutation.SetShoppingIncluded(id, ingredientId, true))
+                    }
+                }
             }
         }
 
@@ -1738,12 +1753,10 @@ class MealPlannerState(
         }
         if (weeklySandwichRecipeId == null && sandwichDay == null) return
 
+        val retainedManual = manuallyAddedShoppingIds()
         weeklySandwichRecipeId = null
         sandwichDay = null
-        shoppingChecked.clear()
-        shoppingIncluded.clear()
-
-        persistWeek(clearChecks = true)
+        persistWeek(clearChecks = true, retainManualIds = retainedManual)
     }
 
     fun setWeeklySandwichRecipe(recipeId: String) {
@@ -1763,14 +1776,13 @@ class MealPlannerState(
             return
         }
 
+        val retainedManual = manuallyAddedShoppingIds()
         weeklySandwichRecipeId = recipeId
         sandwichDay = targetDay
-
-        shoppingChecked.clear()
-        shoppingIncluded.clear()
         persistWeek(
             clearChecks = true,
-            updateHouseholdSandwich = true
+            updateHouseholdSandwich = true,
+            retainManualIds = retainedManual
         )
     }
 
@@ -1794,6 +1806,7 @@ class MealPlannerState(
             return
         }
 
+        val retainedManual = manuallyAddedShoppingIds()
         syncMap(
             target = dayModes,
             incoming = result.modes
@@ -1804,9 +1817,7 @@ class MealPlannerState(
             lockedDays.remove(day)
         }
 
-        shoppingChecked.clear()
-        shoppingIncluded.clear()
-        persistWeek(clearChecks = true)
+        persistWeek(clearChecks = true, retainManualIds = retainedManual)
     }
 
     fun setDayMaxPrepMinutes(
@@ -2051,6 +2062,7 @@ class MealPlannerState(
         val sandwichRecipe = weeklySandwichRecipeId
         val currentSandwichDay = sandwichDay
         val weekStartSnapshot = displayedWeekStart
+        val retainedManual = manuallyAddedShoppingIds()
 
         isPlanning = true
         scope.launch {
@@ -2074,10 +2086,7 @@ class MealPlannerState(
 
                 plan.putAll(result.plan)
                 sandwichDay = result.sandwichDay
-                shoppingChecked.clear()
-                shoppingIncluded.clear()
-
-                persistWeek(clearChecks = true)
+                persistWeek(clearChecks = true, retainManualIds = retainedManual)
             } catch (_: Exception) {
                 lastError =
                     "Madplanen kunne ikke opdateres. Prøv igen."
@@ -2112,6 +2121,7 @@ class MealPlannerState(
             .filter { it.isProtein }
             .map { it.id }
             .toSet()
+        val retainedManual = manuallyAddedShoppingIds()
 
         isPlanning = true
         scope.launch {
@@ -2135,9 +2145,7 @@ class MealPlannerState(
 
                 if (isWeekRegenerationLocked() || isCompletedDayLocked(day)) return@launch
                 plan.putAll(updated)
-                shoppingChecked.clear()
-                shoppingIncluded.clear()
-                persistWeek(clearChecks = true)
+                persistWeek(clearChecks = true, retainManualIds = retainedManual)
             } catch (_: Exception) {
                 lastError =
                     "Retten kunne ikke skiftes. Prøv igen."
@@ -2161,11 +2169,9 @@ class MealPlannerState(
             return
         }
 
+        val retainedManual = manuallyAddedShoppingIds()
         sandwichDay = nextDay
-
-        shoppingChecked.clear()
-        shoppingIncluded.clear()
-        persistWeek(clearChecks = true)
+        persistWeek(clearChecks = true, retainManualIds = retainedManual)
     }
 
     fun sandwichDay(): DayOfWeek? = sandwichDay
