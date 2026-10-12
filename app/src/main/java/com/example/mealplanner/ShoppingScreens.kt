@@ -101,11 +101,10 @@ fun ShoppingScreen(state: MealPlannerState) {
         // information. A failing catalogue request must not also erase the
         // shopping context (including already registered purchases), or vice
         // versa. Purchases are still guarded whenever either fetch fails.
-        val catalogParsed = catalog.mapCatching(::parseBilkaCatalog)
-        val weeklyParsed = weekly.mapCatching(::decodeBilkaShoppingContext)
-        catalogParsed.getOrNull()?.let { bilkaCatalog = it }
-        weeklyParsed.getOrNull()?.let { bilkaContext = it }
-        bilkaLoadError = catalogParsed.isFailure || weeklyParsed.isFailure
+        val result = decodeBilkaShoppingLoad(catalog, weekly)
+        result.catalog?.let { bilkaCatalog = it }
+        result.context?.let { bilkaContext = it }
+        bilkaLoadError = result.hasError
         bilkaLoading = false
     }
 
