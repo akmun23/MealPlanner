@@ -268,6 +268,12 @@ begin
           and ingredient_id = new.ingredient_id;
     delta := new.amount_base - total;
     if delta = 0 then return new; end if;
+    -- Older clients edit only the aggregate. Debit real packages in the
+    -- same deterministic way as a modern client; never allow negative lots.
+    if delta < 0 then
+        perform public.consume_pantry_lots(new.household_id,new.ingredient_id,-delta);
+        return new;
+    end if;
     select * into legacy from public.pantry_lots
         where household_id = new.household_id
           and ingredient_id = new.ingredient_id and legacy_unknown
