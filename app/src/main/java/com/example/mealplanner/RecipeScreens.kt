@@ -97,6 +97,30 @@ private val recipeDraftSaver = listSaver<SnapshotStateList<DraftRequirement>, St
     }
 )
 
+private val conversionProfileSaver =
+    listSaver<SnapshotStateList<IngredientUnitConversion>, String>(
+        save = { profiles ->
+            profiles.flatMap { listOf(
+                it.unit.name, it.baseAmountPerUnit.toString(),
+                it.approximate.toString(), it.source, it.revision.toString()
+            ) }
+        },
+        restore = { stored ->
+            mutableStateListOf<IngredientUnitConversion>().apply {
+                stored.chunked(5).filter { it.size == 5 }.forEach { part ->
+                    val unit = QuantityUnit.entries.firstOrNull { it.name == part[0] }
+                    val factor = part[1].toDoubleOrNull()
+                    if (unit != null && factor != null && factor.isFinite() && factor > 0.0) {
+                        add(IngredientUnitConversion(
+                            unit, factor, part[2].toBooleanStrictOrNull() ?: false,
+                            part[3], part[4].toLongOrNull() ?: 1L
+                        ))
+                    }
+                }
+            }
+        }
+    )
+
 @Composable
 fun RecipesScreen(
     state: MealPlannerState,
@@ -1727,6 +1751,15 @@ internal fun IngredientEditorScreen(
         mutableStateOf(existing?.neverBuy ?: false)
     }
 
+    val conversionProfiles = rememberSaveable(ingredientId, saver = conversionProfileSaver) {
+        mutableStateListOf<IngredientUnitConversion>().apply {
+            addAll(existing?.unitConversions.orEmpty())
+        }
+    }
+    var conversionUnit by rememberSaveable(ingredientId) { mutableStateOf(QuantityUnit.PACK) }
+    var conversionFactorText by rememberSaveable(ingredientId) { mutableStateOf("") }
+    var conversionEstimated by rememberSaveable(ingredientId) { mutableStateOf(false) }
+
     var shoppingCategoryId by rememberSaveable(ingredientId) {
         mutableStateOf(
             existing?.shoppingCategoryId
@@ -1754,7 +1787,8 @@ internal fun IngredientEditorScreen(
     val typeChangeAllowed = existing == null ||
             state.canChangeIngredientQuantityType(existing.id, type)
     val originalForm = remember(ingredientId) {
-        listOf(name, type, preferredUnit, isProtein, neverBuy, shoppingCategoryId, imageUri)
+        listOf(name, type, preferredUnit, isProtein, neverBuy, shoppingCategoryId, imageUri,
+            conversionProfiles.toList(), conversionUnit, conversionFactorText, conversionEstimated)
     }
     var changesSeen by rememberSaveable(ingredientId) { mutableStateOf(false) }
     val hasUnsavedChanges = changesSeen ||
@@ -1765,7 +1799,8 @@ internal fun IngredientEditorScreen(
                 isProtein,
                 neverBuy,
                 shoppingCategoryId,
-                imageUri
+                imageUri,
+                conversionProfiles.toList(), conversionUnit, conversionFactorText, conversionEstimated
             ) != originalForm
     androidx.compose.runtime.LaunchedEffect(hasUnsavedChanges) {
         if (hasUnsavedChanges) changesSeen = true
@@ -1861,7 +1896,8 @@ internal fun IngredientEditorScreen(
                                     isProtein = isProtein,
                                     neverBuy = neverBuy,
                                     imageUri = imageUri,
-                                    preferredUnit = preferredUnit
+                                    preferredUnit = preferredUnit,
+                                    unitConversions = conversionProfiles.toList()
                                 )
                             } else {
                                 state.updateIngredient(
@@ -1872,7 +1908,8 @@ internal fun IngredientEditorScreen(
                                     isProtein = isProtein,
                                     neverBuy = neverBuy,
                                     preferredUnit = preferredUnit,
-                                    imageUri = imageUri
+                                    imageUri = imageUri,
+                                    unitConversions = conversionProfiles.toList()
                                 )
                             }
 
@@ -1937,6 +1974,7 @@ internal fun IngredientEditorScreen(
                     onSelected = {
                         type = it
                         preferredUnit = MeasurementUnit.defaultFor(it)
+                        conversionProfiles.clear()
                     }
                 )
                 if (!typeChangeAllowed) {
@@ -2000,6 +2038,94 @@ internal fun IngredientEditorScreen(
                     label = { it.selectorLabel() },
                     onSelected = { preferredUnit = it }
                 )
+            }
+
+            item {
+                Text(
+                    "Omregning for denne ingrediens",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    "Angiv selv hvor mange ${MeasurementUnit.defaultFor(type).selectorLabel()} " +
+                        "der er i én pakke, dåse, spsk. eller anden valgt enhed. " +
+                        "Appen gætter aldrig på vægt eller antal.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall
+                )
+                if (type == QuantityType.PACKAGE) {
+                    Text(
+                        "Gamle pakke-mængder skal først migreres med bekræftet fysisk størrelse.",
+                        color = MaterialTheme.colorScheme.error
+                    )
+                } else {
+                    conversionProfiles.forEach { profile ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "${profile.unit.labelFor(1.0)} = " +
+                                    "${formatDisplayNumber(profile.baseAmountPerUnit)} " +
+                                    "${MeasurementUnit.defaultFor(type).symbol}" +
+                                    if (profile.approximate) " (anslået)" else "",
+                                modifier = Modifier.weight(1f)
+                            )
+                            TextButton(onClick = {
+                                conversionProfiles.remove(profile)
+                            }) { Text("Fjern") }
+                        }
+                    }
+                    val options = QuantityUnit.entries.filter { unit ->
+                        unit.nativeUnit?.quantityType != type &&
+                            conversionProfiles.none { it.unit == unit }
+                    }
+                    if (options.isNotEmpty()) {
+                        val candidate = if (conversionUnit in options) conversionUnit else options.first()
+                        SimpleSelector(
+                            label = candidate.labelFor(1.0),
+                            options = options,
+                            optionText = { it.labelFor(1.0) },
+                            onSelected = { conversionUnit = it }
+                        )
+                        OutlinedTextField(
+                            value = conversionFactorText,
+                            onValueChange = { conversionFactorText = it.filter { char ->
+                                char.isDigit() || char == ',' || char == '.'
+                            } },
+                            label = { Text("Fysisk mængde pr. enhed (${MeasurementUnit.defaultFor(type).symbol})") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text("Anslået omregning", modifier = Modifier.weight(1f))
+                            Switch(checked = conversionEstimated, onCheckedChange = {
+                                conversionEstimated = it
+                            })
+                        }
+                        val factor = parseDanishDecimal(conversionFactorText)
+                        Button(
+                            onClick = {
+                                if (factor != null && factor.isFinite() &&
+                                    factor > 0.0 && factor <= 1e9
+                                ) {
+                                    conversionProfiles += IngredientUnitConversion(
+                                        unit = candidate,
+                                        baseAmountPerUnit = factor,
+                                        approximate = conversionEstimated,
+                                        source = "household-confirmed"
+                                    )
+                                    conversionFactorText = ""
+                                }
+                            },
+                            enabled = factor != null && factor.isFinite() &&
+                                factor > 0.0 && factor <= 1e9
+                        ) { Text("Tilføj bekræftet omregning") }
+                    }
+                }
             }
 
             item {
