@@ -128,7 +128,13 @@ internal fun canChangeIngredientQuantityType(
 @Serializable
 data class RecipeIngredient(
     val ingredientId: String,
-    val amountBase: Double
+    /** Physical requirement in this ingredient's stored base dimension. */
+    val amountBase: Double,
+    /** User-authored recipe display, frozen at save time. Null for legacy rows. */
+    val displayAmount: Double? = null,
+    val displayUnitCode: String? = null,
+    /** Snapshot, NOT a live lookup of the current product packaging. */
+    val basePerDisplayUnit: Double? = null
 )
 
 /** An ordered recipe instruction: level 0 is a numbered main step, level 1 a lettered substep. */
