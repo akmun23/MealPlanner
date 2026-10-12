@@ -634,7 +634,8 @@ begin
  select * into previous from public.pantry_lot_mutation_receipts where event_id=p_event_id;
  if found then
     if previous.household_id <> p_household_id or previous.lot_id <> p_lot_id
-       or previous.expected_version <> p_expected_version then
+       or previous.expected_version <> p_expected_version
+       or previous.payload_hash <> content_hash then
         raise exception 'lot mutation token reused';
     end if;
     return previous.resulting_version;
