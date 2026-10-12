@@ -331,6 +331,7 @@ internal fun syncDomainForTable(table: String): CloudSyncDomain? =
     when (table) {
         "ingredients",
         "ingredient_protein_flags", "ingredient_unit_conversions",
+        "ingredient_conversion_versions",
         "shopping_categories" -> CloudSyncDomain.INGREDIENTS
 
         "recipe_categories",
@@ -1512,6 +1513,7 @@ class CloudMealRepository(
             "ingredients",
             "ingredient_protein_flags",
             "ingredient_unit_conversions",
+            "ingredient_conversion_versions",
             "shopping_categories",
             "recipe_categories",
             "recipe_category_assignments",
