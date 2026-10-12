@@ -4,5 +4,5 @@
 # For more details, see
 #   https://d.android.com/r/tools/r8/keep-rules
 
--keep class androidx.compose.material.icons.filled.** { *; }
--keep class androidx.compose.material.icons.automirrored.** { *; }
+# No blanket Compose icon keep rules: they hide R8 regressions and increase APK size.
+# Add only narrowly scoped, evidence-based rules here if a verified release crash requires it.
