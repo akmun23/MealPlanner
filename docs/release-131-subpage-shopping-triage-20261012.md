@@ -18,7 +18,7 @@
 
 - Vælg kun et kompatibelt produkt-ID, som faktisk findes i kataloget, ellers manuel registrering, der tydeligt viser navnefeltet.
 - Foreslå ingrediensnavnet i manuelt navngivne køb og forklar eksplicit, hvilke felter der blokerer Gem.
-- Registrér også køb uden katalogforslag via serverens **atomare RPC**, når Bilka-katalog og shopping-context er indlæst. Køb der allerede er registreret for ugen kan ikke krediteres igen via samme RPC.
+- Registrér **alle cloud-køb** via serverens atomare RPC, også ved tomt/fejlet katalog eller shopping-context efter brugerens eksplicitte manuelle bekræftelse. Serveren afviser dobbelte køb for samme ingrediens og uge; manglende netværk må ikke udløse en usikker lokal lagerkreditering. Lokal-only tilstand bevarer direkte lagerregistrering.
 - Brug positiv mængde i den valgte enhed og validér mængden **efter** konvertering til grundenhed; forklar ugyldige værdier.
 - Sørg for, at indlæsningsindikatoren nulstilles efter forventede såvel som uventede fejl, men lad coroutine-cancellation gå videre.
 - Afgrænset UI-workaround: alle undermenuer deler nu en simpel Compose topbjælke med tilgængelig Tilbage-knap; undgår `TopAppBar` samt den genererede AutoMirrored-pil, der kun blev initialiseret på undermenuerne. **Den præcise crashårsag er ikke verificeret.**
