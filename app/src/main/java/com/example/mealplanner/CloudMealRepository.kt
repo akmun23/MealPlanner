@@ -56,6 +56,13 @@ private data class IngredientRow(
 )
 
 @Serializable
+private data class IngredientConversionVersionRow(
+    @SerialName("household_id") val householdId: String,
+    @SerialName("ingredient_id") val ingredientId: String,
+    val revision: Long = 0L
+)
+
+@Serializable
 private data class IngredientConversionProfileRow(
     @SerialName("household_id") val householdId: String,
     @SerialName("ingredient_id") val ingredientId: String,
@@ -582,6 +589,11 @@ class CloudMealRepository(
                         filter { eq("household_id", householdId) }
                     }.decodeList<IngredientConversionProfileRow>()
                 }
+                val versionsDeferred = async {
+                    supabase.from("ingredient_conversion_versions").select {
+                        filter { eq("household_id", householdId) }
+                    }.decodeList<IngredientConversionVersionRow>()
+                }
                 val categoriesDeferred = async {
                     supabase.from("shopping_categories").select {
                         filter { eq("household_id", householdId) }
@@ -632,6 +644,8 @@ class CloudMealRepository(
                 val bilkaImages = bilkaImagesDeferred.await()
                 val conversionsByIngredient = conversionsDeferred.await()
                     .groupBy { it.ingredientId }
+                val revisionsByIngredient = versionsDeferred.await()
+                    .associate { it.ingredientId to it.revision }
                 val proteinByIngredient =
                     proteinRows.associateBy { it.ingredientId }
 
@@ -653,6 +667,7 @@ class CloudMealRepository(
                             isProtein =
                                 proteinByIngredient[row.id]?.isProtein == true,
                             neverBuy = row.neverBuy,
+                            unitConversionRevision = revisionsByIngredient[row.id] ?: 0L,
                             unitConversions = conversionsByIngredient[row.id].orEmpty()
                                 .mapNotNull { conversion ->
                                     val unit = QuantityUnit.entries.firstOrNull {
