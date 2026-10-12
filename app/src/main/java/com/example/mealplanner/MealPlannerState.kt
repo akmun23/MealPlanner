@@ -1689,13 +1689,32 @@ class MealPlannerState(
                 draft.unit.quantityType != ingredient.quantityType
             ) return@mapNotNull null
 
-            // Freeze exactly what the user typed alongside the canonical
-            // physical amount. Later product defaults cannot change either.
-            RecipeQuantityRules.freeze(
-                ingredientId = draft.ingredientId,
-                displayAmount = draft.amount,
-                displayUnit = draft.unit
-            ) ?: return@mapNotNull null
+            // Freeze physical quantity from the factor shown to the author.
+            // Historical package sizes stay stable even if today’s profile
+            // changes. Native drafts continue to use exact legacy factors.
+            if (draft.displayUnit != null) {
+                val factor = draft.displayFactor ?: return@mapNotNull null
+                if (!factor.isFinite() || factor <= 0.0 || factor > 1e9) {
+                    return@mapNotNull null
+                }
+                RecipeQuantityRules.freeze(
+                    ingredient = ingredient,
+                    displayAmount = draft.amount,
+                    displayUnit = draft.displayUnit,
+                    rules = listOf(IngredientUnitConversion(
+                        unit = draft.displayUnit,
+                        baseAmountPerUnit = factor,
+                        approximate = draft.displayApproximate
+                    ))
+                )?.copy(conversionApproximate = draft.displayApproximate)
+                    ?: return@mapNotNull null
+            } else {
+                RecipeQuantityRules.freeze(
+                    ingredientId = draft.ingredientId,
+                    displayAmount = draft.amount,
+                    displayUnit = draft.unit
+                ) ?: return@mapNotNull null
+            }
         }
 
         if (converted.size != requirements.size) return null
