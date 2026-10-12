@@ -553,3 +553,81 @@ revoke all on function public.bilka_record_purchase_v2(uuid,uuid,uuid,uuid,text,
  from public,anon,authenticated;
 grant execute on function public.bilka_record_purchase_v2(uuid,uuid,uuid,uuid,text,text,integer,numeric,bigint)
  to service_role;
+
+
+-- Version-checked, idempotent lot insert/update. No stale device may
+-- overwrite newer package remainder. Receipts prevent replayed writes.
+create table if not exists public.pantry_lot_mutation_receipts (
+    event_id uuid primary key,
+    household_id uuid not null,
+    lot_id uuid not null,
+    expected_version bigint not null,
+    resulting_version bigint not null,
+    created_at timestamptz not null default now()
+);
+revoke all on public.pantry_lot_mutation_receipts from public,anon,authenticated;
+alter table public.pantry_lot_mutation_receipts enable row level security;
+
+create or replace function public.upsert_pantry_lot_once(
+ p_household_id uuid, p_lot_id uuid, p_ingredient_id uuid,
+ p_original_amount_base numeric, p_remaining_amount_base numeric,
+ p_opened boolean, p_legacy_unknown boolean, p_product_id text,
+ p_best_before text, p_expected_version bigint, p_event_id uuid
+) returns bigint language plpgsql security definer set search_path = ''
+as $body$
+declare previous public.pantry_lot_mutation_receipts%rowtype;
+        new_version bigint;
+begin
+ if not private.is_household_member(p_household_id) then raise exception 'not a member'; end if;
+ if p_event_id is null or p_lot_id is null or p_ingredient_id is null
+    or p_original_amount_base is null or p_original_amount_base <= 0
+    or p_original_amount_base > 10000000000
+    or p_remaining_amount_base is null or p_remaining_amount_base < 0
+    or p_remaining_amount_base > p_original_amount_base
+    or p_expected_version is null or p_expected_version < 0
+    then raise exception 'invalid lot mutation'; end if;
+ select * into previous from public.pantry_lot_mutation_receipts where event_id=p_event_id;
+ if found then
+    if previous.household_id <> p_household_id or previous.lot_id <> p_lot_id
+       or previous.expected_version <> p_expected_version then
+        raise exception 'lot mutation token reused';
+    end if;
+    return previous.resulting_version;
+ end if;
+
+ if p_expected_version = 0 then
+    insert into public.pantry_lots(
+        id, household_id, ingredient_id, original_amount_base,
+        remaining_amount_base, opened, legacy_unknown, product_id, best_before
+    ) values (
+        p_lot_id,p_household_id,p_ingredient_id,p_original_amount_base,
+        p_remaining_amount_base,coalesce(p_opened,false),
+        coalesce(p_legacy_unknown,false),nullif(p_product_id,''),
+        nullif(p_best_before,'')::date
+    ) on conflict(id) do nothing
+    returning lot_version into new_version;
+ else
+    update public.pantry_lots set
+        remaining_amount_base = p_remaining_amount_base,
+        opened = coalesce(p_opened,false),
+        best_before = nullif(p_best_before,'')::date,
+        lot_version = lot_version + 1, updated_at = now()
+    where id = p_lot_id and household_id = p_household_id
+      and ingredient_id = p_ingredient_id and lot_version = p_expected_version
+      and original_amount_base = p_original_amount_base
+      and legacy_unknown = coalesce(p_legacy_unknown,false)
+    returning lot_version into new_version;
+ end if;
+ if new_version is null then
+    raise exception 'stale pantry lot version; refresh before editing';
+ end if;
+ insert into public.pantry_lot_mutation_receipts (
+    event_id, household_id, lot_id, expected_version, resulting_version
+ ) values (p_event_id,p_household_id,p_lot_id,p_expected_version,new_version);
+ return new_version;
+end;
+$body$;
+revoke all on function public.upsert_pantry_lot_once(uuid,uuid,uuid,numeric,numeric,boolean,boolean,text,text,bigint,uuid)
+ from public,anon;
+grant execute on function public.upsert_pantry_lot_once(uuid,uuid,uuid,numeric,numeric,boolean,boolean,text,text,bigint,uuid)
+ to authenticated;
