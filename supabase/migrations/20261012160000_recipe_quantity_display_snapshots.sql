@@ -5,7 +5,8 @@
 alter table public.recipe_ingredients
     add column if not exists display_amount double precision,
     add column if not exists display_unit_code text,
-    add column if not exists base_per_display_unit double precision;
+    add column if not exists base_per_display_unit double precision,
+    add column if not exists conversion_approximate boolean not null default false;
 
 -- All presentation fields are optional for legacy recipes. A complete new
 -- snapshot must contain positive finite factors/amounts and a safe unit code.
@@ -43,3 +44,5 @@ comment on column public.recipe_ingredients.display_unit_code is
     'Unit chosen by recipe author at save time, e.g. PACK or GRAM';
 comment on column public.recipe_ingredients.base_per_display_unit is
     'Confirmed conversion factor at save time, NOT a live product default';
+comment on column public.recipe_ingredients.conversion_approximate is
+    'Whether the frozen recipe conversion factor was estimated, not exact';
