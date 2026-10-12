@@ -787,9 +787,8 @@ internal fun RecipeDetailScreen(
                                                 Modifier.weight(1f)
                                         )
                                         Text(
-                                            state.formatBaseAmount(
-                                                ingredient,
-                                                requirement.amountBase
+                                            RecipeQuantityRules.amountAndUnit(
+                                                requirement, ingredient
                                             ),
                                             fontWeight =
                                                 FontWeight.SemiBold
@@ -970,10 +969,12 @@ internal fun RecipeEditorScreen(
                     add(
                         DraftRequirement(
                             ingredientId = ingredient.id,
-                            amount = ingredient.preferredUnit.fromBase(
-                                requirement.amountBase
-                            ),
-                            unit = ingredient.preferredUnit
+                            amount = RecipeQuantityRules.legacyEditableAmount(
+                                requirement, ingredient
+                            ).first,
+                            unit = RecipeQuantityRules.legacyEditableAmount(
+                                requirement, ingredient
+                            ).second
                         )
                     )
                 }
