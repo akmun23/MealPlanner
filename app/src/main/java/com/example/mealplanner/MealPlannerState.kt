@@ -2148,6 +2148,7 @@ class MealPlannerState(
         }
 
         val consumptionMutations = mutableListOf<QueuedMutation>()
+        val spentByIngredient = linkedMapOf<String, Double>()
         var projectedLots = pantryLots.toList()
         // A stable meal-transaction UUID deduplicates concurrent phone
         // submissions, as well as retries after a lost network response.
@@ -2158,6 +2159,7 @@ class MealPlannerState(
             val oldBase = pantry[ingredientId] ?: 0.0
             val spent = (oldBase - newBase).coerceAtLeast(0.0)
             if (spent <= 0.0) return@forEach
+            spentByIngredient[ingredientId] = spent
             if (projectedLots.any { it.ingredientId == ingredientId &&
                     it.remainingBase > 0.0 }) {
                 val after = PantryLotRules.consume(projectedLots, ingredientId, spent)
@@ -2170,6 +2172,10 @@ class MealPlannerState(
                     ingredientId, spent, mealTransactionId
                 )
             } else {
+                if (!isLocalOnly) {
+                    lastError = "Lageret mangler pakkeoplysninger. Opdatér lageret før måltidet."
+                    return false
+                }
                 consumptionMutations += QueuedMutation.SetPantry(ingredientId, newBase)
             }
         }
@@ -2181,11 +2187,19 @@ class MealPlannerState(
             lockedDays.add(date.dayOfWeek)
             weeklyPlanId?.let(::weekStateMutation)
         } else null
-        enqueueMutations(
+        val commitMutations = if (isLocalOnly) {
             consumptionMutations + QueuedMutation.SetMealEaten(
                 eatenOn = date.toString(), recipeId = recipeId
-            ) + listOfNotNull(lockMutation)
-        )
+            )
+        } else {
+            listOf(QueuedMutation.CompleteMealWithLots(
+                eatenOn = date.toString(),
+                recipeId = recipeId,
+                deductions = spentByIngredient,
+                transactionId = mealTransactionId
+            ))
+        }
+        enqueueMutations(commitMutations + listOfNotNull(lockMutation))
         return true
     }
 
