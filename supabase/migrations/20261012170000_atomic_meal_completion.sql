@@ -33,10 +33,11 @@ begin
     end if;
     if p_event_id is null or p_eaten_on is null or p_recipe_id is null
        or p_deductions is null or jsonb_typeof(p_deductions) <> 'object'
-       or jsonb_object_length(p_deductions) > 200 then
+       or (select count(*) from jsonb_object_keys(p_deductions)) > 200 then
         raise exception 'invalid meal completion request';
     end if;
-    if p_eaten_on > current_date or p_eaten_on < current_date - 89 then
+    if p_eaten_on > (now() at time zone 'Europe/Copenhagen')::date
+       or p_eaten_on < (now() at time zone 'Europe/Copenhagen')::date - 89 then
         raise exception 'meal date outside permitted history';
     end if;
     if not exists (
