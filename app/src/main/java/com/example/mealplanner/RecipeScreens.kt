@@ -1775,7 +1775,7 @@ private fun RequirementEditor(
                 ) {
                     Text(
                         "1 ${selectedUnit.labelFor(1.0)} = ${formatDisplayNumber(factor)} " +
-                            MeasurementUnit.defaultFor(ingredient.quantityType).symbol +
+                            ingredient.quantityType.baseMeasurementUnit().symbol +
                             if (draft.displayApproximate) " (anslået)" else "",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -2129,7 +2129,7 @@ internal fun IngredientEditorScreen(
                     fontWeight = FontWeight.Bold
                 )
                 Text(
-                    "Angiv selv hvor mange ${MeasurementUnit.defaultFor(type).selectorLabel()} " +
+                    "Angiv selv hvor mange ${type.baseMeasurementUnit().selectorLabel()} " +
                         "der er i én pakke, dåse, spsk. eller anden valgt enhed. " +
                         "Appen gætter aldrig på vægt eller antal.",
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -2149,7 +2149,7 @@ internal fun IngredientEditorScreen(
                             Text(
                                 "${profile.unit.labelFor(1.0)} = " +
                                     "${formatDisplayNumber(profile.baseAmountPerUnit)} " +
-                                    "${MeasurementUnit.defaultFor(type).symbol}" +
+                                    "${type.baseMeasurementUnit().symbol}" +
                                     if (profile.approximate) " (anslået)" else "",
                                 modifier = Modifier.weight(1f)
                             )
@@ -2175,7 +2175,7 @@ internal fun IngredientEditorScreen(
                             onValueChange = { conversionFactorText = it.filter { char ->
                                 char.isDigit() || char == ',' || char == '.'
                             } },
-                            label = { Text("Fysisk mængde pr. enhed (${MeasurementUnit.defaultFor(type).symbol})") },
+                            label = { Text("Fysisk mængde pr. enhed (${type.baseMeasurementUnit().symbol})") },
                             modifier = Modifier.fillMaxWidth(),
                             singleLine = true
                         )
