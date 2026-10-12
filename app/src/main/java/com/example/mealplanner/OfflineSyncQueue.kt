@@ -339,6 +339,15 @@ internal sealed interface QueuedMutation {
     ) : QueuedMutation
 
     @Serializable
+    @SerialName("complete_meal_with_lots_once")
+    data class CompleteMealWithLots(
+        val eatenOn: String,
+        val recipeId: String,
+        val deductions: Map<String, Double>,
+        val transactionId: String
+    ) : QueuedMutation
+
+    @Serializable
     @SerialName("consume_pantry_lots_once")
     data class ConsumePantryLots(
         val ingredientId: String,
@@ -466,6 +475,9 @@ internal fun QueuedMutation.key(): String = when (this) {
     is QueuedMutation.ConsumePantryLots ->
         "pantry-consumption:$transactionId:$ingredientId"
 
+    is QueuedMutation.CompleteMealWithLots ->
+        "complete-meal:$transactionId"
+
     is QueuedMutation.SetWeekState ->
         "week:$weeklyPlanId"
 
@@ -504,6 +516,7 @@ internal fun QueuedMutation.priority(): Int = when (this) {
     is QueuedMutation.SetPantry,
     is QueuedMutation.UpsertPantryLot,
     is QueuedMutation.ConsumePantryLots,
+    is QueuedMutation.CompleteMealWithLots,
     is QueuedMutation.SetWeekState,
     is QueuedMutation.SetHouseholdSandwich,
     is QueuedMutation.SetDayPrep,
@@ -566,6 +579,9 @@ internal fun QueuedMutation.domains(): Set<CloudSyncDomain> = when (this) {
 
     is QueuedMutation.SetMealEaten ->
         setOf(CloudSyncDomain.HISTORY)
+
+    is QueuedMutation.CompleteMealWithLots ->
+        setOf(CloudSyncDomain.PANTRY, CloudSyncDomain.HISTORY)
 }
 
 internal fun QueuedMutation.domainMask(): Int = when (this) {
@@ -610,6 +626,9 @@ internal fun QueuedMutation.domainMask(): Int = when (this) {
 
     is QueuedMutation.SetMealEaten ->
         domainMask(CloudSyncDomain.HISTORY)
+
+    is QueuedMutation.CompleteMealWithLots ->
+        domainMask(CloudSyncDomain.PANTRY, CloudSyncDomain.HISTORY)
 }
 
 internal val OFFLINE_SYNC_WORK_POLICY =
@@ -1050,6 +1069,13 @@ private suspend fun applyQueuedMutation(
         is QueuedMutation.ConsumePantryLots -> {
             repository.consumePantryLotsOnce(
                 mutation.ingredientId, mutation.amountBase, mutation.transactionId
+            )
+        }
+
+        is QueuedMutation.CompleteMealWithLots -> {
+            repository.completeMealWithLotsOnce(
+                java.time.LocalDate.parse(mutation.eatenOn),
+                mutation.recipeId, mutation.deductions, mutation.transactionId
             )
         }
 
