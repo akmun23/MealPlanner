@@ -1529,7 +1529,8 @@ class MealPlannerState(
         pantryPrerequisites: List<DraftRequirement> = emptyList(),
         requirements: List<DraftRequirement>,
         instructionSteps: List<RecipeInstructionStep> = emptyList(),
-        sourceUrl: String? = null
+        sourceUrl: String? = null,
+        explicitlyEditedRequirementIds: Set<String> = emptySet()
     ): Boolean {
         val index = recipes.indexOfFirst { it.id == id }
         if (index < 0) return false
@@ -1563,7 +1564,8 @@ class MealPlannerState(
             ingredients = rebuilt.ingredients.map { edited ->
                 val ingredient = ingredients.find { it.id == edited.ingredientId }
                 if (ingredient == null) edited else RecipeQuantityRules.retainUneditableSnapshot(
-                    previousRequirements[edited.ingredientId], edited, ingredient
+                    previousRequirements[edited.ingredientId], edited, ingredient,
+                    displayExplicitlyEdited = edited.ingredientId in explicitlyEditedRequirementIds
                 )
             }
         )
