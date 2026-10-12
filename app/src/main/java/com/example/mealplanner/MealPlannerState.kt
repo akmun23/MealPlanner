@@ -2294,46 +2294,39 @@ class MealPlannerState(
         }
     }
 
+    private fun persistLunchChange(retainedManual: Set<String>) {
+        val planId = weeklyPlanId ?: return
+        shoppingChecked.clear()
+        shoppingIncluded.clear()
+        retainedManual.forEach { id ->
+            if (ingredients.any { it.id == id }) shoppingIncluded[id] = true
+        }
+        enqueueMutations(buildList {
+            add(QueuedMutation.ReplaceLunch(planId, selectedLunchRecipeIds.toList()))
+            add(QueuedMutation.ClearShopping(planId))
+            shoppingIncluded.filterValues { it }.keys.forEach { id ->
+                add(QueuedMutation.SetShoppingIncluded(planId, id, true))
+            }
+        })
+    }
+
     fun addLunchRecipe(recipeId: String) {
         if (!canEditWeek()) return
         val recipe = recipes.find {
             it.id == recipeId && it.mealType == MealType.LUNCH
         } ?: return
-
         if (recipe.id in selectedLunchRecipeIds) return
 
+        val retainedManual = manuallyAddedShoppingIds()
         selectedLunchRecipeIds += recipe.id
-        shoppingChecked.clear()
-        shoppingIncluded.clear()
-
-        val planId = weeklyPlanId ?: return
-        enqueueMutations(
-            listOf(
-                QueuedMutation.ReplaceLunch(
-                    weeklyPlanId = planId,
-                    recipeIds = selectedLunchRecipeIds.toList()
-                ),
-                QueuedMutation.ClearShopping(planId)
-            )
-        )
+        persistLunchChange(retainedManual)
     }
 
     fun removeLunchRecipe(recipeId: String) {
-        if (!canEditWeek()) return
-        if (!selectedLunchRecipeIds.remove(recipeId)) return
-
-        shoppingChecked.clear()
-        shoppingIncluded.clear()
-        val planId = weeklyPlanId ?: return
-        enqueueMutations(
-            listOf(
-                QueuedMutation.ReplaceLunch(
-                    weeklyPlanId = planId,
-                    recipeIds = selectedLunchRecipeIds.toList()
-                ),
-                QueuedMutation.ClearShopping(planId)
-            )
-        )
+        if (!canEditWeek() || recipeId !in selectedLunchRecipeIds) return
+        val retainedManual = manuallyAddedShoppingIds()
+        selectedLunchRecipeIds.remove(recipeId)
+        persistLunchChange(retainedManual)
     }
 
     /**
