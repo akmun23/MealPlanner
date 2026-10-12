@@ -185,7 +185,7 @@ class QuantityPlanningRulesTest {
         val line = confirmedProfilePurchaseHint(
             ShoppingItem(ingredient = ham, requiredBase = 200.0, pantryBase = 0.0)
         )
-        assertEquals("Pakkeplan: 2 × 150 g · forventet overskud 100 g", line)
+        assertEquals("2 × 150 g · 100 g ekstra", line)
         assertNull(confirmedProfilePurchaseHint(
             ShoppingItem(ingredient("unknown", QuantityType.MASS), 200.0, 0.0)
         ))
@@ -201,7 +201,17 @@ class QuantityPlanningRulesTest {
         val line = confirmedProfilePurchaseHint(
             ShoppingItem(paprika, 18.0, 0.0)
         )
-        assertEquals("Pakkeplan: 2 × 12 g (anslået) · forventet overskud 6 g", line)
+        assertEquals("2 × ca. 12 g · 6 g ekstra", line)
+    }
+
+    @Test
+    fun shoppingHintStaysShortWhenEverythingIsInStock() {
+        val rice = ingredient("rice", QuantityType.MASS).copy(
+            unitConversions = listOf(IngredientUnitConversion(QuantityUnit.PACK, 500.0))
+        )
+        assertEquals("Nok på lager", confirmedProfilePurchaseHint(
+            ShoppingItem(rice, requiredBase = 200.0, pantryBase = 400.0)
+        ))
     }
 
 }
