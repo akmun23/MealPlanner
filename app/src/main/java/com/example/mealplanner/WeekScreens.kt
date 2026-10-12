@@ -630,6 +630,15 @@ fun WeekScreen(
             }
         }
 
+        item(key = "week-drag-help", contentType = "week-section") {
+            Text(
+                "Hold på flyttehåndtaget ved en ret, og træk den til en anden dag. " +
+                    "Du kan også trykke på håndtaget for at vælge dagen.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+
         items(
             items = orderedWeekDays,
             key = { "meal-day-${it.name}" },
