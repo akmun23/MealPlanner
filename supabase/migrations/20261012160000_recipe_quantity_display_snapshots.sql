@@ -615,6 +615,7 @@ create or replace function public.upsert_pantry_lot_once(
 as $body$
 declare previous public.pantry_lot_mutation_receipts%rowtype;
         new_version bigint;
+        content_hash text;
 begin
  if not private.is_household_member(p_household_id) then raise exception 'not a member'; end if;
  if p_event_id is null or p_lot_id is null or p_ingredient_id is null
@@ -624,6 +625,12 @@ begin
     or p_remaining_amount_base > p_original_amount_base
     or p_expected_version is null or p_expected_version < 0
     then raise exception 'invalid lot mutation'; end if;
+ content_hash := md5(jsonb_build_object(
+    'household',p_household_id,'lot',p_lot_id,'ingredient',p_ingredient_id,
+    'original',p_original_amount_base,'remaining',p_remaining_amount_base,
+    'opened',p_opened,'legacy',p_legacy_unknown,'product',p_product_id,
+    'best_before',p_best_before,'expected_version',p_expected_version
+ )::text);
  select * into previous from public.pantry_lot_mutation_receipts where event_id=p_event_id;
  if found then
     if previous.household_id <> p_household_id or previous.lot_id <> p_lot_id
