@@ -91,16 +91,24 @@ class MealPlannerBenchmark {
             val device = UiDevice.getInstance(
                 InstrumentationRegistry.getInstrumentation()
             )
-            device.findObject(By.desc("Indstillinger")).click()
-            check(device.wait(Until.hasObject(By.text("Indstillinger")), 8_000)) {
-                "App crashed or Settings failed to open."
-            }
-            check(device.wait(Until.hasObject(By.desc("Tilbage")), 8_000)) {
-                "Settings subpage scaffold did not appear."
-            }
-            device.pressBack()
-            check(device.wait(Until.hasObject(By.text("Opskrifter")), 8_000)) {
-                "App crashed while returning from Settings."
+            // The reported ClassCastException occurred during recomposition
+            // when switching between a main tab and any subpage. Repeat the
+            // transition rather than measuring only the first successful open.
+            repeat(5) { cycle ->
+                check(device.wait(Until.hasObject(By.desc("Indstillinger")), 8_000)) {
+                    "Settings action missing before transition $cycle."
+                }
+                device.findObject(By.desc("Indstillinger")).click()
+                check(device.wait(Until.hasObject(By.text("Indstillinger")), 8_000)) {
+                    "Settings crashed on transition $cycle."
+                }
+                check(device.wait(Until.hasObject(By.desc("Tilbage")), 8_000)) {
+                    "Settings back action absent on transition $cycle."
+                }
+                device.pressBack()
+                check(device.wait(Until.hasObject(By.text("Opskrifter")), 8_000)) {
+                    "App crashed returning to tabs on transition $cycle."
+                }
             }
 
             device.findObject(By.text("Opskrifter")).click()

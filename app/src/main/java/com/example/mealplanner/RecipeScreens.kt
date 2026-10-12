@@ -910,6 +910,8 @@ internal fun RecipeEditorScreen(
         return
     }
 
+    val isKeyboardVisible = WindowInsets.isImeVisible
+
     var name by rememberSaveable(recipeId) { mutableStateOf(existing?.name ?: "") }
     var mealType by rememberSaveable(recipeId) {
         mutableStateOf(existing?.mealType ?: initialMealType)
@@ -1181,7 +1183,7 @@ internal fun RecipeEditorScreen(
         title = if (existing == null) "Ny opskrift" else "Rediger opskrift",
         onBack = { requestBack() },
         bottomBar = {
-            if (!WindowInsets.isImeVisible) Surface(tonalElevation = 3.dp) {
+            if (!isKeyboardVisible) Surface(tonalElevation = 3.dp) {
                 Column {
                     saveHint?.let { hint ->
                         Text(

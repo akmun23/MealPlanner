@@ -17,6 +17,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -265,6 +266,11 @@ fun MealPlannerApp(
         tab = AppTab.entries[pagerState.currentPage]
     }
     var page by remember { mutableStateOf<AppPage?>(null) }
+    // This @Composable WindowInsets getter internally uses remembered lambdas.
+    // Read it unconditionally, before the page-specific composition changes:
+    // the crash log shows a WindowInsetsHolder lambda being mistaken for an
+    // onConflict Function0 while the page switches during recomposition.
+    val isKeyboardVisible = WindowInsets.isImeVisible
     // Remember the screen that opened Prej settings so Back goes there,
     // whether the user came from settings, product overview, or the picker.
     var bilkaSettingsReturnPage by remember { mutableStateOf<AppPage>(AppPage.Settings) }
@@ -275,6 +281,9 @@ fun MealPlannerApp(
 
     var showSyncConflictDialog by remember {
         mutableStateOf(value = false)
+    }
+    val openSyncConflictDialog: () -> Unit = remember {
+        { showSyncConflictDialog = true }
     }
     val pantryListState = rememberLazyListState()
     val tabStateHolder = rememberSaveableStateHolder()
@@ -490,7 +499,7 @@ fun MealPlannerApp(
                     },
                     bottomBar = {
                         // Give the editor the full height when the keyboard is open.
-                        if (!WindowInsets.isImeVisible) {
+                        if (!isKeyboardVisible) {
                             NavigationBar(containerColor = MaterialTheme.colorScheme.surface) {
                                 AppTab.entries.forEach { item ->
                                     val isShopping = item == AppTab.SHOPPING
@@ -598,33 +607,62 @@ fun MealPlannerApp(
             }
         }
 
-        // Keep transient feedback above the navigation bar (or the editor's
-        // fixed save action), rather than at hard-coded screen coordinates.
-        val overlayBottom = when (page) {
-            is AppPage.RecipeEditor -> 84.dp
-            null -> if (!WindowInsets.isImeVisible) 86.dp else 16.dp
-            else -> 16.dp
-        }
-        val hasSyncStatus = state.syncIndicator != SyncIndicator.IDLE
-        SnackbarHost(
-            hostState = messageHostState,
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(horizontal = 16.dp)
-                .padding(bottom = overlayBottom + if (hasSyncStatus) 56.dp else 0.dp)
-        )
-
-        SyncStatusBadge(
+        GlobalSyncOverlays(
+            page = page,
+            isKeyboardVisible = isKeyboardVisible,
             indicator = state.syncIndicator,
+            messageHostState = messageHostState,
             onRetry = state::retryPendingSync,
-            onConflict = {
-                showSyncConflictDialog = true
-            },
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .padding(bottom = overlayBottom)
+            onConflict = openSyncConflictDialog
         )
     }
+}
+
+
+/**
+ * Keep the overlay's remembered callbacks in an independent composition scope.
+ *
+ * The 2026-10-12 crash log reports:
+ * WindowInsetsHolder$Companion$ExternalSyntheticLambda0
+ *   cannot be cast to kotlin.jvm.functions.Function0
+ *   at MealPlannerApp(MainActivity.kt:620).
+ *
+ * The old root composition read a @Composable IME getter in page-dependent
+ * branches immediately before memoizing a Function0 for SyncStatusBadge.
+ * The new structure reads the inset unconditionally in MealPlannerApp and
+ * moves the overlay callback use into its own composable group.
+ */
+@Composable
+private fun BoxScope.GlobalSyncOverlays(
+    page: AppPage?,
+    isKeyboardVisible: Boolean,
+    indicator: SyncIndicator,
+    messageHostState: SnackbarHostState,
+    onRetry: () -> Unit,
+    onConflict: () -> Unit
+) {
+    val overlayBottom = when (page) {
+        is AppPage.RecipeEditor -> 84.dp
+        null -> if (!isKeyboardVisible) 86.dp else 16.dp
+        else -> 16.dp
+    }
+    val hasSyncStatus = indicator != SyncIndicator.IDLE
+    SnackbarHost(
+        hostState = messageHostState,
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .padding(horizontal = 16.dp)
+            .padding(bottom = overlayBottom + if (hasSyncStatus) 56.dp else 0.dp)
+    )
+
+    SyncStatusBadge(
+        indicator = indicator,
+        onRetry = onRetry,
+        onConflict = onConflict,
+        modifier = Modifier
+            .align(Alignment.BottomCenter)
+            .padding(bottom = overlayBottom)
+    )
 }
 
 @Composable
