@@ -668,8 +668,8 @@ begin
     raise exception 'stale pantry lot version; refresh before editing';
  end if;
  insert into public.pantry_lot_mutation_receipts (
-    event_id, household_id, lot_id, expected_version, resulting_version
- ) values (p_event_id,p_household_id,p_lot_id,p_expected_version,new_version);
+    event_id, household_id, lot_id, expected_version, resulting_version, payload_hash
+ ) values (p_event_id,p_household_id,p_lot_id,p_expected_version,new_version,content_hash);
  return new_version;
 end;
 $body$;
