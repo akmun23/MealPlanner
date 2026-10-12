@@ -322,6 +322,15 @@ internal sealed interface QueuedMutation {
     ) : QueuedMutation
 
     @Serializable
+    @SerialName("save_ingredient_conversions")
+    data class SaveIngredientConversions(
+        val ingredientId: String,
+        val conversions: List<IngredientUnitConversion>,
+        val expectedRevision: Long,
+        val transactionId: String = UUID.randomUUID().toString()
+    ) : QueuedMutation
+
+    @Serializable
     @SerialName("upsert_pantry_lot")
     data class UpsertPantryLot(
         val lot: PantryLot,
@@ -424,6 +433,9 @@ internal fun QueuedMutation.key(): String = when (this) {
     is QueuedMutation.UpsertIngredient ->
         "ingredient:${ingredient.id}"
 
+    is QueuedMutation.SaveIngredientConversions ->
+        "ingredient-conversion:$transactionId"
+
     is QueuedMutation.DeleteIngredient ->
         "ingredient:$ingredientId"
 
@@ -486,6 +498,7 @@ internal fun QueuedMutation.priority(): Int = when (this) {
     is QueuedMutation.DeleteRecipeCategory -> 10
 
     is QueuedMutation.UpsertIngredient -> 20
+    is QueuedMutation.SaveIngredientConversions -> 25
     is QueuedMutation.UpsertRecipe -> 30
 
     is QueuedMutation.SetPantry,
@@ -513,6 +526,7 @@ private fun domainMask(vararg domains: CloudSyncDomain): Int =
 
 internal fun QueuedMutation.domains(): Set<CloudSyncDomain> = when (this) {
     is QueuedMutation.UpsertIngredient,
+    is QueuedMutation.SaveIngredientConversions,
     is QueuedMutation.UpsertIngredientCategory ->
         setOf(CloudSyncDomain.INGREDIENTS)
 
@@ -556,6 +570,7 @@ internal fun QueuedMutation.domains(): Set<CloudSyncDomain> = when (this) {
 
 internal fun QueuedMutation.domainMask(): Int = when (this) {
     is QueuedMutation.UpsertIngredient,
+    is QueuedMutation.SaveIngredientConversions,
     is QueuedMutation.UpsertIngredientCategory ->
         domainMask(CloudSyncDomain.INGREDIENTS)
 
@@ -968,6 +983,13 @@ private suspend fun applyQueuedMutation(
     when (mutation) {
         is QueuedMutation.UpsertIngredient -> {
             repository.upsertIngredient(mutation.ingredient)
+        }
+
+        is QueuedMutation.SaveIngredientConversions -> {
+            repository.saveIngredientConversionsOnce(
+                mutation.ingredientId, mutation.expectedRevision,
+                mutation.conversions, mutation.transactionId
+            )
         }
 
         is QueuedMutation.DeleteIngredient -> {
