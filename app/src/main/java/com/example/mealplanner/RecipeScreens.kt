@@ -1781,16 +1781,6 @@ private fun RequirementEditor(
                         color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
-                if (availableUnits.size <= MeasurementUnit.compatibleWith(
-                        ingredient.quantityType
-                    ).size
-                ) {
-                    Text(
-                        "Flere enheder kan tilføjes under redigering af ingrediensen.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
             }
         }
     }
@@ -1841,6 +1831,7 @@ internal fun IngredientEditorScreen(
     var conversionUnit by rememberSaveable(ingredientId) { mutableStateOf(QuantityUnit.PACK) }
     var conversionFactorText by rememberSaveable(ingredientId) { mutableStateOf("") }
     var conversionEstimated by rememberSaveable(ingredientId) { mutableStateOf(false) }
+    var showConversionForm by rememberSaveable(ingredientId) { mutableStateOf(false) }
 
     var shoppingCategoryId by rememberSaveable(ingredientId) {
         mutableStateOf(
@@ -2123,89 +2114,137 @@ internal fun IngredientEditorScreen(
             }
 
             item {
-                Text(
-                    "Omregning for denne ingrediens",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    "Angiv selv hvor mange ${type.baseMeasurementUnit().selectorLabel()} " +
-                        "der er i én pakke, dåse, spsk. eller anden valgt enhed. " +
-                        "Appen gætter aldrig på vægt eller antal.",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall
-                )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Omregninger",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (type != QuantityType.PACKAGE && !showConversionForm) {
+                        TextButton(onClick = { showConversionForm = true }) {
+                            Text("Tilføj")
+                        }
+                    }
+                }
+
                 if (type == QuantityType.PACKAGE) {
                     Text(
-                        "Gamle pakke-mængder skal først migreres med bekræftet fysisk størrelse.",
-                        color = MaterialTheme.colorScheme.error
+                        "Gamle pakketællinger bevares uændret.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 } else {
+                    if (conversionProfiles.isEmpty() && !showConversionForm) {
+                        Text(
+                            "Fx 1 pakke = 200 ${type.baseMeasurementUnit().symbol}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                     conversionProfiles.forEach { profile ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                "${profile.unit.labelFor(1.0)} = " +
+                                "1 ${profile.unit.labelFor(1.0)} = " +
                                     "${formatDisplayNumber(profile.baseAmountPerUnit)} " +
-                                    "${type.baseMeasurementUnit().symbol}" +
-                                    if (profile.approximate) " (anslået)" else "",
-                                modifier = Modifier.weight(1f)
+                                    type.baseMeasurementUnit().symbol +
+                                    if (profile.approximate) " · ca." else "",
+                                modifier = Modifier.weight(1f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
-                            TextButton(onClick = {
-                                conversionProfiles.remove(profile)
-                            }) { Text("Fjern") }
+                            TextButton(onClick = { conversionProfiles.remove(profile) }) {
+                                Text("Fjern")
+                            }
                         }
                     }
-                    val options = QuantityUnit.entries.filter { unit ->
-                        unit.nativeUnit?.quantityType != type &&
-                            conversionProfiles.none { it.unit == unit }
-                    }
-                    if (options.isNotEmpty()) {
-                        val candidate = if (conversionUnit in options) conversionUnit else options.first()
-                        SimpleSelector(
-                            label = candidate.labelFor(1.0),
-                            options = options,
-                            optionText = { it.labelFor(1.0) },
-                            onSelected = { conversionUnit = it }
-                        )
-                        OutlinedTextField(
-                            value = conversionFactorText,
-                            onValueChange = { conversionFactorText = it.filter { char ->
-                                char.isDigit() || char == ',' || char == '.'
-                            } },
-                            label = { Text("Fysisk mængde pr. enhed (${type.baseMeasurementUnit().symbol})") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true
-                        )
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth()
-                        ) {
-                            Text("Anslået omregning", modifier = Modifier.weight(1f))
-                            Switch(checked = conversionEstimated, onCheckedChange = {
-                                conversionEstimated = it
-                            })
+                    if (showConversionForm) {
+                        val options = QuantityUnit.entries.filter { unit ->
+                            unit.nativeUnit?.quantityType != type &&
+                                conversionProfiles.none { it.unit == unit }
                         }
-                        val factor = parseDanishDecimal(conversionFactorText)
-                        Button(
-                            onClick = {
-                                if (factor != null && factor.isFinite() &&
-                                    factor > 0.0 && factor <= 1e9
-                                ) {
-                                    conversionProfiles += IngredientUnitConversion(
-                                        unit = candidate,
-                                        baseAmountPerUnit = factor,
-                                        approximate = conversionEstimated,
-                                        source = "household-confirmed"
-                                    )
-                                    conversionFactorText = ""
+                        if (options.isNotEmpty()) {
+                            val candidate = if (conversionUnit in options) {
+                                conversionUnit
+                            } else options.first()
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                SimpleSelector(
+                                    label = candidate.labelFor(1.0),
+                                    options = options,
+                                    optionText = { it.labelFor(1.0) },
+                                    minHeight = 56.dp,
+                                    onSelected = { conversionUnit = it }
+                                )
+                                OutlinedTextField(
+                                    value = conversionFactorText,
+                                    onValueChange = { text ->
+                                        conversionFactorText = text.filter { char ->
+                                            char.isDigit() || char == ',' || char == '.'
+                                        }
+                                    },
+                                    label = {
+                                        Text("Indhold (${type.baseMeasurementUnit().symbol})")
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    singleLine = true
+                                )
+                            }
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text("Anslået", modifier = Modifier.weight(1f))
+                                Switch(
+                                    checked = conversionEstimated,
+                                    onCheckedChange = { conversionEstimated = it }
+                                )
+                            }
+                            val factor = parseDanishDecimal(conversionFactorText)
+                            Row(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Button(
+                                    onClick = {
+                                        if (factor != null && factor.isFinite() &&
+                                            factor > 0.0 && factor <= 1e9
+                                        ) {
+                                            conversionProfiles += IngredientUnitConversion(
+                                                unit = candidate,
+                                                baseAmountPerUnit = factor,
+                                                approximate = conversionEstimated,
+                                                source = "household-confirmed"
+                                            )
+                                            conversionFactorText = ""
+                                            showConversionForm = false
+                                        }
+                                    },
+                                    enabled = factor != null && factor.isFinite() &&
+                                        factor > 0.0 && factor <= 1e9
+                                ) { Text("Tilføj") }
+                                TextButton(onClick = { showConversionForm = false }) {
+                                    Text("Annuller")
                                 }
-                            },
-                            enabled = factor != null && factor.isFinite() &&
-                                factor > 0.0 && factor <= 1e9
-                        ) { Text("Tilføj bekræftet omregning") }
+                            }
+                        } else {
+                            Text(
+                                "Alle enheder er tilføjet.",
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                            TextButton(onClick = { showConversionForm = false }) {
+                                Text("Luk")
+                            }
+                        }
                     }
                 }
             }
