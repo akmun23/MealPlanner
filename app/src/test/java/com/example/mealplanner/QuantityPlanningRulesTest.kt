@@ -175,4 +175,33 @@ class QuantityPlanningRulesTest {
         assertEquals(2, plan.packageCount)
     }
 
+    @Test
+    fun shoppingShowsPackagePlanWithoutABilkaProduct() {
+        val ham = ingredient("ham", QuantityType.MASS).copy(
+            unitConversions = listOf(IngredientUnitConversion(
+                QuantityUnit.PACK, 150.0
+            ))
+        )
+        val line = confirmedProfilePurchaseHint(
+            ShoppingItem(ingredient = ham, requiredBase = 200.0, pantryBase = 0.0)
+        )
+        assertEquals("Pakkeplan: 2 × 150 g · forventet overskud 100 g", line)
+        assertNull(confirmedProfilePurchaseHint(
+            ShoppingItem(ingredient("unknown", QuantityType.MASS), 200.0, 0.0)
+        ))
+    }
+
+    @Test
+    fun estimatedShoppingProfileIsMarkedAndSurplusStillShown() {
+        val paprika = ingredient("paprika", QuantityType.MASS).copy(
+            unitConversions = listOf(IngredientUnitConversion(
+                QuantityUnit.CAN, 12.0, approximate = true
+            ))
+        )
+        val line = confirmedProfilePurchaseHint(
+            ShoppingItem(paprika, 18.0, 0.0)
+        )
+        assertEquals("Pakkeplan: 2 × 12 g (anslået) · forventet overskud 6 g", line)
+    }
+
 }
