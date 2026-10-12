@@ -371,6 +371,7 @@ private data class CachedCloudSnapshot(
     val recipeCategories: List<CachedCategory>,
     val recipes: List<CachedRecipe>,
     val pantry: Map<String, Double>,
+    val pantryLots: List<PantryLot> = emptyList(),
     val dayModes: Map<String, String>,
     val dayMaxPrepMinutes: Map<String, Int?>,
     val plan: Map<String, String?>,
@@ -491,6 +492,7 @@ internal object RoomSnapshotCodec {
             )
         },
         pantry = pantry,
+        pantryLots = pantryLots,
         dayModes = dayModes.mapKeys { it.key.name }
             .mapValues { it.value.name },
         dayMaxPrepMinutes =
@@ -577,6 +579,7 @@ internal object RoomSnapshotCodec {
                 )
             },
             pantry = pantry,
+            pantryLots = pantryLots,
             dayModes = dayModes.mapKeys {
                 DayOfWeek.valueOf(it.key)
             }.mapValues {
