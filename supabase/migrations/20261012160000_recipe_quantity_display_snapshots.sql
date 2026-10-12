@@ -531,6 +531,7 @@ begin
        or prior.manual_product_name is distinct from p_manual_product_name
        or prior.package_count is distinct from p_package_count
        or prior.purchased_amount_base is distinct from p_purchased_amount_base
+       or prior.paid_total_ore is distinct from p_paid_total_ore
        then raise exception 'purchase identifier reused with different content'; end if;
     return prior.purchased_amount_base;
  end if;
