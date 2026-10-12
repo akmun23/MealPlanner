@@ -134,7 +134,9 @@ data class RecipeIngredient(
     val displayAmount: Double? = null,
     val displayUnitCode: String? = null,
     /** Snapshot, NOT a live lookup of the current product packaging. */
-    val basePerDisplayUnit: Double? = null
+    val basePerDisplayUnit: Double? = null,
+    /** True if the saved conversion was a household estimate. */
+    val conversionApproximate: Boolean = false
 )
 
 /** An ordered recipe instruction: level 0 is a numbered main step, level 1 a lettered substep. */
