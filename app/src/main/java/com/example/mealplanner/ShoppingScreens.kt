@@ -160,9 +160,11 @@ fun ShoppingScreen(state: MealPlannerState) {
                 }
             )
         } else if (!state.isLocalMode && weekId != null && catalog != null && selection != null &&
-            (catalog.productsFor(item.ingredient.id).isNotEmpty() ||
-                    selection.default(item.ingredient.id) != null)
+            !allowManualAfterError
         ) {
+            // Even when no selected catalogue product exists, use the atomic
+            // server-backed purchase route in cloud mode. The Bilka dialog
+            // supports a manually named product and prevents duplicate credit.
             BilkaPurchaseDialog(
                 weekId = weekId,
                 item = item,
@@ -601,10 +603,11 @@ private fun AddPurchasedToPantryDialog(
         mutableStateOf(ingredient.preferredUnit)
     }
 
-    val suggestedBase =
-        (item.requiredBase - item.pantryBase)
-            .takeIf { it > 0.0 }
-            ?: item.requiredBase
+    val suggestedBase = PurchaseDialogRules.suggestedPurchasedBase(
+        requiredBase = item.requiredBase,
+        pantryBase = item.pantryBase,
+        preferredUnit = ingredient.preferredUnit
+    )
 
     var amountText by remember(ingredient.id, item.pantryBase) {
         mutableStateOf(
@@ -659,7 +662,9 @@ private fun AddPurchasedToPantryDialog(
         },
         confirmButton = {
             val validAmount = parseDanishDecimal(amountText)
-                ?.takeIf { it.isFinite() && it > 0.0 }
+                ?.takeIf {
+                    PurchaseDialogRules.validPurchasedAmount(amountText, unit) != null
+                }
             Button(
                 onClick = {
                     val amount = validAmount ?: return@Button
