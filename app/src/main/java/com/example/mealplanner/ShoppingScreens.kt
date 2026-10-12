@@ -166,18 +166,25 @@ fun ShoppingScreen(state: MealPlannerState) {
                     }
                 }
             )
-        } else if (!state.isLocalMode && weekId != null && catalog != null && selection != null &&
-            !allowManualAfterError
-        ) {
-            // Even when no selected catalogue product exists, use the atomic
-            // server-backed purchase route in cloud mode. The Bilka dialog
-            // supports a manually named product and prevents duplicate credit.
+        } else if (!state.isLocalMode && weekId != null) {
+            // All cloud purchases, including a manually named item and cases
+            // where Bilka's catalogue/context lookup failed, must go through
+            // the server's atomic per-week purchase transaction. Never use
+            // local addPantryAmount as a cloud fallback: retry could double
+            // credit the same ingredient after a network timeout.
             BilkaPurchaseDialog(
                 weekId = weekId,
                 item = item,
                 state = state,
-                catalog = catalog,
-                shopping = selection,
+                catalog = catalog ?: BilkaProductCatalog(
+                    candidates = emptyList(),
+                    defaults = emptyList(),
+                    products = emptyList()
+                ),
+                shopping = selection ?: BilkaShoppingContext(
+                    defaults = emptyList(),
+                    purchases = emptyList()
+                ),
                 onDismiss = {
                     addToPantryItem = null
                     allowManualAfterError = false
@@ -188,13 +195,22 @@ fun ShoppingScreen(state: MealPlannerState) {
                     scope.launch { refreshBilkaChoices() }
                 }
             )
-        } else {
+        } else if (state.isLocalMode) {
             AddPurchasedToPantryDialog(
                 item = item,
                 state = state,
                 onDismiss = {
                     addToPantryItem = null
                     allowManualAfterError = false
+                }
+            )
+        } else {
+            AlertDialog(
+                onDismissRequest = { addToPantryItem = null },
+                title = { Text("Ugen er ikke klar") },
+                text = { Text("Købet kan ikke registreres sikkert uden en gyldig uge. Opdatér madplanen og prøv igen.") },
+                confirmButton = {
+                    TextButton(onClick = { addToPantryItem = null }) { Text("OK") }
                 }
             )
         }
