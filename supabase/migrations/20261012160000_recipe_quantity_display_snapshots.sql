@@ -319,7 +319,11 @@ create or replace function public.consume_pantry_lots(
 as $body$
 declare lot record; remaining numeric; take_amount numeric;
 begin
-    if not private.is_household_member(p_household_id) then raise exception 'not a member'; end if;
+    -- Authenticated users require household membership. Old-client
+    -- aggregate reconciliation runs as the trusted postgres trigger owner.
+    if current_user not in ('postgres', 'supabase_admin')
+       and not private.is_household_member(p_household_id)
+       then raise exception 'not a member'; end if;
     if p_amount_base is null or p_amount_base <= 0 or p_amount_base > 10000000000
         then raise exception 'invalid consumption'; end if;
     remaining := p_amount_base;
