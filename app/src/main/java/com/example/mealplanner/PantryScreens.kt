@@ -266,7 +266,7 @@ internal fun PantryAmountDialog(
     val currentBase = state.pantry[ingredient.id] ?: 0.0
     val lots = state.pantryLots.filter { it.ingredientId == ingredient.id }
     val hasIdentifiedPackages = lots.any { !it.legacyUnknown }
-    val physicalUnit = MeasurementUnit.defaultFor(ingredient.quantityType)
+    val physicalUnit = ingredient.quantityType.baseMeasurementUnit()
     var newPackSizeText by remember(ingredient.id) { mutableStateOf("") }
     var newPackageCountText by remember(ingredient.id) { mutableStateOf("1") }
     var newPackBestBefore by remember(ingredient.id) { mutableStateOf("") }
