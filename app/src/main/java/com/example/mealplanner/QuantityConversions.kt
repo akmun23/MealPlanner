@@ -162,7 +162,10 @@ internal object RecipeQuantityRules {
             }
             if (displayUnit != null) {
                 val amount = requirement.displayAmount!!
-                return "${formatDisplayNumber(amount)} ${displayUnit.labelFor(amount)}"
+                val estimateLabel = if (requirement.conversionApproximate) {
+                    " (omregning anslået)"
+                } else ""
+                return "${formatDisplayNumber(amount)} ${displayUnit.labelFor(amount)}${estimateLabel}"
             }
         }
         // Older recipes never recorded the chosen display unit.
