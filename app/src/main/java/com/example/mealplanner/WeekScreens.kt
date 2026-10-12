@@ -1209,8 +1209,9 @@ fun DayCard(
                     IconButton(
                         onClick = { showMovePicker = true },
                         modifier = Modifier
-                            .width(68.dp)
-                            .height(56.dp)
+                            // Keep the full 48dp touch target while leaving
+                            // room for the adjacent home/away switch on narrow phones.
+                            .size(48.dp)
                             .border(
                                 width = 2.dp,
                                 color = MaterialTheme.colorScheme.primary,
@@ -1248,6 +1249,7 @@ fun DayCard(
                             )
                         }
                     }
+                    Spacer(Modifier.width(8.dp))
                 }
 
                 Switch(
