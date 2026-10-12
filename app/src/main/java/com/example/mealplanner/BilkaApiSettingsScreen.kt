@@ -7,8 +7,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -32,8 +32,6 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 private data class BilkaIngredientStatus(
@@ -48,40 +46,6 @@ private fun JsonObject?.bilkaNumber(field: String): Int =
 private fun JsonObject?.bilkaText(field: String): String? =
     this?.get(field)?.jsonPrimitive?.content?.takeUnless { it == "null" }
 
-private fun JsonObject?.bilkaIngredients(): List<BilkaIngredientStatus> =
-    this?.get("items")?.jsonArray?.mapNotNull { element ->
-        val item = element as? JsonObject ?: return@mapNotNull null
-        val name = item.bilkaText("name")?.trim().orEmpty()
-        if (name.isEmpty()) return@mapNotNull null
-        BilkaIngredientStatus(
-            name = name,
-            state = item.bilkaText("state") ?: "PENDING",
-            suggestions = item.bilkaNumber("candidateCount")
-        )
-    }.orEmpty()
-
-private fun importStopMessage(reason: String?): String = when (reason) {
-    "daily_budget_exhausted", "prej_daily_limit" ->
-        "Dagens søgebudget er brugt. Du kan fortsætte efter næste kvotenulstilling."
-    "run_call_limit" ->
-        "Søgningen er sat på pause. Tryk igen for at fortsætte."
-    "prej_key_invalid", "no_api_key" ->
-        "Din Prej-nøgle skal kontrolleres, før vi kan fortsætte."
-    "prej_burst_limit" ->
-        "Prej har midlertidigt begrænset søgninger. Prøv igen senere."
-    "prej_unavailable", "invalid_provider_response" ->
-        "Prej kunne ikke hente flere varer lige nu. De fundne varer er gemt."
-    else -> "Fundne produktforslag er gemt. Du kan altid fortsætte senere."
-}
-
-private fun ingredientStatusLabel(item: BilkaIngredientStatus): String = when (item.state) {
-    "CHOSEN" -> "Standard valgt"
-    "READY" -> "${item.suggestions} forslag klar"
-    "REFINE" -> "Kræver præcisering"
-    "NO_MATCH" -> "Ingen forslag fundet"
-    else -> "Mangler søgning"
-}
-
 @Composable
 internal fun BilkaApiSettingsScreen(
     householdId: String,
@@ -95,8 +59,8 @@ internal fun BilkaApiSettingsScreen(
     var keyStatusLoaded by remember { mutableStateOf(false) }
     var verified by remember { mutableStateOf(false) }
     var suffix by remember { mutableStateOf<String?>(null) }
-    var localUsed by remember { mutableStateOf(0) }
-    var localBudget by remember { mutableStateOf(20) }
+    var localUsed by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    var localBudget by remember { androidx.compose.runtime.mutableIntStateOf(20) }
     var providerRemaining by remember { mutableStateOf<String?>(null) }
     var nightlyEnabled by remember(householdId) { mutableStateOf(false) }
     var nightlyLastRun by remember(householdId) { mutableStateOf<String?>(null) }
@@ -175,7 +139,6 @@ internal fun BilkaApiSettingsScreen(
     val pending = importStatus.bilkaNumber("pending")
     val noMatch = importStatus.bilkaNumber("noMatch")
     val incomplete = importStatus.bilkaNumber("incomplete")
-    val actionable = pending > 0
     // Automatic discovery reserves no more than 18 daily requests, even
     // though the full account budget (including price checks) is 20.
     val discoveryQuotaExhausted = connected && localUsed >= minOf(localBudget, 18)

@@ -12,7 +12,7 @@ import kotlinx.serialization.Serializable
  */
 @Serializable
 enum class BilkaQuantityKind {
-    MASS, VOLUME, COUNT, PACKAGE
+    MASS, VOLUME,
 }
 
 @Serializable
@@ -22,12 +22,12 @@ enum class BilkaUnitPriceBasis {
 
 @Serializable
 enum class BilkaCandidateStatus {
-    SUGGESTED, REJECTED
+    SUGGESTED,
 }
 
 @Serializable
 enum class BilkaDiscoveryStatus {
-    PENDING, RUNNING, COMPLETE, NO_MATCH, FAILED, INCOMPLETE
+    PENDING, NO_MATCH,
 }
 
 @Serializable
@@ -51,16 +51,6 @@ data class BilkaProduct(
     val brandLabel: String
         get() = brand?.trim()?.takeIf { it.isNotEmpty() } ?: "Ukendt mærke"
 }
-
-@Serializable
-data class IngredientBilkaCandidate(
-    @SerialName("household_id") val householdId: String,
-    @SerialName("ingredient_id") val ingredientId: String,
-    @SerialName("product_id") val productId: String,
-    @SerialName("match_status") val matchStatus: BilkaCandidateStatus = BilkaCandidateStatus.SUGGESTED,
-    @SerialName("match_score") val matchScore: Double? = null,
-    @SerialName("display_rank") val displayRank: Int = 0
-)
 
 @Serializable
 data class IngredientBilkaDefault(

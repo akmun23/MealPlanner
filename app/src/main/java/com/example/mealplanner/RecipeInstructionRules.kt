@@ -42,7 +42,7 @@ internal object RecipeInstructionRules {
         if (step.level == 1) return steps.filterIndexed { i, _ -> i != index }
         val end = ((index + 1) until steps.size)
             .firstOrNull { steps[it].level == 0 } ?: steps.size
-        return steps.filterIndexed { i, _ -> i < index || i >= end }
+        return steps.filterIndexed { i, _ -> i !in index..<end }
     }
 
     /** Move the entire main-step block or a single substep within its parent. */

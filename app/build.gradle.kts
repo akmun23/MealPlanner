@@ -43,8 +43,8 @@ android {
         applicationId = "com.mealplan.mealplanner"
         minSdk = 26
         targetSdk = 37
-        versionCode = 7
-        versionName = "1.2.3"
+        versionCode = 8
+        versionName = "1.3.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField(
@@ -65,7 +65,7 @@ android {
             // AGP 9.4: optimize code (R8) and resources for the actual
             // production APK/AAB. The benchmark variant inherits this.
             optimization {
-                enable = true
+                enable = false
             }
         }
         create("benchmark") {
@@ -165,11 +165,11 @@ dependencies {
     testImplementation(libs.robolectric)
 
     androidTestImplementation(platform(libs.androidx.compose.bom))
-    androidTestImplementation("androidx.compose.ui:ui-test-junit4")
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.runner)
 
-    debugImplementation("androidx.compose.ui:ui-test-manifest")
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
     debugImplementation(
         libs.androidx.compose.ui.tooling
     )

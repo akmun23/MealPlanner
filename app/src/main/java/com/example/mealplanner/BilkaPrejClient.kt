@@ -113,9 +113,6 @@ internal object BilkaPrejClient {
     suspend fun discoveryStatus(householdId: String): Result<JsonObject> =
         call("discovery-status", householdId = householdId)
 
-    suspend fun discoverProducts(householdId: String): Result<JsonObject> =
-        call("discover", householdId = householdId)
-
     private suspend fun call(
         action: String,
         apiKey: String? = null,
@@ -201,8 +198,7 @@ internal object BilkaPrejClient {
             onSuccess = { Result.success(it) },
             onFailure = { throwable ->
                 Result.failure(
-                    if (throwable is BilkaApiError) throwable
-                    else BilkaApiError("Forbindelsen til Bilka API fejlede")
+                    throwable as? BilkaApiError ?: BilkaApiError("Forbindelsen til Bilka API fejlede")
                 )
             }
         )
