@@ -1018,6 +1018,43 @@ class MealPlannerState(
         persistWeek()
     }
 
+
+    /** A meal may be moved only while both calendar dates are editable. */
+    fun canMoveDinner(source: DayOfWeek, destination: DayOfWeek): Boolean =
+        !isWeekChanging && !isPlanning && weeklyPlanId != null &&
+            WeekMealMoveRules.allowed(
+                source = source,
+                destination = destination,
+                plan = plan,
+                dayModes = dayModes,
+                lockedDays = orderedWeekDays.filterTo(mutableSetOf()) { isDayLocked(it) },
+                sandwichDay = sandwichDay,
+                sandwichRecipeId = weeklySandwichRecipeId
+            )
+
+    /**
+     * Swap two day assignments without changing selected recipes or shopping
+     * totals. Persist both days in a single week-state mutation for partners.
+     */
+    fun moveDinner(source: DayOfWeek, destination: DayOfWeek): Boolean {
+        if (!canMoveDinner(source, destination)) {
+            lastError = "Vælg to dage, som ikke er låst, spist eller markeret som ude."
+            return false
+        }
+        val swapped = WeekMealMoveRules.swappedPlan(source, destination, plan)
+        val newSandwichDay = WeekMealMoveRules.movedSandwichDay(
+            source, destination, sandwichDay
+        )
+        Snapshot.withMutableSnapshot {
+            plan[source] = swapped[source]
+            plan[destination] = swapped[destination]
+            sandwichDay = newSandwichDay
+        }
+        // Shopping selections stay intact: all seven dinner quantities are unchanged.
+        persistWeek()
+        return true
+    }
+
     fun setRecipeForDay(day: DayOfWeek, recipeId: String?) {
         if (!canEditWeek()) return
         if (isCompletedDayLocked(day)) {
@@ -2193,7 +2230,7 @@ class MealPlannerState(
         val ingredientsById = ingredients.associateBy { it.id }
         val categoriesById = ingredientCategories.associateBy { it.id }
 
-        return totals.mapNotNull { (ingredientId, requiredBase) ->
+        val plannedItems = totals.mapNotNull { (ingredientId, requiredBase) ->
             val ingredient = ingredientsById[ingredientId]
                 ?: return@mapNotNull null
             if (!ShoppingIngredientRules.isAutomaticallyPurchased(ingredient)) return@mapNotNull null
@@ -2203,7 +2240,25 @@ class MealPlannerState(
                 requiredBase = requiredBase,
                 pantryBase = pantry[ingredientId] ?: 0.0
             )
-        }.sortedWith(
+        }
+        // Existing shopping_inclusions already syncs across household members.
+        // Explicitly included ingredient IDs that are not needed by recipes
+        // appear as independent shopping-list rows (one row per ingredient).
+        val plannedIds = plannedItems.mapTo(mutableSetOf()) { it.ingredient.id }
+        val manualItems = shoppingIncluded.asSequence()
+            .filter { it.value && it.key !in plannedIds }
+            .mapNotNull { (id, _) ->
+                ingredientsById[id]?.let { ingredient ->
+                    ShoppingItem(
+                        ingredient = ingredient,
+                        requiredBase = 0.0,
+                        pantryBase = pantry[id] ?: 0.0,
+                        manualOnly = true
+                    )
+                }
+            }
+            .toList()
+        return (plannedItems + manualItems).sortedWith(
             compareBy(
                 {
                     categoriesById[it.ingredient.shoppingCategoryId]
@@ -2269,6 +2324,51 @@ class MealPlannerState(
                 QueuedMutation.ClearShopping(planId)
             )
         )
+    }
+
+    /**
+     * Adds a recipe-independent line to the current household week's list.
+     * Reuses an existing ingredient (case-insensitive) or creates it and
+     * enqueues the ingredient before the shopping inclusion mutation.
+     */
+    fun addShoppingIngredient(name: String, type: QuantityType): Boolean {
+        if (!canEditWeek()) return false
+        val normalized = name.normalizedDisplayName()
+        if (normalized.isBlank()) {
+            lastError = "Skriv navnet på den vare, der mangler."
+            return false
+        }
+        val existing = ingredients.firstOrNull {
+            it.name.trim().equals(normalized, ignoreCase = true)
+        }
+        if (existing != null && shoppingItems().any {
+                it.ingredient.id == existing.id && isShoppingIncluded(existing.id)
+            }
+        ) {
+            lastError = "${existing.name} står allerede på indkøbslisten."
+            return false
+        }
+        val ingredient = existing ?: run {
+            if (!addIngredient(
+                    name = normalized,
+                    type = type,
+                    shoppingCategoryId = null,
+                    isProtein = false
+                )
+            ) return false
+            ingredients.last()
+        }
+
+        shoppingIncluded[ingredient.id] = true
+        shoppingChecked[ingredient.id] = false
+        val id = weeklyPlanId ?: return false
+        enqueueMutations(
+            listOf(
+                QueuedMutation.SetShoppingIncluded(id, ingredient.id, true),
+                QueuedMutation.SetShoppingChecked(id, ingredient.id, false)
+            )
+        )
+        return true
     }
 
     fun isShoppingIncluded(ingredientId: String): Boolean =
