@@ -53,10 +53,11 @@ internal fun bilkaShoppingLine(
     if (context == null || catalog == null) return null
     val recorded = context.purchase(item.ingredient.id)
     if (recorded?.purchasedAmountBase != null) {
-        return "Allerede lagt på Lager: " +
+        return "Seneste køb på Lager: " +
                 (recorded.packageCount?.let { "$it pakker" }
                     ?: "registreret køb") +
-                (recorded.paidTotalOre?.let { " · Betalt: " + kroner(it) } ?: "")
+                (recorded.paidTotalOre?.let { " · Betalt: " + kroner(it) } ?: "") +
+                " · Nyt køb kan registreres"
     }
     val standard = context.default(item.ingredient.id) ?: return null
     val product = catalog.product(standard.productId) ?: return null
