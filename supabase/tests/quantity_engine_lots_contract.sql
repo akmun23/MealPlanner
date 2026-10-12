@@ -37,11 +37,8 @@ begin
     insert into public.pantry_items(household_id, ingredient_id, amount_base)
         values (h, i, 200);
 
-    -- Legacy totals must become EXACTLY one tagged physical lot.
-    insert into public.pantry_lots(
-        household_id, ingredient_id, original_amount_base,
-        remaining_amount_base, legacy_unknown, opened
-    ) values (h, i, 200, 200, true, true);
+    -- The old pantry_items INSERT trigger already creates the single
+    -- legacy-unknown lot. Do not insert it again in this fixture.
     select sum(remaining_amount_base) into base_before from public.pantry_lots
         where household_id = h and ingredient_id = i;
     if base_before <> 200 then
