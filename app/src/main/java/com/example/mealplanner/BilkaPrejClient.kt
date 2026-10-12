@@ -88,6 +88,15 @@ internal object BilkaPrejClient {
     ): Result<JsonObject> =
         call("shopping-context", householdId = householdId, weekId = weekId)
 
+    suspend fun purchaseStatus(
+        householdId: String, weekId: String, purchaseId: String
+    ): Result<JsonObject> = call(
+        "purchase-status",
+        householdId = householdId,
+        weekId = weekId,
+        purchaseId = purchaseId
+    )
+
     suspend fun recordPurchase(
         householdId: String,
         weekId: String,
