@@ -314,7 +314,8 @@ private data class CachedIngredient(
     val neverBuy: Boolean = false,
     val imageUri: String?,
     val imagePath: String?,
-    val unitConversions: List<IngredientUnitConversion> = emptyList()
+    val unitConversions: List<IngredientUnitConversion> = emptyList(),
+    val unitConversionRevision: Long = 0L
 )
 
 @Serializable
@@ -443,7 +444,8 @@ internal object RoomSnapshotCodec {
                 neverBuy = it.neverBuy,
                 imageUri = it.imageUri,
                 imagePath = it.imagePath,
-                unitConversions = it.unitConversions
+                unitConversions = it.unitConversions,
+                unitConversionRevision = it.unitConversionRevision
             )
         },
         ingredientCategories = ingredientCategories.map {
@@ -528,7 +530,8 @@ internal object RoomSnapshotCodec {
                     neverBuy = it.neverBuy,
                     imageUri = it.imageUri,
                     imagePath = it.imagePath,
-                    unitConversions = it.unitConversions
+                    unitConversions = it.unitConversions,
+                unitConversionRevision = it.unitConversionRevision
                 )
             },
             ingredientCategories = ingredientCategories.map {
