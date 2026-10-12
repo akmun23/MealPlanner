@@ -26,7 +26,10 @@ internal object RecipeRequirementRules {
             if (canCombineDisplay) {
                 first.copy(
                     amountBase = sumBase,
-                    displayAmount = group.sumOf { it.displayAmount!! }
+                    displayAmount = group.sumOf { it.displayAmount!! },
+                    // If any part used an estimated conversion, the combined
+                    // physical amount must remain marked as an estimate.
+                    conversionApproximate = group.any { it.conversionApproximate }
                 )
             } else {
                 RecipeIngredient(id, sumBase)
