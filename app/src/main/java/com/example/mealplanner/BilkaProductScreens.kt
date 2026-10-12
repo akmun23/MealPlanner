@@ -548,11 +548,12 @@ internal fun BilkaProductPickerScreen(
         BilkaPrejClient.catalog(householdId, listOf(ingredientId))
             .onSuccess { raw ->
                 runCatching {
-                    data = parseBilkaCatalog(raw)
-                    selected = data?.defaultId(ingredientId)
-                    if (data?.parseWarnings?.isNotEmpty() == true) {
+                    val parsed = parseBilkaCatalog(raw)
+                    data = parsed
+                    selected = parsed.defaultId(ingredientId)
+                    if (parsed.parseWarnings.isNotEmpty()) {
                         error = "Nogle vareposter kunne ikke læses: " +
-                            data!!.parseWarnings.joinToString() + ". Øvrige varer vises."
+                            parsed.parseWarnings.joinToString() + ". Øvrige varer vises."
                     }
                 }.onFailure { error = "Bilka-svaret mangler de forventede varefelter." }
             }
