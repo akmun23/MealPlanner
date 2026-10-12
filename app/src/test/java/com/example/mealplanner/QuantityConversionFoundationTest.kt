@@ -153,6 +153,17 @@ class QuantityConversionFoundationTest {
             RecipeQuantityRules.retainUneditableSnapshot(original, changedQuantity, ham)
         )
 
+        // Explicitly picking a different display unit must win even when
+        // the canonical amount has not changed.
+        val userPickedKilograms =
+            RecipeQuantityRules.freeze("ham", 0.2, MeasurementUnit.KILOGRAM)!!
+        assertEquals(
+            userPickedKilograms,
+            RecipeQuantityRules.retainUneditableSnapshot(
+                original, userPickedKilograms, ham, displayExplicitlyEdited = true
+            )
+        )
+
         // Normal same-dimension edits may change the visible unit.
         val legacyNative = RecipeQuantityRules.freeze("ham", 0.2, MeasurementUnit.KILOGRAM)!!
         assertEquals(
