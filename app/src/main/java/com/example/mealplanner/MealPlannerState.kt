@@ -1654,10 +1654,13 @@ class MealPlannerState(
                 draft.unit.quantityType != ingredient.quantityType
             ) return@mapNotNull null
 
-            RecipeIngredient(
+            // Freeze exactly what the user typed alongside the canonical
+            // physical amount. Later product defaults cannot change either.
+            RecipeQuantityRules.freeze(
                 ingredientId = draft.ingredientId,
-                amountBase = draft.unit.toBase(draft.amount)
-            )
+                displayAmount = draft.amount,
+                displayUnit = draft.unit
+            ) ?: return@mapNotNull null
         }
 
         if (converted.isEmpty()) return null
