@@ -1131,12 +1131,21 @@ class MealPlannerState(
         isProtein: Boolean,
         imageUri: String? = null,
         preferredUnit: MeasurementUnit = MeasurementUnit.defaultFor(type),
-        neverBuy: Boolean = false
+        neverBuy: Boolean = false,
+        unitConversions: List<IngredientUnitConversion> = emptyList()
     ): Boolean {
         val clean = name.normalizedDisplayName()
         if (clean.isBlank() || preferredUnit.quantityType != type) return false
         if (!isIngredientNameAvailable(clean)) {
             lastError = "Ingrediensen findes allerede."
+            return false
+        }
+
+        if (unitConversions.any {
+            !it.baseAmountPerUnit.isFinite() || it.baseAmountPerUnit <= 0.0 ||
+                it.baseAmountPerUnit > 1e9
+        } || unitConversions.map { it.unit }.distinct().size != unitConversions.size) {
+            lastError = "Kontrollér ingrediensens omregningsfaktorer."
             return false
         }
 
@@ -1148,7 +1157,8 @@ class MealPlannerState(
             shoppingCategoryId = shoppingCategoryId,
             isProtein = isProtein,
             neverBuy = neverBuy,
-            imageUri = imageUri
+            imageUri = imageUri,
+            unitConversions = unitConversions
         )
 
         ingredients += ingredient
@@ -1176,7 +1186,8 @@ class MealPlannerState(
         isProtein: Boolean,
         preferredUnit: MeasurementUnit,
         imageUri: String? = null,
-        neverBuy: Boolean = false
+        neverBuy: Boolean = false,
+        unitConversions: List<IngredientUnitConversion>? = null
     ): Boolean {
         val index = ingredients.indexOfFirst { it.id == id }
         if (
@@ -1196,6 +1207,15 @@ class MealPlannerState(
             return false
         }
 
+        val conversions = unitConversions ?: ingredients[index].unitConversions
+        if (conversions.any {
+            !it.baseAmountPerUnit.isFinite() || it.baseAmountPerUnit <= 0.0 ||
+                it.baseAmountPerUnit > 1e9
+        } || conversions.map { it.unit }.distinct().size != conversions.size) {
+            lastError = "Kontrollér ingrediensens omregningsfaktorer."
+            return false
+        }
+
         val updated = ingredients[index].copy(
             name = name.normalizedDisplayName(),
             quantityType = type,
@@ -1203,7 +1223,8 @@ class MealPlannerState(
             shoppingCategoryId = shoppingCategoryId,
             isProtein = isProtein,
             neverBuy = neverBuy,
-            imageUri = imageUri
+            imageUri = imageUri,
+            unitConversions = unitConversions ?: ingredients[index].unitConversions
         )
         ingredients[index] = updated
         enqueueMutation(
