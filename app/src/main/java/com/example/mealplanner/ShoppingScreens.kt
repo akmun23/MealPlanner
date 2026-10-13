@@ -546,9 +546,9 @@ fun ShoppingScreen(state: MealPlannerState) {
                         onEditPantry = {
                             editPantryItem = item
                         },
-                        onAddToPantry = if (bilkaLoading ||
-                            bilkaContext?.purchase(item.ingredient.id)?.purchasedAmountBase != null
-                        ) null else {
+                        // More than one legitimate purchase of the same item
+                        // per week is now supported by the event-idempotent RPC.
+                        onAddToPantry = if (bilkaLoading) null else {
                             { addToPantryItem = item }
                         }
                     )

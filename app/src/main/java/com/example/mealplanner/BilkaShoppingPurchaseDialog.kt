@@ -21,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -31,7 +32,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import java.text.NumberFormat
 import java.util.Locale
+import java.util.UUID
 import kotlinx.coroutines.launch
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.jsonPrimitive
 import kotlin.math.roundToLong
 
 private val da = Locale.forLanguageTag("da-DK")
@@ -43,21 +47,41 @@ private fun productLabel(product: BilkaProduct): String =
             if (product.packageQuantity != null && product.packageUnit != null)
                 " · " + product.packageQuantity + " " + product.packageUnit else ""
 
+internal fun confirmedProfilePurchaseHint(item: ShoppingItem): String? {
+    val ingredient = item.ingredient
+    val packaging = listOf(QuantityUnit.PACK, QuantityUnit.CAN)
+        .firstOrNull { unit ->
+            ingredient.unitConversions.count { it.unit == unit } == 1
+        } ?: return null
+    val plan = QuantityPlanningRules.planPackages(
+        ingredient, item.requiredBase, item.pantryBase,
+        packaging, ingredient.unitConversions
+    ) ?: return null
+    if (plan.packageCount == 0) return "Nok på lager"
+    val unit = ingredient.quantityType.baseMeasurementUnit().symbol
+    return "${plan.packageCount} × " +
+        (if (plan.conversionApproximate) "ca. " else "") +
+        "${formatDisplayNumber(plan.basePerPackage)} $unit" +
+        (if (plan.surplusBase > 0.0) {
+            " · ${formatDisplayNumber(plan.surplusBase)} $unit ekstra"
+        } else "")
+}
+
 internal fun bilkaShoppingLine(
     item: ShoppingItem,
     context: BilkaShoppingContext?,
     catalog: BilkaProductCatalog?
 ): String? {
-    if (context == null || catalog == null) return null
+    val householdHint = confirmedProfilePurchaseHint(item)
+    if (context == null || catalog == null) return householdHint
     val recorded = context.purchase(item.ingredient.id)
     if (recorded?.purchasedAmountBase != null) {
-        return "Allerede lagt på Lager: " +
-                (recorded.packageCount?.let { "$it pakker" }
-                    ?: "registreret køb") +
-                (recorded.paidTotalOre?.let { " · Betalt: " + kroner(it) } ?: "")
+        return "Sidst købt: " +
+                (recorded.packageCount?.let { "$it pakker" } ?: "registreret") +
+                (recorded.paidTotalOre?.let { " · " + kroner(it) } ?: "")
     }
-    val standard = context.default(item.ingredient.id) ?: return null
-    val product = catalog.product(standard.productId) ?: return null
+    val standard = context.default(item.ingredient.id) ?: return householdHint
+    val product = catalog.product(standard.productId) ?: return householdHint
     val amount = BilkaPackageMath.applicablePackBase(
         item.ingredient, product, standard.packageBaseAmountOverride
     )
@@ -170,6 +194,18 @@ internal fun BilkaPurchaseDialog(
             (if (manual) manualName.trim().length >= 2
             else currentProduct != null && count != null && count in 1..500) &&
             (paidText.isBlank() || paidOre != null)
+
+    // Network retries of identical checkout details reuse the SAME event ID.
+    // Explicit edits get a fresh ID: a second real purchase is allowed while
+    // lost responses / duplicate taps cannot add the same one twice.
+    val checkoutFingerprint = listOf(
+        weekId, ingredient.id, manual.toString(), selectedId.orEmpty(),
+        manualName, count?.toString().orEmpty(), baseAmount?.toString().orEmpty(),
+        paidOre?.toString().orEmpty()
+    ).joinToString("|")
+    val checkoutId = rememberSaveable(ingredient.id, weekId, checkoutFingerprint) {
+        UUID.randomUUID().toString()
+    }
 
     AlertDialog(
         onDismissRequest = { if (!saving) onDismiss() },
@@ -357,7 +393,8 @@ internal fun BilkaPurchaseDialog(
                             manualProductName = if (manual) manualName.trim() else null,
                             packageCount = if (manual) null else count,
                             amountBase = amount,
-                            paidTotalOre = paidOre
+                            paidTotalOre = paidOre,
+                            purchaseId = checkoutId
                         ).let { purchaseResult ->
                             if (purchaseResult.isSuccess) {
                                 state.refreshNow()
@@ -366,15 +403,11 @@ internal fun BilkaPurchaseDialog(
                                 // The database may have committed even if the network
                                 // lost its response. Verify the week before inviting
                                 // the user to try again or manually credit the stock.
-                                val confirmed = BilkaPrejClient.shoppingContext(
-                                    state.householdIdentifier, weekId
-                                ).getOrNull()?.let { latest ->
-                                    runCatching {
-                                        decodeBilkaShoppingContext(latest)
-                                            .purchase(ingredient.id)?.purchasedAmountBase
-                                    }.getOrNull()
-                                }
-                                if (confirmed != null && confirmed > 0.0) {
+                                val confirmed = BilkaPrejClient.purchaseStatus(
+                                    state.householdIdentifier, weekId, checkoutId
+                                ).getOrNull()?.get("confirmed")
+                                    ?.jsonPrimitive?.booleanOrNull == true
+                                if (confirmed) {
                                     state.refreshNow()
                                     onSaved()
                                 } else {

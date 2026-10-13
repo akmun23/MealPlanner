@@ -1,6 +1,8 @@
 package com.example.mealplanner
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -8,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -25,6 +28,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -260,6 +264,20 @@ internal fun PantryAmountDialog(
 ) {
     val initialUnit = ingredient.preferredUnit
     val currentBase = state.pantry[ingredient.id] ?: 0.0
+    val lots = PantryLotRules.active(state.pantryLots.toList(), ingredient.id)
+    val hasIdentifiedPackages = lots.any { !it.legacyUnknown }
+    val physicalUnit = ingredient.quantityType.baseMeasurementUnit()
+    var newPackSizeText by remember(ingredient.id) { mutableStateOf("") }
+    var newPackageCountText by remember(ingredient.id) { mutableStateOf("1") }
+    var newPackBestBefore by remember(ingredient.id) { mutableStateOf("") }
+    var newPackOpened by remember(ingredient.id) { mutableStateOf(false) }
+    var addingPackages by rememberSaveable(ingredient.id) { mutableStateOf(false) }
+    var usingStock by rememberSaveable(ingredient.id) { mutableStateOf(false) }
+    var useAmountText by rememberSaveable(ingredient.id) { mutableStateOf("") }
+    var removeLotId by rememberSaveable(ingredient.id) { mutableStateOf<String?>(null) }
+    var editingLotId by rememberSaveable(ingredient.id) {
+        mutableStateOf<String?>(null)
+    }
 
     var unit by remember(ingredient.id) {
         mutableStateOf(initialUnit)
@@ -275,87 +293,313 @@ internal fun PantryAmountDialog(
         )
     }
 
+    val removingLot = lots.firstOrNull { it.id == removeLotId }
+    if (removingLot != null) {
+        AlertDialog(
+            onDismissRequest = { removeLotId = null },
+            title = { Text("Fjern pakken?") },
+            text = { Text("Pakken fjernes fra lageret.") },
+            confirmButton = {
+                Button(onClick = {
+                    if (state.updatePantryLot(removingLot.id, 0.0, removingLot.opened)) {
+                        removeLotId = null
+                        editingLotId = null
+                    }
+                }) { Text("Fjern") }
+            },
+            dismissButton = {
+                TextButton(onClick = { removeLotId = null }) { Text("Annuller") }
+            }
+        )
+    }
+
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(ingredient.name) },
         text = {
             Column(
+                modifier = Modifier
+                    .heightIn(max = 430.dp)
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                OutlinedTextField(
-                    value = amountText,
-                    onValueChange = {
-                        amountText = it.filter { char ->
-                            char.isDigit() || char == ',' || char == '.'
-                        }
-                    },
-                    label = { Text("Mængde") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true
-                )
-
-                if (amountText.isBlank() ||
-                    parseDanishDecimal(amountText)?.let { !it.isFinite() || it < 0.0 } != false
-                ) {
-                    Text(
-                        if (currentBase > 0.0) {
-                            "Angiv en gyldig mængde, eller brug Tøm lager."
-                        } else {
-                            "Angiv en gyldig mængde."
+                // Keep the familiar total editor for older stock. Once real
+                // packages exist, edits happen per package instead of through
+                // a disabled and confusing total field.
+                if (!hasIdentifiedPackages) {
+                    OutlinedTextField(
+                        value = amountText,
+                        onValueChange = {
+                            amountText = it.filter { char ->
+                                char.isDigit() || char == ',' || char == '.'
+                            }
                         },
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error
+                        label = { Text("Mængde") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
                     )
-                }
-
-                if (currentBase > 0.0) {
-                    TextButton(onClick = {
-                        state.setPantry(ingredient.id, 0.0, unit)
-                        onDismiss()
-                    }) {
-                        Text("Tøm lager")
+                    if (amountText.isNotBlank() &&
+                        parseDanishDecimal(amountText)?.let {
+                            !it.isFinite() || it < 0.0
+                        } != false
+                    ) {
+                        Text(
+                            "Angiv en gyldig mængde.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                    if (currentBase > 0.0) {
+                        TextButton(onClick = {
+                            state.setPantry(ingredient.id, 0.0, unit)
+                            onDismiss()
+                        }) { Text("Tøm lager") }
+                    }
+                    SimpleSelector(
+                        label = unit.selectorLabel(),
+                        options = MeasurementUnit.compatibleWith(
+                            ingredient.quantityType
+                        ),
+                        optionText = { it.selectorLabel() },
+                        onSelected = { selected ->
+                            val entered = parseDanishDecimal(amountText)
+                            if (entered != null && entered.isFinite()) {
+                                amountText = formatDisplayNumber(
+                                    unit.convertAmountTo(entered, selected) ?: entered
+                                )
+                            }
+                            unit = selected
+                        }
+                    )
+                } else {
+                    Text(
+                        "I alt: ${state.formatBaseAmount(ingredient, currentBase)}",
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                    lots.sortedWith(compareBy<PantryLot>(
+                        { !it.opened }, { it.bestBefore ?: "9999-12-31" }, { it.id }
+                    )).forEach { lot ->
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        if (lot.legacyUnknown) "Ukendt emballage"
+                                        else if (lot.opened) "Åbnet pakke"
+                                        else "Uåbnet pakke",
+                                        fontWeight = FontWeight.SemiBold,
+                                        maxLines = 1
+                                    )
+                                    Text(
+                                        "${formatDisplayNumber(lot.remainingBase)} / " +
+                                            "${formatDisplayNumber(lot.originalBase)} " +
+                                            physicalUnit.symbol,
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                        maxLines = 1
+                                    )
+                                }
+                                TextButton(onClick = {
+                                    editingLotId = if (editingLotId == lot.id) {
+                                        null
+                                    } else lot.id
+                                }) {
+                                    Text(if (editingLotId == lot.id) "Luk" else "Ret")
+                                }
+                            }
+                            if (editingLotId == lot.id) {
+                                var remainderText by remember(lot.id) {
+                                    mutableStateOf(formatDisplayNumber(lot.remainingBase))
+                                }
+                                OutlinedTextField(
+                                    value = remainderText,
+                                    onValueChange = { value ->
+                                        remainderText = value.filter {
+                                            it.isDigit() || it == ',' || it == '.'
+                                        }
+                                    },
+                                    label = { Text("Rest (${physicalUnit.symbol})") },
+                                    modifier = Modifier.fillMaxWidth(),
+                                    singleLine = true
+                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text("Åbnet", modifier = Modifier.weight(1f))
+                                    Switch(
+                                        checked = lot.opened,
+                                        onCheckedChange = {
+                                            state.updatePantryLot(
+                                                lot.id, lot.remainingBase, it
+                                            )
+                                        }
+                                    )
+                                }
+                                val remainder = parseDanishDecimal(remainderText)
+                                TextButton(
+                                    onClick = {
+                                        if (remainder != null &&
+                                            state.updatePantryLot(
+                                                lot.id, remainder, lot.opened
+                                            )
+                                        ) {
+                                            editingLotId = null
+                                        }
+                                    },
+                                    enabled = remainder != null && remainder.isFinite() &&
+                                        remainder >= 0.0 && remainder <= lot.originalBase
+                                ) { Text("Gem rest") }
+                                TextButton(onClick = { removeLotId = lot.id }) {
+                                    Text("Fjern pakke")
+                                }
+                            }
+                        }
                     }
                 }
 
-                SimpleSelector(
-                    label = unit.selectorLabel(),
-                    options = MeasurementUnit.compatibleWith(
-                        ingredient.quantityType
-                    ),
-                    optionText = { it.selectorLabel() },
-                    onSelected = { selected ->
-                        val entered = parseDanishDecimal(amountText)
-                        if (entered != null && entered.isFinite()) {
-                            amountText = formatDisplayNumber(
-                                unit.convertAmountTo(entered, selected) ?: entered
+                // Manual consumption works across opened and sealed lots
+                // through the same FIFO ledger as cooking a recipe.
+                if (currentBase > 0.0) {
+                    TextButton(onClick = { usingStock = !usingStock }) {
+                        Text(if (usingStock) "Annuller" else "− Brug fra lager")
+                    }
+                    if (usingStock) {
+                        val available = formatDisplayNumber(
+                            initialUnit.fromBase(currentBase)
+                        )
+                        OutlinedTextField(
+                            value = useAmountText,
+                            onValueChange = { value ->
+                                useAmountText = value.filter {
+                                    it.isDigit() || it == ',' || it == '.'
+                                }
+                            },
+                            label = { Text("Forbrug (${initialUnit.symbol})") },
+                            placeholder = { Text("Højst $available") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                        val consumption = parseDanishDecimal(useAmountText)
+                        Button(
+                            onClick = {
+                                if (consumption != null && state.usePantryAmount(
+                                    ingredient.id, consumption, initialUnit
+                                )) {
+                                    useAmountText = ""
+                                    usingStock = false
+                                }
+                            },
+                            enabled = consumption != null && consumption.isFinite() &&
+                                consumption > 0.0 &&
+                                initialUnit.toBase(consumption) <= currentBase
+                        ) { Text("Træk fra lager") }
+                    }
+                }
+
+                // The optional form is hidden until the user asks to add
+                // stock. Existing pantry features are left unchanged.
+                if (ingredient.quantityType != QuantityType.PACKAGE) {
+                    TextButton(onClick = { addingPackages = !addingPackages }) {
+                        Text(if (addingPackages) "Annuller" else "+ Tilføj pakker")
+                    }
+                    if (addingPackages) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            OutlinedTextField(
+                                value = newPackSizeText,
+                                onValueChange = { value ->
+                                    newPackSizeText = value.filter {
+                                        it.isDigit() || it == ',' || it == '.'
+                                    }
+                                },
+                                label = { Text("Størrelse (${physicalUnit.symbol})") },
+                                modifier = Modifier.weight(1.6f),
+                                singleLine = true
+                            )
+                            OutlinedTextField(
+                                value = newPackageCountText,
+                                onValueChange = { value ->
+                                    newPackageCountText = value.filter(Char::isDigit).take(3)
+                                },
+                                label = { Text("Antal") },
+                                modifier = Modifier.weight(0.8f),
+                                singleLine = true
                             )
                         }
-                        unit = selected
+                        OutlinedTextField(
+                            value = newPackBestBefore,
+                            onValueChange = { value ->
+                                newPackBestBefore = value.filter {
+                                    it.isDigit() || it == '-'
+                                }.take(10)
+                            },
+                            label = { Text("Bedst før (valgfrit)") },
+                            placeholder = { Text("ÅÅÅÅ-MM-DD") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text("Åbnet", modifier = Modifier.weight(1f))
+                            Switch(
+                                checked = newPackOpened,
+                                onCheckedChange = { newPackOpened = it }
+                            )
+                        }
+                        val packageBase = parseDanishDecimal(newPackSizeText)
+                        val count = newPackageCountText.toIntOrNull()
+                        val dateValid = newPackBestBefore.isBlank() ||
+                            runCatching {
+                                java.time.LocalDate.parse(newPackBestBefore)
+                            }.isSuccess
+                        Button(
+                            onClick = {
+                                if (packageBase != null && count != null &&
+                                    state.addPantryPackages(
+                                        ingredient.id, count, packageBase,
+                                        physicalUnit, newPackOpened,
+                                        newPackBestBefore.takeIf { it.isNotBlank() }
+                                    )
+                                ) {
+                                    newPackSizeText = ""
+                                    newPackageCountText = "1"
+                                    newPackBestBefore = ""
+                                    addingPackages = false
+                                }
+                            },
+                            enabled = packageBase != null && packageBase.isFinite() &&
+                                packageBase > 0.0 && count != null &&
+                                count in 1..100 && dateValid
+                        ) { Text("Gem pakker") }
                     }
-                )
+                }
             }
         },
         confirmButton = {
-            val amount = parseDanishDecimal(amountText)
-                ?.takeIf { it.isFinite() && it >= 0.0 }
-            Button(
-                onClick = {
-                    val validAmount = amount ?: return@Button
-                    state.setPantry(
-                        ingredientId = ingredient.id,
-                        amount = validAmount,
-                        unit = unit
-                    )
-                    onDismiss()
-                },
-                enabled = amount != null
-            ) {
-                Text("Gem")
+            if (hasIdentifiedPackages) {
+                TextButton(onClick = onDismiss) { Text("Luk") }
+            } else {
+                val amount = parseDanishDecimal(amountText)
+                    ?.takeIf { it.isFinite() && it >= 0.0 }
+                Button(
+                    onClick = {
+                        val validAmount = amount ?: return@Button
+                        state.setPantry(
+                            ingredientId = ingredient.id,
+                            amount = validAmount,
+                            unit = unit
+                        )
+                        onDismiss()
+                    },
+                    enabled = amount != null
+                ) { Text("Gem beholdning") }
             }
         },
         dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Annuller")
+            if (!hasIdentifiedPackages) {
+                TextButton(onClick = onDismiss) { Text("Annuller") }
             }
         }
     )

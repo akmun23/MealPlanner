@@ -77,3 +77,16 @@ Manuel test på en **testhusstand med to enheder**:
 6. Kør fra samme commit både `gradlew.bat :app:assembleDebug` og `gradlew.bat :app:assembleBenchmark`. Ingen Android-build/emulator er udført i ChatGPT-miljøet.
 
 VersionCode 12 bruges til 1.4.1-testbuildet. Kontrollér at koden ikke allerede er brugt i Play Console.
+
+
+## Opfølgning på 1.4.1: tydeligere drag-feedback (åben rettelse)
+
+1. Åbn Madplan på en testtelefon, hvor der er mindst to ulåste dage med opskrifter.
+2. Tryk kort på **Flyt** og kontroller, at destinationsdialogen åbnes som før.
+3. Hold på det nu større, indrammede **Flyt**-håndtag. **Allerede før fingeren bevæges** skal en tydelig flydende boks med `FLYTTER NU` samt en fast statusbjælke ved bunden være synlig. Oprindeligt dagskort får farvet kant og tones ned.
+4. Flyt fingeren til en anden ulåst dag. Kontroller at det flydende kort følger fingeren, at den aktuelle gyldige destination får en markant ramme, og at statusbjælken opdateres. Slip og kontroller korrekt bytte.
+5. Hold fingeren langs listens top og bund, så automatisk scrolling fortsætter, **også når fingeren ikke bevæges**. Slip over en gyldig dag og kontrollér flytning.
+6. Afbryd træk eller slip over låst/spist/ikke-hjemme-dag. Intet skal ændres, og status/preview skal forsvinde. Kontroller også, at normal scroll, lås, switch og opskriftsåbning stadig virker.
+7. Kør `gradlew.bat :app:compileDebugKotlin :app:testDebugUnitTest :app:assembleDebug :app:assembleBenchmark` og en visuel smoke-test på fysisk Android / emulator i både Debug og Benchmark. Verificér på to telefoner, at den flyttede plan synkroniseres.
+
+Den visuelle rettelse er endnu **ikke** dokumenteret som device-testet. Den er isoleret fra PR #95 om mængdeberegning og indgår ikke i en Play-release uden særskilt test.

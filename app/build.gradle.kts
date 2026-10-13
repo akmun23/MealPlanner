@@ -43,8 +43,8 @@ android {
         applicationId = "com.mealplan.mealplanner"
         minSdk = 26
         targetSdk = 37
-        versionCode = 12
-        versionName = "1.4.1"
+        versionCode = 16
+        versionName = "1.5.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField(
@@ -62,6 +62,8 @@ android {
 
     buildTypes {
         release {
+            // Never sign an artifact intended for Play with the debug key.
+            // Benchmark/unoptimized variants explicitly use the debug key below.
             // AGP 9.4: optimize code (R8) and resources for the actual
             // production APK/AAB. The benchmark variant inherits this.
             optimization {

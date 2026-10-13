@@ -22,9 +22,20 @@ internal object BilkaPackageMath {
     fun packageCount(requiredBase: Double, pantryBase: Double, packBase: Double?): Int? {
         if (packBase == null || !packBase.isFinite() || packBase <= 0.0) return null
         val missing = missing(requiredBase, pantryBase)
+        if (!missing.isFinite() || missing < 0.0) return null
         if (missing == 0.0) return 0
-        val count = ceil(missing / packBase)
-        return count.takeIf { it.isFinite() && it <= Int.MAX_VALUE }?.toInt()
+
+        val ratio = missing / packBase
+        if (!ratio.isFinite() || ratio < 0.0) return null
+
+        // A binary rounding artefact at an exact boundary must not cause
+        // a phantom extra pack (e.g. 0.1 + 0.2 divided by 0.1).
+        // Only snap within a few ULPs; real shortfalls still round UP.
+        val nearestWhole = kotlin.math.round(ratio)
+        val nearWhole = kotlin.math.abs(ratio - nearestWhole) <=
+            8.0 * java.lang.Math.ulp(nearestWhole)
+        val count = if (nearWhole) nearestWhole else ceil(ratio)
+        return count.takeIf { it.isFinite() && it >= 0.0 && it <= Int.MAX_VALUE }?.toInt()
     }
 
     fun purchasedBase(packBase: Double, packages: Int): Double? {

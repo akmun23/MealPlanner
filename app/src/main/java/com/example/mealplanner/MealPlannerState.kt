@@ -80,6 +80,7 @@ class MealPlannerState(
     val recipeCategories = mutableStateListOf<RecipeCategoryOption>()
     val recipes = mutableStateListOf<Recipe>()
     val pantry = mutableStateMapOf<String, Double>()
+    val pantryLots = mutableStateListOf<PantryLot>()
     val dayModes = mutableStateMapOf<DayOfWeek, DayMode>()
     val dayMaxPrepMinutes = mutableStateMapOf<DayOfWeek, Int?>()
     val plan = mutableStateMapOf<DayOfWeek, String?>()
@@ -541,6 +542,15 @@ class MealPlannerState(
                         target = pantry,
                         incoming = snapshot
                     )
+                    val lots = repository.loadPantryLotsSnapshot()
+                    if (!syncTracker.isCurrent(generationSnapshot)) {
+                        return@withLock
+                    }
+                    syncListByKey(
+                        target = pantryLots,
+                        incoming = lots,
+                        key = PantryLot::id
+                    )
                     applied = true
                 }
 
@@ -669,6 +679,11 @@ class MealPlannerState(
         syncMap(
             target = pantry,
             incoming = snapshot.pantry
+        )
+        syncListByKey(
+            target = pantryLots,
+            incoming = snapshot.pantryLots,
+            key = PantryLot::id
         )
         syncMap(
             target = dayModes,
@@ -810,6 +825,7 @@ class MealPlannerState(
             recipeCategories = recipeCategories.toList(),
             recipes = recipes.toList(),
             pantry = pantry.toMap(),
+            pantryLots = pantryLots.toList(),
             dayModes = dayModes.toMap(),
             dayMaxPrepMinutes = dayMaxPrepMinutes.toMap(),
             plan = plan.toMap(),
@@ -1131,12 +1147,21 @@ class MealPlannerState(
         isProtein: Boolean,
         imageUri: String? = null,
         preferredUnit: MeasurementUnit = MeasurementUnit.defaultFor(type),
-        neverBuy: Boolean = false
+        neverBuy: Boolean = false,
+        unitConversions: List<IngredientUnitConversion> = emptyList()
     ): Boolean {
         val clean = name.normalizedDisplayName()
         if (clean.isBlank() || preferredUnit.quantityType != type) return false
         if (!isIngredientNameAvailable(clean)) {
             lastError = "Ingrediensen findes allerede."
+            return false
+        }
+
+        if (unitConversions.any {
+            !it.baseAmountPerUnit.isFinite() || it.baseAmountPerUnit <= 0.0 ||
+                it.baseAmountPerUnit > 1e9
+        } || unitConversions.map { it.unit }.distinct().size != unitConversions.size) {
+            lastError = "Kontrollér ingrediensens omregningsfaktorer."
             return false
         }
 
@@ -1148,12 +1173,21 @@ class MealPlannerState(
             shoppingCategoryId = shoppingCategoryId,
             isProtein = isProtein,
             neverBuy = neverBuy,
-            imageUri = imageUri
+            imageUri = imageUri,
+            unitConversions = unitConversions,
+            unitConversionRevision = if (unitConversions.isEmpty()) 0L else 1L
         )
 
         ingredients += ingredient
-        enqueueMutation(
-            QueuedMutation.UpsertIngredient(ingredient)
+        enqueueMutations(
+            listOf(QueuedMutation.UpsertIngredient(ingredient)) +
+                if (unitConversions.isEmpty()) emptyList() else listOf(
+                    QueuedMutation.SaveIngredientConversions(
+                        ingredientId = ingredient.id,
+                        conversions = unitConversions,
+                        expectedRevision = 0L
+                    )
+                )
         )
         return true
     }
@@ -1176,7 +1210,8 @@ class MealPlannerState(
         isProtein: Boolean,
         preferredUnit: MeasurementUnit,
         imageUri: String? = null,
-        neverBuy: Boolean = false
+        neverBuy: Boolean = false,
+        unitConversions: List<IngredientUnitConversion>? = null
     ): Boolean {
         val index = ingredients.indexOfFirst { it.id == id }
         if (
@@ -1196,18 +1231,55 @@ class MealPlannerState(
             return false
         }
 
-        val updated = ingredients[index].copy(
+        val conversions = unitConversions ?: ingredients[index].unitConversions
+        if (conversions.any {
+            !it.baseAmountPerUnit.isFinite() || it.baseAmountPerUnit <= 0.0 ||
+                it.baseAmountPerUnit > 1e9
+        } || conversions.map { it.unit }.distinct().size != conversions.size) {
+            lastError = "Kontrollér ingrediensens omregningsfaktorer."
+            return false
+        }
+
+        val previous = ingredients[index]
+        val conversionChanged = previous.unitConversions != conversions
+        val updated = previous.copy(
             name = name.normalizedDisplayName(),
             quantityType = type,
             preferredUnit = preferredUnit,
             shoppingCategoryId = shoppingCategoryId,
             isProtein = isProtein,
             neverBuy = neverBuy,
-            imageUri = imageUri
+            imageUri = imageUri,
+            unitConversions = conversions,
+            unitConversionRevision = previous.unitConversionRevision +
+                if (conversionChanged) 1L else 0L
         )
         ingredients[index] = updated
-        enqueueMutation(
-            QueuedMutation.UpsertIngredient(updated)
+        if (conversionChanged) {
+            // The cloud CAS RPC makes the same update atomically to all known
+            // recipe snapshots. Apply the projection locally for an immediate
+            // and consistent shopping-list calculation while offline.
+            val revisedRecipes = recipes.map { recipe ->
+                if (recipe.ingredients.none { it.ingredientId == id }) recipe
+                else recipe.copy(ingredients = recipe.ingredients.map { requirement ->
+                    if (requirement.ingredientId == id) {
+                        RecipeQuantityRules.correctedIngredientMeasure(
+                            requirement, previous.unitConversions, conversions
+                        )
+                    } else requirement
+                })
+            }
+            syncListByKey(recipes, revisedRecipes, Recipe::id)
+        }
+        enqueueMutations(
+            listOf(QueuedMutation.UpsertIngredient(updated)) +
+                if (!conversionChanged) emptyList() else listOf(
+                    QueuedMutation.SaveIngredientConversions(
+                        ingredientId = id,
+                        conversions = conversions,
+                        expectedRevision = previous.unitConversionRevision
+                    )
+                )
         )
         return true
     }
@@ -1529,7 +1601,8 @@ class MealPlannerState(
         pantryPrerequisites: List<DraftRequirement> = emptyList(),
         requirements: List<DraftRequirement>,
         instructionSteps: List<RecipeInstructionStep> = emptyList(),
-        sourceUrl: String? = null
+        sourceUrl: String? = null,
+        explicitlyEditedRequirementIds: Set<String> = emptySet()
     ): Boolean {
         val index = recipes.indexOfFirst { it.id == id }
         if (index < 0) return false
@@ -1540,7 +1613,7 @@ class MealPlannerState(
         }
 
         val existing = recipes[index]
-        val updated = buildRecipe(
+        val rebuilt = buildRecipe(
             id = id,
             name = name,
             mealType = mealType,
@@ -1555,6 +1628,19 @@ class MealPlannerState(
             instructionSteps = instructionSteps,
             sourceUrl = sourceUrl
         ) ?: return false
+
+        // The current editor can only edit the legacy measurement dimension.
+        // Retain frozen cross-dimension display text on metadata-only edits.
+        val previousRequirements = existing.ingredients.associateBy { it.ingredientId }
+        val updated = rebuilt.copy(
+            ingredients = rebuilt.ingredients.map { edited ->
+                val ingredient = ingredients.find { it.id == edited.ingredientId }
+                if (ingredient == null) edited else RecipeQuantityRules.retainUneditableSnapshot(
+                    previousRequirements[edited.ingredientId], edited, ingredient,
+                    displayExplicitlyEdited = edited.ingredientId in explicitlyEditedRequirementIds
+                )
+            }
+        )
 
         val retainedManual = manuallyAddedShoppingIds()
         recipes[index] = updated
@@ -1654,13 +1740,35 @@ class MealPlannerState(
                 draft.unit.quantityType != ingredient.quantityType
             ) return@mapNotNull null
 
-            RecipeIngredient(
-                ingredientId = draft.ingredientId,
-                amountBase = draft.unit.toBase(draft.amount)
-            )
+            // Freeze physical quantity from the factor shown to the author.
+            // Historical package sizes stay stable even if today’s profile
+            // changes. Native drafts continue to use exact legacy factors.
+            if (draft.displayUnit != null) {
+                val factor = draft.displayFactor ?: return@mapNotNull null
+                if (!factor.isFinite() || factor <= 0.0 || factor > 1e9) {
+                    return@mapNotNull null
+                }
+                RecipeQuantityRules.freeze(
+                    ingredient = ingredient,
+                    displayAmount = draft.amount,
+                    displayUnit = draft.displayUnit,
+                    rules = listOf(IngredientUnitConversion(
+                        unit = draft.displayUnit,
+                        baseAmountPerUnit = factor,
+                        approximate = draft.displayApproximate
+                    ))
+                )?.copy(conversionApproximate = draft.displayApproximate)
+                    ?: return@mapNotNull null
+            } else {
+                RecipeQuantityRules.freeze(
+                    ingredientId = draft.ingredientId,
+                    displayAmount = draft.amount,
+                    displayUnit = draft.unit
+                ) ?: return@mapNotNull null
+            }
         }
 
-        if (converted.isEmpty()) return null
+        if (converted.size != requirements.size) return null
 
         val convertedPrerequisites = if (mealType == MealType.DINNER) {
             pantryPrerequisites.mapNotNull { draft ->
@@ -1854,6 +1962,120 @@ class MealPlannerState(
         )
     }
 
+    /** Add each confirmed retail package as its own durable lot. */
+    fun addPantryPackages(
+        ingredientId: String,
+        packageCount: Int,
+        amountPerPackage: Double,
+        unit: MeasurementUnit,
+        opened: Boolean = false,
+        bestBefore: String? = null
+    ): Boolean {
+        val ingredient = ingredients.firstOrNull { it.id == ingredientId } ?: return false
+        if (packageCount !in 1..100 || ingredient.quantityType == QuantityType.PACKAGE ||
+            unit.quantityType != ingredient.quantityType || !amountPerPackage.isFinite() ||
+            amountPerPackage <= 0.0
+        ) return false
+
+        if (bestBefore != null && runCatching {
+            LocalDate.parse(bestBefore)
+        }.isFailure) return false
+
+        val base = unit.toBase(amountPerPackage)
+        val total = base * packageCount
+        if (!base.isFinite() || base <= 0.0 || base > 1e10 ||
+            !total.isFinite() || total > 1e10
+        ) return false
+
+        val lots = (1..packageCount).map {
+            PantryLot(
+                ingredientId = ingredientId,
+                originalBase = base,
+                remainingBase = base,
+                opened = opened,
+                legacyUnknown = false,
+                bestBefore = bestBefore,
+                createdAt = java.time.Instant.now().toString()
+            )
+        }
+        pantryLots.addAll(lots)
+        pantry[ingredientId] = (pantry[ingredientId] ?: 0.0) + total
+        enqueueMutations(lots.map {
+            QueuedMutation.UpsertPantryLot(lot = it, expectedVersion = 0L)
+        })
+        return true
+    }
+
+    fun updatePantryLot(
+        lotId: String, remainingBase: Double, opened: Boolean
+    ): Boolean {
+        val index = pantryLots.indexOfFirst { it.id == lotId }
+        if (index < 0 || !remainingBase.isFinite()) return false
+        val previous = pantryLots[index]
+        val next = previous.copy(
+            remainingBase = remainingBase, opened = opened,
+            version = previous.version + 1
+        )
+        if (!PantryLotRules.valid(next)) return false
+        pantryLots[index] = next
+        val current = pantry[previous.ingredientId] ?: 0.0
+        pantry[previous.ingredientId] =
+            (current + remainingBase - previous.remainingBase).coerceAtLeast(0.0)
+        enqueueMutation(QueuedMutation.UpsertPantryLot(
+            lot = next, expectedVersion = previous.version
+        ))
+        return true
+    }
+
+    /**
+     * Manual usage or disposal does not require completing a recipe. Physical
+     * lots are consumed opened-first through the existing idempotent server
+     * RPC; older total-only stock retains the legacy SetPantry path.
+     */
+    fun usePantryAmount(
+        ingredientId: String,
+        amount: Double,
+        unit: MeasurementUnit
+    ): Boolean {
+        val ingredient = ingredients.find { it.id == ingredientId } ?: return false
+        if (unit.quantityType != ingredient.quantityType ||
+            !amount.isFinite() || amount <= 0.0
+        ) return false
+        val usedBase = unit.toBase(amount)
+        val current = pantry[ingredientId] ?: 0.0
+        if (!usedBase.isFinite() || usedBase <= 0.0 || usedBase > 1e10 ||
+            !current.isFinite() || current <= 0.0 ||
+            usedBase > current
+        ) return false
+
+        val liveLots = pantryLots.filter {
+            it.ingredientId == ingredientId && it.remainingBase > 0.0
+        }
+        if (liveLots.isNotEmpty()) {
+            val after = PantryLotRules.consume(
+                pantryLots.toList(), ingredientId, usedBase
+            ) ?: run {
+                lastError = "Lagerpakkerne stemmer ikke med beholdningen. Opdatér lageret."
+                return false
+            }
+            // A single offline event is applied at most once by the cloud.
+            syncListByKey(pantryLots, after, PantryLot::id)
+            pantry[ingredientId] = (current - usedBase).coerceAtLeast(0.0)
+            enqueueMutation(QueuedMutation.ConsumePantryLots(
+                ingredientId = ingredientId,
+                amountBase = usedBase,
+                transactionId = UUID.randomUUID().toString()
+            ))
+        } else {
+            setPantry(
+                ingredientId,
+                (current - usedBase).coerceAtLeast(0.0),
+                ingredient.quantityType.baseMeasurementUnit()
+            )
+        }
+        return true
+    }
+
     fun setPantry(
         ingredientId: String,
         amount: Double,
@@ -1924,18 +2146,33 @@ class MealPlannerState(
 
         if (updates.isEmpty()) return
 
+        var projectedLots = pantryLots.toList()
+        val operations = mutableListOf<QueuedMutation>()
+        val transactionId = UUID.randomUUID().toString()
+        for ((ingredientId, amountBase) in updates) {
+            val previous = pantry[ingredientId] ?: 0.0
+            val deducted = (previous - amountBase).coerceAtLeast(0.0)
+            if (deducted <= 0.0) continue
+            if (projectedLots.any { it.ingredientId == ingredientId &&
+                    it.remainingBase > 0.0 }) {
+                val after = PantryLotRules.consume(projectedLots, ingredientId, deducted)
+                if (after == null) {
+                    lastError = "Opdatér Lager: pakkerne stemmer ikke med den viste beholdning."
+                    return
+                }
+                projectedLots = after
+                operations += QueuedMutation.ConsumePantryLots(
+                    ingredientId, deducted, transactionId
+                )
+            } else {
+                operations += QueuedMutation.SetPantry(ingredientId, amountBase)
+            }
+        }
+        syncListByKey(pantryLots, projectedLots, PantryLot::id)
         updates.forEach { (ingredientId, amountBase) ->
             pantry[ingredientId] = amountBase
         }
-
-        enqueueMutations(
-            updates.map { (ingredientId, amountBase) ->
-                QueuedMutation.SetPantry(
-                    ingredientId = ingredientId,
-                    amountBase = amountBase
-                )
-            }
-        )
+        enqueueMutations(operations)
     }
 
     /**
@@ -1975,6 +2212,39 @@ class MealPlannerState(
             return false
         }
 
+        val consumptionMutations = mutableListOf<QueuedMutation>()
+        val spentByIngredient = linkedMapOf<String, Double>()
+        var projectedLots = pantryLots.toList()
+        // A stable meal-transaction UUID deduplicates concurrent phone
+        // submissions, as well as retries after a lost network response.
+        val mealTransactionId = UUID.nameUUIDFromBytes(
+            "${householdId}:${date}:${recipeId}".toByteArray(Charsets.UTF_8)
+        ).toString()
+        remaining.forEach { (ingredientId, newBase) ->
+            val oldBase = pantry[ingredientId] ?: 0.0
+            val spent = (oldBase - newBase).coerceAtLeast(0.0)
+            if (spent <= 0.0) return@forEach
+            spentByIngredient[ingredientId] = spent
+            if (projectedLots.any { it.ingredientId == ingredientId &&
+                    it.remainingBase > 0.0 }) {
+                val after = PantryLotRules.consume(projectedLots, ingredientId, spent)
+                if (after == null) {
+                    lastError = "Lagerpakkerne stemmer ikke med den viste beholdning. Opdatér lageret."
+                    return false
+                }
+                projectedLots = after
+                consumptionMutations += QueuedMutation.ConsumePantryLots(
+                    ingredientId, spent, mealTransactionId
+                )
+            } else {
+                if (!isLocalOnly) {
+                    lastError = "Lageret mangler pakkeoplysninger. Opdatér lageret før måltidet."
+                    return false
+                }
+                consumptionMutations += QueuedMutation.SetPantry(ingredientId, newBase)
+            }
+        }
+        syncListByKey(pantryLots, projectedLots, PantryLot::id)
         remaining.forEach { (ingredientId, value) -> pantry[ingredientId] = value }
         history.add(MealHistoryEntry(recipeId, date))
         // Completion and the persisted day lock share an offline outbox batch.
@@ -1982,13 +2252,19 @@ class MealPlannerState(
             lockedDays.add(date.dayOfWeek)
             weeklyPlanId?.let(::weekStateMutation)
         } else null
-        enqueueMutations(
-            remaining.map { (ingredientId, amountBase) ->
-                QueuedMutation.SetPantry(ingredientId = ingredientId, amountBase = amountBase)
-            } + QueuedMutation.SetMealEaten(
+        val commitMutations = if (isLocalOnly) {
+            consumptionMutations + QueuedMutation.SetMealEaten(
                 eatenOn = date.toString(), recipeId = recipeId
-            ) + listOfNotNull(lockMutation)
-        )
+            )
+        } else {
+            listOf(QueuedMutation.CompleteMealWithLots(
+                eatenOn = date.toString(),
+                recipeId = recipeId,
+                deductions = spentByIngredient,
+                transactionId = mealTransactionId
+            ))
+        }
+        enqueueMutations(commitMutations + listOfNotNull(lockMutation))
         return true
     }
 
