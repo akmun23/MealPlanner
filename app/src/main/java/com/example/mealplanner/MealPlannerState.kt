@@ -10,6 +10,7 @@ import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -64,6 +65,11 @@ class MealPlannerState(
     private val reconnectMutex = Mutex()
     private val reloadMutex = Mutex()
     private val mutationQueueMutex = Mutex()
+    private val mutationEnqueueMonitor = Any()
+    private var pendingMutationEnqueues = 0
+    private var mutationEnqueuesIdle = CompletableDeferred<Unit>().apply {
+        complete(Unit)
+    }
     private var cachePersistJob: Job? = null
     private val syncTracker = SyncGenerationTracker()
     private var syncStatusClearJob: Job? = null
@@ -871,6 +877,31 @@ class MealPlannerState(
         enqueueMutations(listOf(mutation))
     }
 
+    private fun beginMutationEnqueue() {
+        synchronized(mutationEnqueueMonitor) {
+            if (pendingMutationEnqueues == 0) {
+                mutationEnqueuesIdle = CompletableDeferred()
+            }
+            pendingMutationEnqueues += 1
+        }
+    }
+
+    private fun finishMutationEnqueue() {
+        val completed = synchronized(mutationEnqueueMonitor) {
+            pendingMutationEnqueues -= 1
+            check(pendingMutationEnqueues >= 0)
+            mutationEnqueuesIdle.takeIf { pendingMutationEnqueues == 0 }
+        }
+        completed?.complete(Unit)
+    }
+
+    private suspend fun awaitPendingMutationEnqueues() {
+        val idle = synchronized(mutationEnqueueMonitor) {
+            mutationEnqueuesIdle
+        }
+        idle.await()
+    }
+
     private fun enqueueMutations(
         mutations: List<QueuedMutation>
     ) {
@@ -883,9 +914,8 @@ class MealPlannerState(
         syncTracker.markLocalChange(domains)
         syncIndicator = SyncIndicator.SAVING
 
-        val snapshot = currentSnapshot()
-
         if (isLocalOnly) {
+            val snapshot = currentSnapshot()
             // Local-only updates are durable in Room, without creating an
             // outbox entry or a WorkManager task requiring cloud credentials.
             cachePersistJob?.cancel()
@@ -905,11 +935,15 @@ class MealPlannerState(
             return
         }
 
-        scope.launch {
+        beginMutationEnqueue()
+        val job = scope.launch {
             mutationQueueMutex.withLock {
                 try {
+                    // Capture the current view only after this write has its
+                    // place in the serialized queue. A delayed old-week job
+                    // must never replace the newly selected week in Room.
                     offlineSyncQueue.enqueue(
-                        snapshot = snapshot,
+                        snapshot = currentSnapshot(),
                         mutations = mutations
                     )
                     val drainResult = offlineSyncQueue.drainInApp(repository)
@@ -918,6 +952,8 @@ class MealPlannerState(
                     } else if (drainResult == OfflineSyncDrainResult.RETRY) {
                         syncIndicator = SyncIndicator.PENDING
                     }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
                 } catch (_: Exception) {
                     if (offlineSyncQueue.hasPendingMutations()) {
                         syncIndicator = SyncIndicator.PENDING
@@ -929,6 +965,9 @@ class MealPlannerState(
                 }
             }
         }
+        // invokeOnCompletion also releases the barrier if the scope is
+        // cancelled before the coroutine gets its first dispatch.
+        job.invokeOnCompletion { finishMutationEnqueue() }
     }
 
     private fun weekStateMutation(
@@ -2739,6 +2778,10 @@ class MealPlannerState(
         isWeekChanging = true
         scope.launch {
             try {
+                // A user action marks its state immediately, then enqueues
+                // asynchronously. Wait for those enqueues before draining and
+                // replacing the active week snapshot.
+                awaitPendingMutationEnqueues()
                 mutationQueueMutex.withLock {
                     if (offlineSyncQueue.hasPendingMutations()) {
                         offlineSyncQueue.drainInApp(repository)
