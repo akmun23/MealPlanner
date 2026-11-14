@@ -2017,7 +2017,11 @@ class MealPlannerState(
             version = previous.version + 1
         )
         if (!PantryLotRules.valid(next)) return false
-        pantryLots[index] = next
+        if (remainingBase <= 0.0) {
+            pantryLots.removeAt(index)
+        } else {
+            pantryLots[index] = next
+        }
         val current = pantry[previous.ingredientId] ?: 0.0
         pantry[previous.ingredientId] =
             (current + remainingBase - previous.remainingBase).coerceAtLeast(0.0)
