@@ -63,7 +63,7 @@ internal object PantryLotRules {
         // zero-quantity mutation is queued so the server can prune its row.
         return result.filterNot {
             it.ingredientId == ingredientId &&
-                it.remainingBase <= 0.000000001
+                it.remainingBase == 0.0
         }
     }
 }
