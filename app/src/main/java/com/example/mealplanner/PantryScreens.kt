@@ -66,6 +66,12 @@ fun PantryScreen(
     val sortOrder = PantrySortOrder.entries
         .firstOrNull { it.name == sortOrderKey }
         ?: PantrySortOrder.NAME_ASC
+    val categoryOptions by remember {
+        derivedStateOf {
+            listOf<IngredientCategory?>(null) +
+                state.ingredientCategories.sortedBy { it.name.lowercase() }
+        }
+    }
     var editing by remember { mutableStateOf<Ingredient?>(null) }
 
     editing?.let { ingredient ->
@@ -82,8 +88,8 @@ fun PantryScreen(
     val filtered by remember(sortOrderKey, stockFilterKey) {
         derivedStateOf {
             visiblePantryIngredients(
-                ingredients = state.ingredients.toList(),
-                categories = state.ingredientCategories.toList(),
+                ingredients = state.ingredients,
+                categories = state.ingredientCategories,
                 pantry = state.pantry,
                 searchQuery = searchQuery,
                 selectedCategoryId = selectedCategoryId,
@@ -134,8 +140,7 @@ fun PantryScreen(
 
                 SimpleSelector(
                     label = selectedCategory?.name ?: "Alle kategorier",
-                    options = listOf<IngredientCategory?>(null) +
-                            state.ingredientCategories.sortedBy { it.name.lowercase() },
+                    options = categoryOptions,
                     optionText = { it?.name ?: "Alle kategorier" },
                     onSelected = { selectedCategoryId = it?.id },
                     fillWidth = true
