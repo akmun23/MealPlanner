@@ -58,26 +58,47 @@ internal class SignedMealImageUrls private constructor(context: Context) {
     private val requestSlots = Semaphore(4)
     private val locks = ConcurrentHashMap<String, Mutex>()
 
+    /** A still-valid signed URL and when it expires (epoch millis). */
+    private class Signed(val url: String, val expiresAt: Long)
+
+    // Rows leave and re-enter a lazy list while scrolling. Without a memory
+    // copy each re-entry starts with no URL, shows the placeholder and then
+    // recomposes a second time once SharedPreferences has been read.
+    private val memory = ConcurrentHashMap<String, Signed>()
+
+    /**
+     * The URL to use immediately, or null if it must be resolved first.
+     * Never blocks: only the in-memory copy is consulted.
+     */
+    fun cached(reference: String): String? {
+        val path = MealImageReference.pathFrom(reference) ?: return reference
+        return memory[path]
+            ?.takeIf { it.expiresAt > System.currentTimeMillis() }
+            ?.url
+    }
+
     suspend fun resolve(reference: String): String {
         val path = MealImageReference.pathFrom(reference) ?: return reference
         return locks.getOrPut(path) { Mutex() }.withLock {
             val now = System.currentTimeMillis()
             val previous = preferences.getString("url:$path", null)
             val expires = preferences.getLong("expires:$path", 0L)
-            if (previous != null && expires > now) return@withLock previous
+            if (previous != null && expires > now) {
+                memory[path] = Signed(previous, expires)
+                return@withLock previous
+            }
 
             try {
                 val signed = requestSlots.withPermit {
                     SupabaseProvider.client.storage["meal-images"]
                         .createSignedUrl(path, 24.hours)
                 }
+                val expiresAt = now + 23L * 60L * 60L * 1000L
                 preferences.edit {
                     putString("url:$path", signed)
-                        .putLong(
-                            "expires:$path",
-                            now + 23L * 60L * 60L * 1000L
-                        )
+                        .putLong("expires:$path", expiresAt)
                 }
+                memory[path] = Signed(signed, expiresAt)
                 signed
             } catch (cancelled: CancellationException) {
                 throw cancelled
@@ -90,6 +111,7 @@ internal class SignedMealImageUrls private constructor(context: Context) {
     }
 
     fun invalidate(path: String) {
+        memory.remove(path)
         preferences.edit {
             remove("url:$path")
                 .remove("expires:$path")
@@ -121,13 +143,12 @@ internal fun MealImage(
         SignedMealImageUrls.get(context.applicationContext)
     }
     val resolved by produceState(
-        initialValue = if (MealImageReference.pathFrom(imageUri) != null) {
-            null
-        } else {
-            imageUri
-        },
+        // Non-null for plain URLs and for any already-signed path, so a row
+        // that scrolls back into view composes its image exactly once.
+        initialValue = resolver.cached(imageUri),
         key1 = imageUri
     ) {
+        if (value != null) return@produceState
         value = try {
             // Preferences and URL signing stay off the UI dispatcher even
             // when dozens of new rows become visible during a fast fling.

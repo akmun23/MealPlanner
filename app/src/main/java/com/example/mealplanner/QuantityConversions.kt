@@ -263,3 +263,57 @@ internal object RecipeQuantityRules {
         return ingredient.preferredUnit.fromBase(requirement.amountBase) to ingredient.preferredUnit
     }
 }
+
+/**
+ * How a household conversion is spoken and typed. A rule is stored as "base
+ * amount per 1 unit". For ingredients counted in pieces or packages that reads
+ * badly with physical units ("1 g = 0.0036 stk"), so there it is entered the
+ * natural way round - "1 stk = 280 g" - and the reciprocal is stored.
+ */
+internal object ConversionPhrasing {
+    private fun isPhysical(unit: QuantityUnit): Boolean =
+        unit.nativeUnit?.quantityType.let {
+            it == QuantityType.MASS || it == QuantityType.VOLUME
+        }
+
+    /** True when the rule reads "1 <ingredient base unit> = N <unit>". */
+    fun inverted(type: QuantityType, unit: QuantityUnit): Boolean = when (type) {
+        QuantityType.COUNT -> isPhysical(unit)
+        QuantityType.PACKAGE -> isPhysical(unit) || unit == QuantityUnit.PIECE
+        else -> false
+    }
+
+    /** The number the user types -> the stored base amount per unit. */
+    fun stored(type: QuantityType, unit: QuantityUnit, typed: Double): Double? {
+        if (!typed.isFinite() || typed <= 0.0) return null
+        val value = if (inverted(type, unit)) 1.0 / typed else typed
+        return value.takeIf { it.isFinite() && it > 0.0 && it <= 1e9 }
+    }
+
+    /** The stored base amount per unit -> the number shown to the user. */
+    fun shown(type: QuantityType, unit: QuantityUnit, stored: Double): Double {
+        val value = if (inverted(type, unit)) 1.0 / stored else stored
+        // 1 / (1 / 280) is 280.00000000000006: round away floating-point dust.
+        return java.math.BigDecimal(value)
+            .round(java.math.MathContext(9))
+            .toDouble()
+    }
+
+    /** "1 stk = 280 g" or "1 pakke = 200 g". */
+    fun describe(type: QuantityType, rule: IngredientUnitConversion): String {
+        val base = type.baseMeasurementUnit()
+        val number = formatDisplayNumber(shown(type, rule.unit, rule.baseAmountPerUnit))
+        val estimate = if (rule.approximate) " · ca." else ""
+        return if (inverted(type, rule.unit)) {
+            "1 ${base.labelFor(1.0)} = $number ${rule.unit.labelFor(number.replace(',', '.').toDoubleOrNull() ?: 1.0)}$estimate"
+        } else {
+            "1 ${rule.unit.labelFor(1.0)} = $number ${base.symbol}$estimate"
+        }
+    }
+
+    fun example(type: QuantityType): String = when (type) {
+        QuantityType.COUNT -> "Fx 1 stk = 280 g"
+        QuantityType.PACKAGE -> "Fx 1 pakke = 280 g"
+        else -> "Fx 1 pakke = 200 ${type.baseMeasurementUnit().symbol}"
+    }
+}

@@ -140,8 +140,8 @@ internal fun BilkaApiSettingsScreen(
     SubpageScaffold(title = "BilkaToGo · Indstillinger", onBack = onBack) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            contentPadding = PaddingValues(AppLayout.screenPadding),
+            verticalArrangement = Arrangement.spacedBy(AppLayout.sectionSpacing)
         ) {
             item {
                 Text(

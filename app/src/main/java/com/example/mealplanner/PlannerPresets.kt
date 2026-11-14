@@ -17,6 +17,7 @@ internal enum class PlannerPreset(val title: String, val description: String) {
             recency7Days = 165.0,
             recency14Days = 95.0,
             recency30Days = 55.0,
+            frequency60Days = 30.0,
             previousPlanReuse = 65.0
         )
 

@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ImageNotSupported
@@ -193,7 +192,7 @@ private fun statusLabel(row: BilkaListIngredient): String = when (row.state) {
 @Composable
 private fun BilkaProductPhoto(p: BilkaProduct) {
     val boxModifier = Modifier.requiredSize(76.dp)
-        .clip(RoundedCornerShape(12.dp))
+        .clip(AppShapes.control)
     val context = LocalContext.current
     // A remote product photo may be thousands of pixels. Only decode a thumbnail.
     val model = remember(context, p.imageUrl) {
@@ -324,8 +323,8 @@ internal fun BilkaProductsScreen(
     SubpageScaffold(title = "Mine BilkaToGo-produkter", onBack = onBack) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            contentPadding = PaddingValues(AppLayout.screenPadding),
+            verticalArrangement = Arrangement.spacedBy(AppLayout.itemSpacing)
         ) {
             item {
                 Text(
@@ -549,14 +548,11 @@ internal fun BilkaProductPickerScreen(
     SubpageScaffold(title = ingredientName, onBack = onBack) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            contentPadding = PaddingValues(AppLayout.screenPadding),
+            verticalArrangement = Arrangement.spacedBy(AppLayout.itemSpacing)
         ) {
             item {
-                Text(
-                    "Vælg dit faste BilkaToGo-produkt",
-                    style = MaterialTheme.typography.titleLarge
-                )
+                SectionTitle("Vælg dit faste BilkaToGo-produkt")
                 Text(
                     "Sammenlign mærke, størrelse og pris. Vi gemmer kun det produkt, du vælger.",
                     style = MaterialTheme.typography.bodySmall

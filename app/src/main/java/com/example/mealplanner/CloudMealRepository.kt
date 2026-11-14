@@ -252,6 +252,14 @@ private data class ShoppingCheckRow(
 )
 
 @Serializable
+private data class ShoppingExtraRow(
+    @SerialName("household_id") val householdId: String,
+    @SerialName("weekly_plan_id") val weeklyPlanId: String,
+    @SerialName("ingredient_id") val ingredientId: String,
+    @SerialName("extra_amount_base") val extraAmountBase: Double
+)
+
+@Serializable
 private data class ShoppingInclusionRow(
     @SerialName("household_id") val householdId: String,
     @SerialName("weekly_plan_id") val weeklyPlanId: String,
@@ -294,7 +302,9 @@ data class CloudSnapshot(
     val sandwichDay: DayOfWeek?,
     val history: List<MealHistoryEntry>,
     val viewWeekStart: LocalDate = LocalDate.now()
-        .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
+        .with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY)),
+    /** Extra amount (base unit) to buy on top of what the week's recipes need. */
+    val shoppingExtra: Map<String, Double> = emptyMap()
 ) {
     companion object {
         val EMPTY = CloudSnapshot(
@@ -351,6 +361,7 @@ internal fun syncDomainForTable(table: String): CloudSyncDomain? =
         "weekly_lunch_recipes" -> CloudSyncDomain.WEEK
 
         "shopping_checks",
+        "shopping_extras",
         "shopping_inclusions" -> CloudSyncDomain.SHOPPING
 
         "meal_history" -> CloudSyncDomain.HISTORY
@@ -380,7 +391,8 @@ internal data class CloudWeekSnapshot(
 
 internal data class CloudShoppingSnapshot(
     val checked: Map<String, Boolean>,
-    val included: Map<String, Boolean>
+    val included: Map<String, Boolean>,
+    val extra: Map<String, Double> = emptyMap()
 )
 
 internal sealed interface CloudRealtimeEvent {
@@ -567,6 +579,7 @@ class CloudMealRepository(
                 lockedDays = week.lockedDays,
                 shoppingChecked = shopping.checked,
                 shoppingIncluded = shopping.included,
+                shoppingExtra = shopping.extra,
                 selectedLunchRecipeIds =
                     week.selectedLunchRecipeIds,
                 weeklyPlanId = week.weeklyPlanId,
@@ -1035,7 +1048,25 @@ class CloudMealRepository(
                     }.decodeList<ShoppingInclusionRow>()
                 }
 
+                val extraDeferred = async {
+                    // shopping_extras arrived after the other shopping tables.
+                    // If it is not deployed yet, the list must still load.
+                    runCatching {
+                        supabase.from("shopping_extras").select {
+                            filter {
+                                eq("household_id", householdId)
+                                eq("weekly_plan_id", weeklyPlanId)
+                            }
+                        }.decodeList<ShoppingExtraRow>()
+                    }.getOrElse { error ->
+                        if (error is kotlinx.coroutines.CancellationException) throw error
+                        emptyList()
+                    }
+                }
+
                 CloudShoppingSnapshot(
+                    extra = extraDeferred.await()
+                        .associate { it.ingredientId to it.extraAmountBase },
                     checked = checksDeferred.await()
                         .associate {
                             it.ingredientId to it.checked
@@ -1478,6 +1509,34 @@ class CloudMealRepository(
         }
     }
 
+    /** A zero amount removes the extra; anything else replaces it. */
+    suspend fun setShoppingExtra(
+        weeklyPlanId: String,
+        ingredientId: String,
+        amountBase: Double
+    ) = withContext(Dispatchers.IO) {
+        if (amountBase > 0.0) {
+            supabase.from("shopping_extras").upsert(
+                ShoppingExtraRow(
+                    householdId = householdId,
+                    weeklyPlanId = weeklyPlanId,
+                    ingredientId = ingredientId,
+                    extraAmountBase = amountBase
+                )
+            ) {
+                onConflict = "weekly_plan_id,ingredient_id"
+            }
+        } else {
+            supabase.from("shopping_extras").delete {
+                filter {
+                    eq("household_id", householdId)
+                    eq("weekly_plan_id", weeklyPlanId)
+                    eq("ingredient_id", ingredientId)
+                }
+            }
+        }
+    }
+
     suspend fun setShoppingChecked(
         weeklyPlanId: String,
         ingredientId: String,
@@ -1556,6 +1615,7 @@ class CloudMealRepository(
             "weekly_lunch_recipes",
             "shopping_checks",
             "shopping_inclusions",
+            "shopping_extras",
             "meal_history"
         )
 

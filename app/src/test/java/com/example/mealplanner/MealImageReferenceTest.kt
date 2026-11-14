@@ -44,4 +44,16 @@ class MealImageReferenceTest {
         assertEquals(reference, restored!!.recipes.single().imageUri)
         assertEquals("household/recipes/dinner.jpg", restored.recipes.single().imagePath)
     }
+
+    @Test
+    fun cachedUrlIsAvailableSynchronouslyOnlyForPlainUrlsUntilSigned() {
+        val context = androidx.test.core.app.ApplicationProvider
+            .getApplicationContext<android.content.Context>()
+        val urls = SignedMealImageUrls.get(context)
+
+        // Plain URLs need no signing, so rows can compose them immediately.
+        assertEquals("https://example.test/a.jpg", urls.cached("https://example.test/a.jpg"))
+        // A storage path has no URL until it has been signed once.
+        assertNull(urls.cached(MealImageReference.forPath("household/never-signed.jpg")))
+    }
 }

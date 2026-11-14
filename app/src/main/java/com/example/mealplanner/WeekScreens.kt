@@ -25,7 +25,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
@@ -53,7 +52,9 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.FloatState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -99,10 +100,23 @@ fun WeekScreen(
     onMealHistory: () -> Unit
 ) {
     val sandwichDay = state.sandwichDay()
-    val homeCount = orderedWeekDays.count { state.dayModes[it] != DayMode.AWAY }
-    val selectedLunch = state.lunchRecipes()
-    val lunchOptions =
-        state.recipes.filter { it.mealType == MealType.LUNCH }.sortedBy { it.name.lowercase() }
+    // Derived values recompute only when their inputs change, not on every
+    // recomposition (which also happens continuously while dragging a day).
+    val homeCount by remember(state) {
+        derivedStateOf {
+            orderedWeekDays.count { state.dayModes[it] != DayMode.AWAY }
+        }
+    }
+    val selectedLunch by remember(state) {
+        derivedStateOf { state.lunchRecipes() }
+    }
+    val lunchOptions by remember(state) {
+        derivedStateOf {
+            state.recipes
+                .filter { it.mealType == MealType.LUNCH }
+                .sortedBy { it.name.lowercase() }
+        }
+    }
     // A dedicated drag handle leaves the rest of every day card scrollable.
     // The same action is also accessible via a tap-to-choose-day dialog.
     val weekListState = rememberLazyListState()
@@ -144,7 +158,7 @@ fun WeekScreen(
     var showWeekUnlockConfirmation by remember { mutableStateOf(false) }
     var finishingDinner by remember { mutableStateOf<Pair<LocalDate, String>?>(null) }
     finishingDinner?.let { (date, recipeId) ->
-        state.recipes.find { it.id == recipeId }?.let { meal ->
+        state.recipesById[recipeId]?.let { meal ->
             FinishMealDialog(
                 date = date,
                 recipe = meal,
@@ -334,20 +348,16 @@ fun WeekScreen(
         state = weekListState,
         modifier = Modifier.fillMaxSize()
             .onGloballyPositioned { listRootTop[0] = it.positionInRoot().y },
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        contentPadding = PaddingValues(AppLayout.screenPadding),
+        verticalArrangement = Arrangement.spacedBy(AppLayout.itemSpacing)
     ) {
         item(key = "week-navigation", contentType = "week-section") {
             Column {
-                Text(
-                    "Madplan",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold
-                )
+                ScreenTitle("Madplan")
 
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = AppShapes.card,
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surface
                     ),
@@ -409,7 +419,7 @@ fun WeekScreen(
                             OutlinedButton(
                                 onClick = { state.showCurrentWeek() },
                                 enabled = !state.isWeekChanging,
-                                shape = RoundedCornerShape(12.dp)
+                                shape = AppShapes.control
                             ) {
                                 Icon(
                                     Icons.Filled.Today,
@@ -429,7 +439,7 @@ fun WeekScreen(
             item(key = "week-today", contentType = "week-section") {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = AppShapes.card,
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.primaryContainer
                     ),
@@ -469,7 +479,7 @@ fun WeekScreen(
                         Spacer(Modifier.height(6.dp))
                         Text(
                             todayEaten?.recipeId?.let { eaten ->
-                                state.recipes.find { it.id == eaten }?.name
+                                state.recipesById[eaten]?.name
                             } ?: todayRecipe?.name ?: "Ingen ret planlagt",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold,
@@ -480,7 +490,7 @@ fun WeekScreen(
                             Button(
                                 onClick = { finishingDinner = today to todayRecipe.id },
                                 modifier = Modifier.fillMaxWidth(),
-                                shape = RoundedCornerShape(12.dp)
+                                shape = AppShapes.control
                             ) {
                                 Text("Færdig – registrér dagens ret")
                             }
@@ -516,7 +526,7 @@ fun WeekScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp),
-                    shape = RoundedCornerShape(14.dp)
+                    shape = AppShapes.control
                 ) {
                     if (state.isPlanning) {
                         CircularProgressIndicator(
@@ -632,7 +642,7 @@ fun WeekScreen(
                     OutlinedButton(
                         onClick = { showLunchPicker = true },
                         modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(12.dp)
+                        shape = AppShapes.control
                     ) {
                         Text("Vælg")
                     }
@@ -739,7 +749,7 @@ fun WeekScreen(
                         .padding(12.dp)
                         .zIndex(4f)
                         .testTag("week-drag-status"),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = AppShapes.card,
                     color = MaterialTheme.colorScheme.primary,
                     shadowElevation = 12.dp
                 ) {
@@ -793,7 +803,7 @@ private fun DraggedDayPreview(
             .border(
                 width = 3.dp,
                 color = MaterialTheme.colorScheme.primary,
-                shape = RoundedCornerShape(20.dp)
+                shape = AppShapes.card
             )
             .graphicsLayer {
                 alpha = 1f
@@ -803,7 +813,7 @@ private fun DraggedDayPreview(
             .zIndex(3f)
             .clearAndSetSemantics {}
             .testTag("week-drag-preview"),
-        shape = RoundedCornerShape(20.dp),
+        shape = AppShapes.card,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.primaryContainer
         ),
@@ -857,7 +867,7 @@ private fun SummaryCard(
 ) {
     Card(
         modifier = modifier,
-        shape = RoundedCornerShape(18.dp),
+        shape = AppShapes.card,
         colors = CardDefaults.cardColors(
             containerColor = if (highlighted) {
                 MaterialTheme.colorScheme.primaryContainer
@@ -906,7 +916,7 @@ fun DayCard(
     // A corrected history entry should show what was actually eaten, not the
     // stale planned recipe. While explicitly unlocked, show the editable plan.
     val recipe = if (completedLocked && eatenId != null) {
-        state.recipes.find { it.id == eatenId } ?: plannedRecipe
+        state.recipesById[eatenId] ?: plannedRecipe
     } else plannedRecipe
     val isSandwich = day == state.sandwichDay &&
         recipe?.id != null && recipe.id == state.weeklySandwichRecipeId
@@ -1104,18 +1114,18 @@ fun DayCard(
                     dropTarget -> Modifier.border(
                         width = 3.dp,
                         color = MaterialTheme.colorScheme.tertiary,
-                        shape = RoundedCornerShape(20.dp)
+                        shape = AppShapes.card
                     )
                     dragging -> Modifier.border(
                         width = 3.dp,
                         color = MaterialTheme.colorScheme.primary,
-                        shape = RoundedCornerShape(20.dp)
+                        shape = AppShapes.card
                     )
                     else -> Modifier
                 }
             )
             .graphicsLayer { alpha = if (dragging) 0.66f else 1f },
-        shape = RoundedCornerShape(20.dp),
+        shape = AppShapes.card,
         colors = CardDefaults.cardColors(
             containerColor = when {
                 dropTarget -> MaterialTheme.colorScheme.tertiaryContainer
@@ -1131,7 +1141,7 @@ fun DayCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Surface(
                     modifier = Modifier.size(44.dp),
-                    shape = RoundedCornerShape(12.dp),
+                    shape = AppShapes.control,
                     color = if (away) {
                         MaterialTheme.colorScheme.surfaceVariant
                     } else {
@@ -1215,7 +1225,7 @@ fun DayCard(
                             .border(
                                 width = 2.dp,
                                 color = MaterialTheme.colorScheme.primary,
-                                shape = RoundedCornerShape(14.dp)
+                                shape = AppShapes.control
                             )
                             .testTag("week-drag-handle-${day.name}")
                             .onGloballyPositioned {
@@ -1270,7 +1280,7 @@ fun DayCard(
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(96.dp)
-                            .clip(RoundedCornerShape(12.dp)),
+                            .clip(AppShapes.control),
                         fallback = recipe.name.take(1).uppercase()
                     )
                 }
@@ -1354,7 +1364,7 @@ fun DayCard(
                         OutlinedButton(
                             onClick = { state.moveSandwich() },
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp)
+                            shape = AppShapes.control
                         ) { Text("Flyt sandwich") }
                     } else {
                         Row(
@@ -1365,7 +1375,7 @@ fun DayCard(
                             OutlinedButton(
                                 onClick = { showRecipePicker = true },
                                 modifier = Modifier.weight(1f),
-                                shape = RoundedCornerShape(12.dp)
+                                shape = AppShapes.control
                             ) { Text("Skift ret") }
                             if (!isLocked && !state.isWeekRegenerationLocked() && recipe != null) {
                                 IconButton(onClick = { state.reroll(day) }) {

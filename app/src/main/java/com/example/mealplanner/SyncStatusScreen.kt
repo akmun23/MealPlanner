@@ -39,15 +39,11 @@ internal fun SyncStatusScreen(
     SubpageScaffold(title = "Synkronisering", onBack = onBack) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            contentPadding = PaddingValues(AppLayout.screenPadding),
+            verticalArrangement = Arrangement.spacedBy(AppLayout.sectionSpacing)
         ) {
             item {
-                Text(
-                    "Arbejd videre, selvom nettet er væk",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
+                SectionTitle("Arbejd videre, selvom nettet er væk")
                 Text(
                     if (state.isLocalMode) {
                         "Du bruger kun lokal lagring. Dine ændringer gemmes på telefonen uden cloud-synkronisering."

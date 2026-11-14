@@ -3,17 +3,39 @@ package com.example.mealplanner
 import kotlin.math.ceil
 import kotlin.math.max
 
+/** The unit a product's package_base_amount is expressed in. */
+internal fun BilkaQuantityKind.nativeUnit(): QuantityUnit = when (this) {
+    BilkaQuantityKind.MASS -> QuantityUnit.GRAM
+    BilkaQuantityKind.VOLUME -> QuantityUnit.MILLILITRE
+    BilkaQuantityKind.COUNT -> QuantityUnit.PIECE
+    BilkaQuantityKind.PACKAGE -> QuantityUnit.PACK
+}
+
 /** Shopping amounts use the ingredient's canonical base unit (g, ml, pieces, packs). */
 internal object BilkaPackageMath {
+    /**
+     * How much of the ingredient's base unit one purchased pack holds.
+     *
+     * 1. A size the household confirmed explicitly always wins, whatever the
+     *    product's unit kind is.
+     * 2. A product measured in the ingredient's own kind is used as listed.
+     * 3. Otherwise (a 280 g baguette for an ingredient counted in pieces) the
+     *    ingredient's own saved conversion bridges the two, e.g. "1 stk = 280 g".
+     *    Without such a conversion nothing is guessed and null is returned.
+     */
     fun applicablePackBase(
         ingredient: Ingredient,
         product: BilkaProduct,
         correction: Double? = null
     ): Double? {
+        correction?.takeIf { it.isFinite() && it > 0.0 }?.let { return it }
         val kind = product.quantityKind ?: return null
-        if (kind.name != ingredient.quantityType.name) return null
-        val amount = correction ?: product.packageBaseAmount
-        return amount?.takeIf { it.isFinite() && it > 0.0 }
+        val amount = product.packageBaseAmount
+            ?.takeIf { it.isFinite() && it > 0.0 } ?: return null
+        if (kind.name == ingredient.quantityType.name) return amount
+        return QuantityConversionEngine.toBase(
+            ingredient, amount, kind.nativeUnit(), ingredient.unitConversions
+        )
     }
 
     fun missing(requiredBase: Double, pantryBase: Double): Double =

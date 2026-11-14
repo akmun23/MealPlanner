@@ -11,7 +11,6 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedCard
@@ -134,8 +133,8 @@ internal fun MealHistoryScreen(
     ) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            contentPadding = PaddingValues(AppLayout.screenPadding),
+            verticalArrangement = Arrangement.spacedBy(AppLayout.itemSpacing)
         ) {
             item {
                 Text(
@@ -166,7 +165,7 @@ internal fun MealHistoryScreen(
 
                 OutlinedCard(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
+                    shape = AppShapes.card
                 ) {
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(12.dp),

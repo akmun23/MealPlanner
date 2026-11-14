@@ -56,4 +56,34 @@ class DarkThemeContrastTest {
         assertTrue(contrast(scheme.outline, scheme.surface) >= 3.0)
         assertTrue(contrast(scheme.outlineVariant, scheme.surface) >= 3.0)
     }
+
+    @Test
+    fun lightTextAndEmphasisPairsMeetWcagAaForNormalText() {
+        val scheme = AppColors
+        val pairs = mapOf(
+            "Main content" to (scheme.onSurface to scheme.surface),
+            "Background content" to (scheme.onBackground to scheme.background),
+            "Cards" to (scheme.onSurface to scheme.surfaceContainerHighest),
+            "Secondary labels" to (scheme.onSurfaceVariant to scheme.surfaceVariant),
+            "Primary buttons" to (scheme.onPrimary to scheme.primary),
+            "Primary cards" to (scheme.onPrimaryContainer to scheme.primaryContainer),
+            "Secondary buttons" to (scheme.onSecondary to scheme.secondary),
+            "Secondary cards" to (scheme.onSecondaryContainer to scheme.secondaryContainer),
+            "Tertiary cards" to (scheme.onTertiaryContainer to scheme.tertiaryContainer),
+            "Error buttons" to (scheme.onError to scheme.error)
+        )
+        pairs.forEach { (name, colors) ->
+            assertTrue(
+                "$name contrast was ${contrast(colors.first, colors.second)} (minimum 4.5)",
+                contrast(colors.first, colors.second) >= 4.5
+            )
+        }
+    }
+
+    @Test
+    fun lightControlsHaveVisibleBorders() {
+        val scheme = AppColors
+        assertTrue(contrast(scheme.outline, scheme.surface) >= 3.0)
+        assertTrue(contrast(scheme.outline, scheme.background) >= 3.0)
+    }
 }

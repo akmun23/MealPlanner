@@ -10,8 +10,29 @@ import kotlin.random.Random
 object WeeklyPlanner {
 
     private const val TRIALS = 400
-    private const val TOP_POOL = 64
     private const val LOCAL_SEARCH_STEPS = 18
+
+    /**
+     * A recipe that is fully in stock is worth this many covered-ingredient
+     * units, whether it has 4 or 20 ingredients. Summing units per ingredient
+     * let a 20-ingredient recipe out-score every small one by hundreds of
+     * points, simply for being big.
+     */
+    private const val PANTRY_REFERENCE_INGREDIENTS = 6.0
+
+    /**
+     * Score points per unit of the "Tilfældighed" (jitter) setting. The pick
+     * is a softmax, so a candidate this many points worse than the best is
+     * chosen about a third as often. With the default jitter (8) every plan or
+     * recipe within ~40 points of the best is a realistic outcome; jitter 0
+     * always takes the best. The old rule (2 points per unit) made scores that
+     * differed by 100+ points practically deterministic.
+     */
+    private const val TEMPERATURE_PER_JITTER = 5.0
+
+    /** How far back "how often did we eat this" looks, and how many meals count. */
+    private const val FREQUENCY_WINDOW_DAYS = 60L
+    private const val FREQUENCY_MAX_COUNT = 4
 
     fun preferredSandwichDay(dayModes: Map<DayOfWeek, DayMode>): DayOfWeek? {
         val homeDays = orderedWeekDays.filter { dayModes[it] != DayMode.AWAY }
@@ -162,14 +183,14 @@ object WeeklyPlanner {
         val top = candidates
             .sortedByDescending { it.first }
             // Different day orders of the same meals should not monopolize
-            // the shortlist when a fresh collection of recipes is available.
+            // the pool. Every distinct set of meals stays in it: cutting it to
+            // the best few left only weeks built from the same recipes.
             .distinctBy { (_, candidate) ->
                 unlockedHomeDays
                     .filter { it != sandwichDay }
                     .mapNotNull { candidate[it] }
                     .sorted()
             }
-            .take(TOP_POOL)
 
         val plan = if (top.isEmpty()) currentPlan else {
             weightedPickPlans(top, random, weights.jitter)
@@ -365,7 +386,7 @@ object WeeklyPlanner {
         val chosenRecipes = chosenRecipeIds.mapNotNull(recipesById::get)
         var score = 0.0
 
-        score += PantryRules.coveredIngredientUnits(recipe, pantry) * weights.pantryCoverage
+        score += pantryScore(recipe, pantry, weights)
 
         val alreadyNeeded = chosenRecipes
             .flatMap { it.ingredients }
@@ -397,6 +418,7 @@ object WeeklyPlanner {
         }
 
         score -= recencyPenalty(recipe.id, historyByRecipe, targetDate, weights)
+        score -= frequencyPenalty(recipe.id, historyByRecipe, targetDate, weights)
         return score
     }
 
@@ -434,7 +456,7 @@ object WeeklyPlanner {
             .toSet()
 
         selected.forEach { recipe ->
-            score += PantryRules.coveredIngredientUnits(recipe, pantry) * weights.pantryCoverage
+            score += pantryScore(recipe, pantry, weights)
             // Avoid returning the same collection of meals after "Ny madplan".
             // Keep the sandwich exempt because it is fixed by the user.
             if (recipe.id != sandwichRecipeId && recipe.id in previousRecipeIds) {
@@ -453,12 +475,9 @@ object WeeklyPlanner {
 
         visible.forEachIndexed { index, (day, recipe) ->
             if (recipe == null) return@forEachIndexed
-            score -= recencyPenalty(
-                recipe.id,
-                historyByRecipe,
-                weekStart.plusDays(day.value.toLong() - 1),
-                weights
-            )
+            val mealDate = weekStart.plusDays(day.value.toLong() - 1)
+            score -= recencyPenalty(recipe.id, historyByRecipe, mealDate, weights)
+            score -= frequencyPenalty(recipe.id, historyByRecipe, mealDate, weights)
 
             if (index > 0) {
                 val (previousDay, previous) = visible[index - 1]
@@ -564,6 +583,25 @@ object WeeklyPlanner {
         }
     }
 
+    /**
+     * "Have we had this a lot lately?" The recency penalty only looks at the
+     * latest time a dish was eaten, so a dish eaten three times in five weeks
+     * and one eaten once look the same after 15 days. This counts the meals.
+     */
+    private fun frequencyPenalty(
+        recipeId: String,
+        historyByRecipe: Map<String, List<LocalDate>>,
+        targetDate: LocalDate,
+        weights: PlannerWeights
+    ): Double {
+        val dates = historyByRecipe[recipeId] ?: return 0.0
+        val count = dates.count {
+            !it.isAfter(targetDate) &&
+                ChronoUnit.DAYS.between(it, targetDate) <= FREQUENCY_WINDOW_DAYS
+        }
+        return minOf(count, FREQUENCY_MAX_COUNT) * weights.frequency60Days
+    }
+
     private fun randomJitter(
         maximum: Double,
         random: Random
@@ -574,12 +612,22 @@ object WeeklyPlanner {
             0.0
         }
 
+    /** Size-independent pantry bonus: share of the recipe in stock, 0..1. */
+    private fun pantryScore(
+        recipe: Recipe,
+        pantry: Map<String, Double>,
+        weights: PlannerWeights
+    ): Double =
+        PantryRules.coverage(recipe, pantry) *
+                PANTRY_REFERENCE_INGREDIENTS * weights.pantryCoverage
+
+    private fun temperature(jitter: Double): Double =
+        max(1.0, jitter * TEMPERATURE_PER_JITTER)
+
     // Exponential score weights keep strongly disfavoured recipes rare while
     // still letting similarly scored recipes throughout the entire list compete.
-    private fun scoreWeight(score: Double, best: Double, jitter: Double): Double {
-        val temperature = max(1.0, jitter * 2.0)
-        return exp(((score - best) / temperature).coerceAtLeast(-40.0))
-    }
+    private fun scoreWeight(score: Double, best: Double, temperature: Double): Double =
+        exp(((score - best) / temperature).coerceAtLeast(-40.0))
 
     private fun weightedPick(
         ranked: List<Pair<Recipe, Double>>,
@@ -588,7 +636,8 @@ object WeeklyPlanner {
     ): Recipe {
         if (ranked.size == 1) return ranked.first().first
         val best = ranked.maxOf { it.second }
-        val weights = ranked.map { (_, score) -> scoreWeight(score, best, jitter) }
+        val temperature = temperature(jitter)
+        val weights = ranked.map { (_, score) -> scoreWeight(score, best, temperature) }
         val total = weights.sum()
         var roll = random.nextDouble(0.0, total)
 
@@ -606,7 +655,8 @@ object WeeklyPlanner {
     ): Map<DayOfWeek, String?> {
         if (ranked.size == 1) return ranked.first().second
         val best = ranked.maxOf { it.first }
-        val weights = ranked.map { (score, _) -> scoreWeight(score, best, jitter) }
+        val temperature = temperature(jitter)
+        val weights = ranked.map { (score, _) -> scoreWeight(score, best, temperature) }
         val total = weights.sum()
         var roll = random.nextDouble(0.0, total)
 

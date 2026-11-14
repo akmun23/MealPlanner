@@ -39,7 +39,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlin.math.roundToLong
 
 private val da = Locale.forLanguageTag("da-DK")
-private fun kroner(ore: Long): String =
+internal fun kroner(ore: Long): String =
     NumberFormat.getCurrencyInstance(da).format(ore.toDouble() / 100.0)
 
 private fun productLabel(product: BilkaProduct): String =
@@ -65,6 +65,29 @@ internal fun confirmedProfilePurchaseHint(item: ShoppingItem): String? {
         (if (plan.surplusBase > 0.0) {
             " · ${formatDisplayNumber(plan.surplusBase)} $unit ekstra"
         } else "")
+}
+
+/**
+ * The standard product whose size is known (say 280 g) but cannot be turned
+ * into this ingredient's unit (pieces, packs) yet. Only then can the household
+ * fix it by saying what that size means for the ingredient.
+ */
+internal fun bilkaProductNeedingSize(
+    item: ShoppingItem,
+    context: BilkaShoppingContext?,
+    catalog: BilkaProductCatalog?
+): BilkaProduct? {
+    if (context == null || catalog == null) return null
+    if (context.purchase(item.ingredient.id)?.purchasedAmountBase != null) return null
+    val standard = context.default(item.ingredient.id) ?: return null
+    val product = catalog.product(standard.productId) ?: return null
+    if (product.quantityKind == null) return null
+    if (product.packageBaseAmount?.takeIf { it.isFinite() && it > 0.0 } == null) return null
+    return product.takeIf {
+        BilkaPackageMath.applicablePackBase(
+            item.ingredient, it, standard.packageBaseAmountOverride
+        ) == null
+    }
 }
 
 internal fun bilkaShoppingLine(

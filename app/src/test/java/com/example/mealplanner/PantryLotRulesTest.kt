@@ -18,7 +18,8 @@ class PantryLotRulesTest {
             listOf(sealed, opened, other), "pasta", 300.0
         )!!
         assertEquals(350.0, PantryLotRules.total(result, "pasta"), 0.001)
-        assertEquals(0.0, result.first { it.id == "open" }.remainingBase, 0.001)
+        // A fully consumed package is removed from the active state at once.
+        assertNull(result.firstOrNull { it.id == "open" })
         assertEquals(350.0, result.first { it.id == "sealed" }.remainingBase, 0.001)
         assertTrue(result.first { it.id == "sealed" }.opened)
         assertEquals(other, result.first { it.id == "other" })
@@ -70,14 +71,15 @@ class PantryLotRulesTest {
     }
 
     @Test
-    fun outsideRecipeUsageConsumesOpenPackageAndLeavesZeroTombstone() {
+    fun outsideRecipeUsageConsumesOpenPackageAndRemovesItWhenEmpty() {
         val opened = PantryLot(id = "first", ingredientId = "sauce",
             originalBase = 150.0, remainingBase = 40.0, opened = true)
         val sealed = PantryLot(id = "second", ingredientId = "sauce",
             originalBase = 150.0, remainingBase = 150.0)
         val result = PantryLotRules.consume(listOf(opened, sealed), "sauce", 60.0)!!
-        assertEquals(0.0, result[0].remainingBase, 0.0)
-        assertEquals(130.0, result[1].remainingBase, 0.0)
+        assertEquals(1, result.size)
+        assertEquals("second", result[0].id)
+        assertEquals(130.0, result[0].remainingBase, 0.0)
         assertEquals(1, PantryLotRules.active(result, "sauce").size)
         assertNull(PantryLotRules.consume(result, "sauce", 131.0))
     }

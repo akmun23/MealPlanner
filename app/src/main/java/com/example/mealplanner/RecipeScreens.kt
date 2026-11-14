@@ -21,7 +21,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -69,7 +68,19 @@ private data class RecipeListUi(
     val recipe: Recipe,
     val categoryName: String,
     val proteinNames: List<String>
-)
+) {
+    /**
+     * Every field the search box matches, joined once per data change so
+     * typing is a single `contains` per recipe instead of rebuilding labels.
+     * '\n' cannot occur in a single-line query, so fields never match across.
+     */
+    val searchText: String = listOf(
+        recipe.name,
+        categoryName,
+        recipeCategoryDisplayName(categoryName, proteinNames),
+        recipeProteinLabel(proteinNames),
+    ).plus(proteinNames).joinToString("\n")
+}
 
 // Flat, Bundle-compatible savers preserve unsaved long recipes on rotation.
 private val recipeStepSaver = listSaver<SnapshotStateList<RecipeInstructionStep>, String>(
@@ -155,10 +166,15 @@ fun RecipesScreen(
     var categoryFilter by rememberSaveable { mutableStateOf("Alle kategorier") }
     var canMakeOnly by rememberSaveable { mutableStateOf(false) }
 
-    val mealOptions = listOf("Alle måltider") +
-            MealType.entries.map { it.danishName() }
-    val categoryOptions = listOf("Alle kategorier") +
-            state.recipeCategories.sortedBy { it.name.lowercase() }.map { it.name }
+    val mealOptions = remember {
+        listOf("Alle måltider") + MealType.entries.map { it.danishName() }
+    }
+    val categoryOptions by remember {
+        derivedStateOf {
+            listOf("Alle kategorier") +
+                    state.sortedRecipeCategories.map { it.name }
+        }
+    }
 
     // Build recipe metadata only when recipes, ingredient protein flags, or
     // categories change. Search typing / pantry checkboxes only filter cached
@@ -207,16 +223,7 @@ fun RecipesScreen(
             recipeRows.filter { item ->
                 val recipe = item.recipe
                 (query.isBlank() ||
-                        recipe.name.contains(query, ignoreCase = true) ||
-                        item.categoryName.contains(query, ignoreCase = true) ||
-                        recipeCategoryDisplayName(
-                            item.categoryName, item.proteinNames
-                        ).contains(query, ignoreCase = true) ||
-                        recipeProteinLabel(item.proteinNames)
-                            .contains(query, ignoreCase = true) ||
-                        item.proteinNames.any {
-                            it.contains(query, ignoreCase = true)
-                        }) &&
+                        item.searchText.contains(query, ignoreCase = true)) &&
                         (mealFilter == "Alle måltider" ||
                                 recipe.mealType.danishName() == mealFilter) &&
                         (categoryFilter == "Alle kategorier" ||
@@ -228,22 +235,18 @@ fun RecipesScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        contentPadding = PaddingValues(AppLayout.screenPadding),
+        verticalArrangement = Arrangement.spacedBy(AppLayout.itemSpacing)
     ) {
         item {
-            Text(
-                "Opskrifter",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
-            )
+            ScreenTitle("Opskrifter")
         }
 
         item {
             Button(
                 onClick = onAddRecipe,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp)
+                shape = AppShapes.control
             ) {
                 Icon(Icons.Filled.Add, contentDescription = null)
                 Spacer(Modifier.width(6.dp))
@@ -311,7 +314,7 @@ fun RecipesScreen(
                                     categoryFilter = "Alle kategorier"
                                     canMakeOnly = false
                                 },
-                                shape = RoundedCornerShape(12.dp)
+                                shape = AppShapes.control
                             ) {
                                 Text("Ryd filtre")
                             }
@@ -356,7 +359,7 @@ private fun RecipeListCard(
             .fillMaxWidth()
             .semantics { contentDescription = "Åbn opskrift: ${recipe.name}" }
             .clickable(onClick = onClick),
-        shape = RoundedCornerShape(18.dp),
+        shape = AppShapes.card,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
@@ -477,7 +480,7 @@ private fun ConsumeRecipeIngredientsDialog(
 
                         Card(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
+                            shape = AppShapes.card,
                             colors = CardDefaults.cardColors(
                                 containerColor = if (isChecked) MaterialTheme.colorScheme.surfaceVariant else MaterialTheme.colorScheme.surface
                             )
@@ -696,8 +699,8 @@ internal fun RecipeDetailScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            contentPadding = PaddingValues(AppLayout.screenPadding),
+            verticalArrangement = Arrangement.spacedBy(AppLayout.sectionSpacing)
         ) {
             item {
                 LargeImage(
@@ -734,7 +737,7 @@ internal fun RecipeDetailScreen(
                     OutlinedButton(
                         onClick = { state.setWeeklySandwichRecipe(recipe.id) },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp)
+                        shape = AppShapes.control
                     ) {
                         Text("Vælg som ugens sandwich")
                     }
@@ -745,7 +748,7 @@ internal fun RecipeDetailScreen(
             ) {
                 item {
                     Surface(
-                        shape = RoundedCornerShape(14.dp),
+                        shape = AppShapes.card,
                         color = MaterialTheme.colorScheme.primaryContainer
                     ) {
                         Text(
@@ -851,7 +854,7 @@ internal fun RecipeDetailScreen(
                 OutlinedButton(
                     onClick = { showConsumeConfirm = true },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
+                    shape = AppShapes.control
                 ) {
                     Text("Brug fra lager")
                 }
@@ -1266,7 +1269,7 @@ internal fun RecipeEditorScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 8.dp),
-                        shape = RoundedCornerShape(14.dp)
+                        shape = AppShapes.control
                     ) { Text("Gem opskrift") }
                 }
             }
@@ -1276,8 +1279,8 @@ internal fun RecipeEditorScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            contentPadding = PaddingValues(AppLayout.screenPadding),
+            verticalArrangement = Arrangement.spacedBy(AppLayout.itemSpacing)
         ) {
             item {
                 ImagePickerBox(
@@ -1342,7 +1345,7 @@ internal fun RecipeEditorScreen(
                                     .find { it.id == categoryId }
                                     ?.name
                                     ?: "Andet",
-                                options = state.recipeCategories.sortedBy { it.name.lowercase() },
+                                options = state.sortedRecipeCategories,
                                 optionText = { it.name },
                                 onSelected = { categoryId = it.id },
                                 fillWidth = true
@@ -1398,7 +1401,7 @@ internal fun RecipeEditorScreen(
                 val (label, step) = entry
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
+                    shape = AppShapes.card,
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surface
                     )
@@ -1556,7 +1559,7 @@ internal fun RecipeEditorScreen(
                                 }
                                 prerequisiteSearch = ""
                             },
-                        shape = RoundedCornerShape(14.dp)
+                        shape = AppShapes.card
                     ) {
                         Row(
                             modifier = Modifier.padding(12.dp),
@@ -1574,11 +1577,7 @@ internal fun RecipeEditorScreen(
             }
 
             item {
-                Text(
-                    "Ingredienser",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
+                SectionTitle("Ingredienser")
             }
 
             items(
@@ -1630,7 +1629,7 @@ internal fun RecipeEditorScreen(
                             }
                             ingredientSearch = ""
                         },
-                    shape = RoundedCornerShape(14.dp)
+                    shape = AppShapes.card
                 ) {
                     Row(
                         modifier = Modifier.padding(12.dp),
@@ -1695,7 +1694,7 @@ private fun RequirementEditor(
 
     OutlinedCard(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp)
+        shape = AppShapes.card
     ) {
         Column(Modifier.padding(12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1995,7 +1994,7 @@ internal fun IngredientEditorScreen(
                         },
                         enabled = name.isNotBlank() && ingredientNameAvailable && typeChangeAllowed,
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp)
+                        shape = AppShapes.control
                     ) {
                         Text("Gem")
                     }
@@ -2008,8 +2007,8 @@ internal fun IngredientEditorScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            contentPadding = PaddingValues(AppLayout.screenPadding),
+            verticalArrangement = Arrangement.spacedBy(AppLayout.sectionSpacing)
         ) {
             item {
                 ImagePickerBox(
@@ -2121,23 +2120,17 @@ internal fun IngredientEditorScreen(
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.weight(1f)
                     )
-                    if (type != QuantityType.PACKAGE && !showConversionForm) {
+                    if (!showConversionForm) {
                         TextButton(onClick = { showConversionForm = true }) {
                             Text("Tilføj")
                         }
                     }
                 }
 
-                if (type == QuantityType.PACKAGE) {
-                    Text(
-                        "Gamle pakketællinger bevares uændret.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                } else {
+                run {
                     if (conversionProfiles.isEmpty() && !showConversionForm) {
                         Text(
-                            "Fx 1 pakke = 200 ${type.baseMeasurementUnit().symbol}",
+                            ConversionPhrasing.example(type),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -2148,10 +2141,7 @@ internal fun IngredientEditorScreen(
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Text(
-                                "1 ${profile.unit.labelFor(1.0)} = " +
-                                    "${formatDisplayNumber(profile.baseAmountPerUnit)} " +
-                                    type.baseMeasurementUnit().symbol +
-                                    if (profile.approximate) " · ca." else "",
+                                ConversionPhrasing.describe(type, profile),
                                 modifier = Modifier.weight(1f),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
@@ -2160,7 +2150,9 @@ internal fun IngredientEditorScreen(
                                 editingConversionUnit = profile.unit
                                 conversionUnit = profile.unit
                                 conversionFactorText = formatDisplayNumber(
-                                    profile.baseAmountPerUnit
+                                    ConversionPhrasing.shown(
+                                        type, profile.unit, profile.baseAmountPerUnit
+                                    )
                                 )
                                 conversionEstimated = profile.approximate
                                 showConversionForm = true
@@ -2180,39 +2172,15 @@ internal fun IngredientEditorScreen(
                             val candidate = if (conversionUnit in options) {
                                 conversionUnit
                             } else options.first()
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                if (editingConversionUnit != null) {
-                                    Text(
-                                        "1 ${candidate.labelFor(1.0)} =",
-                                        fontWeight = FontWeight.SemiBold
-                                    )
-                                } else {
-                                    SimpleSelector(
-                                        label = candidate.labelFor(1.0),
-                                        options = options,
-                                        optionText = { it.labelFor(1.0) },
-                                        minHeight = 56.dp,
-                                        onSelected = { conversionUnit = it }
-                                    )
-                                }
-                                OutlinedTextField(
-                                    value = conversionFactorText,
-                                    onValueChange = { text ->
-                                        conversionFactorText = text.filter { char ->
-                                            char.isDigit() || char == ',' || char == '.'
-                                        }
-                                    },
-                                    label = {
-                                        Text("Indhold (${type.baseMeasurementUnit().symbol})")
-                                    },
-                                    modifier = Modifier.weight(1f),
-                                    singleLine = true
-                                )
-                            }
+                            ConversionAmountRow(
+                                type = type,
+                                options = options,
+                                unit = candidate,
+                                unitLocked = editingConversionUnit != null,
+                                onUnitChange = { conversionUnit = it },
+                                amountText = conversionFactorText,
+                                onAmountChange = { conversionFactorText = it }
+                            )
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 verticalAlignment = Alignment.CenterVertically
@@ -2224,6 +2192,7 @@ internal fun IngredientEditorScreen(
                                 )
                             }
                             val factor = parseDanishDecimal(conversionFactorText)
+                                ?.let { ConversionPhrasing.stored(type, candidate, it) }
                             Row(
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                                 verticalAlignment = Alignment.CenterVertically
@@ -2290,7 +2259,7 @@ internal fun IngredientEditorScreen(
                 } else {
                     SimpleSelector(
                         label = state.ingredientCategoryName(shoppingCategoryId),
-                        options = state.ingredientCategories.sortedBy { it.name.lowercase() },
+                        options = state.sortedIngredientCategories,
                         optionText = { it.name },
                         onSelected = { shoppingCategoryId = it.id }
                     )

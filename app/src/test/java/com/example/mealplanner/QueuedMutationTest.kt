@@ -175,7 +175,9 @@ class QueuedMutationTest {
         ))
         assertTrue(parent.priority() < mutation.priority())
         assertTrue(mutation.priority() <
-            QueuedMutation.UpsertRecipe(Recipe(id = "recipe", name = "Ret")).priority())
+            QueuedMutation.UpsertRecipe(
+                Recipe(id = "recipe", name = "Ret", ingredients = emptyList())
+            ).priority())
     }
 
     @Test

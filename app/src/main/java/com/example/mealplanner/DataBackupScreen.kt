@@ -156,16 +156,12 @@ internal fun DataBackupScreen(
     SubpageScaffold(title = "Sikkerhedskopi og data", onBack = onBack) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            contentPadding = PaddingValues(AppLayout.screenPadding),
+            verticalArrangement = Arrangement.spacedBy(AppLayout.sectionSpacing)
         ) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        "Dine data tilhører dig",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
+                    SectionTitle("Dine data tilhører dig")
                     Text(
                         "Eksportér ingredienser, opskrifter, lager, kategorier, " +
                                 "ugens madplan og madhistorik til en JSON-fil. " +

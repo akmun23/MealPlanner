@@ -1,6 +1,7 @@
 package com.example.mealplanner
 
 import android.content.Context
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -10,6 +11,7 @@ import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshots.Snapshot
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -31,6 +33,9 @@ import java.time.temporal.TemporalAdjusters
 import java.util.Locale
 import java.util.UUID
 import kotlin.time.Duration.Companion.milliseconds
+
+/** Matches the shopping_extras check constraint. */
+private const val MAX_SHOPPING_EXTRA_BASE = 1_000_000_000.0
 
 class MealPlannerState(
     context: Context,
@@ -64,6 +69,11 @@ class MealPlannerState(
     private val reconnectMutex = Mutex()
     private val reloadMutex = Mutex()
     private val mutationQueueMutex = Mutex()
+    private val mutationEnqueueMonitor = Any()
+    private var pendingMutationEnqueues = 0
+    private var mutationEnqueuesIdle = CompletableDeferred<Unit>().apply {
+        complete(Unit)
+    }
     private var cachePersistJob: Job? = null
     private val syncTracker = SyncGenerationTracker()
     private var syncStatusClearJob: Job? = null
@@ -87,8 +97,32 @@ class MealPlannerState(
     val lockedDays = mutableStateSetOf<DayOfWeek>()
     val shoppingChecked = mutableStateMapOf<String, Boolean>()
     val shoppingIncluded = mutableStateMapOf<String, Boolean>()
+    /** Extra amount (base unit) to buy per ingredient, on top of the recipes. */
+    val shoppingExtra = mutableStateMapOf<String, Double>()
     val selectedLunchRecipeIds = mutableStateListOf<String>()
     val history = mutableStateListOf<MealHistoryEntry>()
+
+    /** Name-sorted category lists, shared by pickers and filters. */
+    val sortedIngredientCategories: List<IngredientCategory> by derivedStateOf {
+        ingredientCategories.sortedBy { it.name.lowercase() }
+    }
+    val sortedRecipeCategories: List<RecipeCategoryOption> by derivedStateOf {
+        recipeCategories.sortedBy { it.name.lowercase() }
+    }
+
+    /** Cached lookup so day cards do not rescan every recipe per lookup. */
+    val recipesById: Map<String, Recipe> by derivedStateOf {
+        recipes.associateBy { it.id }
+    }
+
+    /**
+     * The shopping list is expensive (it aggregates every planned recipe and
+     * sorts), and the tab badge and the shopping screen both need it. This
+     * derived value computes it once per underlying change and shares it.
+     * Imperative code that must observe the list between two mutations keeps
+     * calling [shoppingItems] directly.
+     */
+    val shoppingList: List<ShoppingItem> by derivedStateOf { shoppingItems() }
 
     // Explicit unlocks are session-scoped: completed meals are locked again
     // when the user reopens the app or navigates to another week.
@@ -715,6 +749,10 @@ class MealPlannerState(
             target = shoppingIncluded,
             incoming = snapshot.shoppingIncluded
         )
+        syncMap(
+            target = shoppingExtra,
+            incoming = snapshot.shoppingExtra
+        )
         syncListByKey(
             target = selectedLunchRecipeIds,
             incoming = snapshot.selectedLunchRecipeIds,
@@ -812,6 +850,10 @@ class MealPlannerState(
             target = shoppingIncluded,
             incoming = snapshot.included
         )
+        syncMap(
+            target = shoppingExtra,
+            incoming = snapshot.extra
+        )
     }
 
     private fun currentSnapshot(): CloudSnapshot {
@@ -832,6 +874,7 @@ class MealPlannerState(
             lockedDays = lockedDays.toSet(),
             shoppingChecked = shoppingChecked.toMap(),
             shoppingIncluded = shoppingIncluded.toMap(),
+            shoppingExtra = shoppingExtra.toMap(),
             selectedLunchRecipeIds =
                 selectedLunchRecipeIds.toList(),
             weeklyPlanId = planId,
@@ -871,6 +914,31 @@ class MealPlannerState(
         enqueueMutations(listOf(mutation))
     }
 
+    private fun beginMutationEnqueue() {
+        synchronized(mutationEnqueueMonitor) {
+            if (pendingMutationEnqueues == 0) {
+                mutationEnqueuesIdle = CompletableDeferred()
+            }
+            pendingMutationEnqueues += 1
+        }
+    }
+
+    private fun finishMutationEnqueue() {
+        val completed = synchronized(mutationEnqueueMonitor) {
+            pendingMutationEnqueues -= 1
+            check(pendingMutationEnqueues >= 0)
+            mutationEnqueuesIdle.takeIf { pendingMutationEnqueues == 0 }
+        }
+        completed?.complete(Unit)
+    }
+
+    private suspend fun awaitPendingMutationEnqueues() {
+        val idle = synchronized(mutationEnqueueMonitor) {
+            mutationEnqueuesIdle
+        }
+        idle.await()
+    }
+
     private fun enqueueMutations(
         mutations: List<QueuedMutation>
     ) {
@@ -883,9 +951,8 @@ class MealPlannerState(
         syncTracker.markLocalChange(domains)
         syncIndicator = SyncIndicator.SAVING
 
-        val snapshot = currentSnapshot()
-
         if (isLocalOnly) {
+            val snapshot = currentSnapshot()
             // Local-only updates are durable in Room, without creating an
             // outbox entry or a WorkManager task requiring cloud credentials.
             cachePersistJob?.cancel()
@@ -905,11 +972,15 @@ class MealPlannerState(
             return
         }
 
-        scope.launch {
+        beginMutationEnqueue()
+        val job = scope.launch {
             mutationQueueMutex.withLock {
                 try {
+                    // Capture the current view only after this write has its
+                    // place in the serialized queue. A delayed old-week job
+                    // must never replace the newly selected week in Room.
                     offlineSyncQueue.enqueue(
-                        snapshot = snapshot,
+                        snapshot = currentSnapshot(),
                         mutations = mutations
                     )
                     val drainResult = offlineSyncQueue.drainInApp(repository)
@@ -918,6 +989,8 @@ class MealPlannerState(
                     } else if (drainResult == OfflineSyncDrainResult.RETRY) {
                         syncIndicator = SyncIndicator.PENDING
                     }
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
                 } catch (_: Exception) {
                     if (offlineSyncQueue.hasPendingMutations()) {
                         syncIndicator = SyncIndicator.PENDING
@@ -929,6 +1002,9 @@ class MealPlannerState(
                 }
             }
         }
+        // invokeOnCompletion also releases the barrier if the scope is
+        // cancelled before the coroutine gets its first dispatch.
+        job.invokeOnCompletion { finishMutationEnqueue() }
     }
 
     private fun weekStateMutation(
@@ -1527,6 +1603,7 @@ class MealPlannerState(
         pantry.remove(ingredientId)
         shoppingChecked.remove(ingredientId)
         shoppingIncluded.remove(ingredientId)
+        shoppingExtra.remove(ingredientId)
 
         enqueueMutation(
             QueuedMutation.DeleteIngredient(
@@ -2017,7 +2094,11 @@ class MealPlannerState(
             version = previous.version + 1
         )
         if (!PantryLotRules.valid(next)) return false
-        pantryLots[index] = next
+        if (remainingBase <= 0.0) {
+            pantryLots.removeAt(index)
+        } else {
+            pantryLots[index] = next
+        }
         val current = pantry[previous.ingredientId] ?: 0.0
         pantry[previous.ingredientId] =
             (current + remainingBase - previous.remainingBase).coerceAtLeast(0.0)
@@ -2482,9 +2563,7 @@ class MealPlannerState(
             plan[day]
         }
 
-        return id?.let { recipeId ->
-            recipes.find { it.id == recipeId }
-        }
+        return id?.let(recipesById::get)
     }
 
     fun shoppingItems(): List<ShoppingItem> {
@@ -2529,10 +2608,12 @@ class MealPlannerState(
                 ?: return@mapNotNull null
             if (!ShoppingIngredientRules.isAutomaticallyPurchased(ingredient)) return@mapNotNull null
 
+            val extra = shoppingExtra[ingredientId]?.takeIf { it > 0.0 } ?: 0.0
             ShoppingItem(
                 ingredient = ingredient,
-                requiredBase = requiredBase,
-                pantryBase = pantry[ingredientId] ?: 0.0
+                requiredBase = requiredBase + extra,
+                pantryBase = pantry[ingredientId] ?: 0.0,
+                extraBase = extra
             )
         }
         // Existing shopping_inclusions already syncs across household members.
@@ -2542,7 +2623,8 @@ class MealPlannerState(
             planned = plannedItems,
             ingredients = ingredients,
             pantry = pantry,
-            inclusion = shoppingIncluded
+            inclusion = shoppingIncluded,
+            extras = shoppingExtra
         )
         return (plannedItems + manualItems).sortedWith(
             compareBy(
@@ -2678,6 +2760,34 @@ class MealPlannerState(
         )
     }
 
+    /**
+     * Ask for [amountBase] more of an ingredient than the recipes need, e.g.
+     * milk for coffee. A value of zero (or less) removes the extra.
+     */
+    fun setShoppingExtra(
+        ingredientId: String,
+        amountBase: Double
+    ) {
+        if (!canEditWeek()) return
+        if (!amountBase.isFinite() || amountBase > MAX_SHOPPING_EXTRA_BASE) {
+            lastError = "Mængden er ugyldig."
+            return
+        }
+        if (amountBase > 0.0) {
+            shoppingExtra[ingredientId] = amountBase
+        } else {
+            shoppingExtra.remove(ingredientId)
+        }
+        val id = weeklyPlanId ?: return
+        enqueueMutation(
+            QueuedMutation.SetShoppingExtra(
+                weeklyPlanId = id,
+                ingredientId = ingredientId,
+                amountBase = amountBase.coerceAtLeast(0.0)
+            )
+        )
+    }
+
     fun setShoppingChecked(
         ingredientId: String,
         checked: Boolean
@@ -2735,6 +2845,10 @@ class MealPlannerState(
         isWeekChanging = true
         scope.launch {
             try {
+                // A user action marks its state immediately, then enqueues
+                // asynchronously. Wait for those enqueues before draining and
+                // replacing the active week snapshot.
+                awaitPendingMutationEnqueues()
                 mutationQueueMutex.withLock {
                     if (offlineSyncQueue.hasPendingMutations()) {
                         offlineSyncQueue.drainInApp(repository)

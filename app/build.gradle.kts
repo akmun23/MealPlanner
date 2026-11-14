@@ -43,8 +43,8 @@ android {
         applicationId = "com.mealplan.mealplanner"
         minSdk = 26
         targetSdk = 37
-        versionCode = 16
-        versionName = "1.5.3"
+        versionCode = 18
+        versionName = "1.6.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         buildConfigField(
@@ -61,6 +61,13 @@ android {
     }
 
     buildTypes {
+        debug {
+            // Install next to the Play/release app instead of colliding with
+            // its signature; the auth redirect scheme intentionally stays the
+            // release id (it is a URL scheme, not the application id).
+            applicationIdSuffix = ".debug"
+            versionNameSuffix = "-debug"
+        }
         release {
             // Never sign an artifact intended for Play with the debug key.
             // Benchmark/unoptimized variants explicitly use the debug key below.

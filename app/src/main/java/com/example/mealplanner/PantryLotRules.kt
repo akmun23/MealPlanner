@@ -15,12 +15,17 @@ internal object PantryLotRules {
             lot.remainingBase.isFinite() && lot.remainingBase >= 0.0 &&
             lot.remainingBase <= lot.originalBase && lot.version >= 1L
 
-    /** Finished containers remain in sync history, but never clutter the UI. */
+    /** Empty packages are removed after their remaining quantity is consumed. */
     fun active(lots: List<PantryLot>, ingredientId: String): List<PantryLot> =
         lots.filter { it.ingredientId == ingredientId && it.remainingBase > 0.0 }
 
-    fun total(lots: List<PantryLot>, ingredientId: String): Double =
-        lots.filter { it.ingredientId == ingredientId }.sumOf { it.remainingBase }
+    fun total(lots: List<PantryLot>, ingredientId: String): Double {
+        var total = 0.0
+        for (lot in lots) {
+            if (lot.ingredientId == ingredientId) total += lot.remainingBase
+        }
+        return total
+    }
 
     fun consume(
         lots: List<PantryLot>, ingredientId: String, neededBase: Double
@@ -52,6 +57,13 @@ internal object PantryLotRules {
             remaining -= deduct
             if (remaining <= 0.000000001) break
         }
-        return if (remaining <= 0.000000001) result else null
+        if (remaining > 0.000000001) return null
+
+        // Remove empty containers from the active state immediately. The same
+        // zero-quantity mutation is queued so the server can prune its row.
+        return result.filterNot {
+            it.ingredientId == ingredientId &&
+                it.remainingBase == 0.0
+        }
     }
 }

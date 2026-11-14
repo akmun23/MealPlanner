@@ -44,7 +44,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Clear
@@ -80,6 +79,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -112,18 +112,42 @@ import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-private val AppColors = lightColorScheme(
+internal val AppColors = lightColorScheme(
+    // Every role is set so no Material baseline (lavender) default leaks
+    // through: Cards fall back to surfaceContainerHighest, for example.
     primary = Color(0xFF2F6B4F),
     onPrimary = Color.White,
     primaryContainer = Color(0xFFD7EBDD),
     onPrimaryContainer = Color(0xFF123322),
     secondary = Color(0xFF6A5F32),
+    onSecondary = Color.White,
     secondaryContainer = Color(0xFFF1E7B9),
+    onSecondaryContainer = Color(0xFF231C00),
+    tertiary = Color(0xFF2E6A8A),
+    onTertiary = Color.White,
+    tertiaryContainer = Color(0xFFCBE6FF),
+    onTertiaryContainer = Color(0xFF001E31),
     background = Color(0xFFF8FAF7),
+    onBackground = Color(0xFF1B1F1C),
     surface = Color(0xFFFFFFFF),
+    onSurface = Color(0xFF1B1F1C),
     surfaceVariant = Color(0xFFE9EEE9),
     onSurfaceVariant = Color(0xFF4E5750),
-    outline = Color(0xFFBBC4BC),
+    surfaceTint = Color(0xFF2F6B4F),
+    inverseSurface = Color(0xFF2E312E),
+    inverseOnSurface = Color(0xFFF0F1EC),
+    inversePrimary = Color(0xFFA9E9D2),
+    // Controls' borders need 3:1 against the surface (WCAG 1.4.11);
+    // outlineVariant stays light for dividers and card outlines.
+    outline = Color(0xFF6F7A72),
+    outlineVariant = Color(0xFFC3CBC4),
+    surfaceDim = Color(0xFFD9DFD9),
+    surfaceBright = Color(0xFFF8FAF7),
+    surfaceContainerLowest = Color(0xFFFFFFFF),
+    surfaceContainerLow = Color(0xFFF2F6F2),
+    surfaceContainer = Color(0xFFEDF2ED),
+    surfaceContainerHigh = Color(0xFFE8EDE8),
+    surfaceContainerHighest = Color(0xFFE3E9E3),
 )
 
 internal val DarkAppColors = darkColorScheme(
@@ -180,7 +204,10 @@ class MainActivity : ComponentActivity() {
                 ThemeMode.DARK -> true
                 ThemeMode.LIGHT -> false
             }
-            MaterialTheme(colorScheme = if (dark) DarkAppColors else AppColors) {
+            MaterialTheme(
+                colorScheme = if (dark) DarkAppColors else AppColors,
+                shapes = Shapes(medium = AppShapes.card)
+            ) {
                 Surface(modifier = Modifier.fillMaxSize().imePadding()) {
                     CloudGate(
                         themeMode = themeMode,
@@ -290,7 +317,7 @@ fun MealPlannerApp(
 
     val missingShoppingCount by remember(state) {
         derivedStateOf {
-            state.shoppingItems().count { item ->
+            state.shoppingList.count { item ->
                 state.isShoppingIncluded(item.ingredient.id) &&
                         state.shoppingChecked[item.ingredient.id] != true
             }
@@ -682,7 +709,7 @@ private fun SyncStatusBadge(
                 Modifier.clickable(onClick = onClick)
             } ?: Modifier
         ),
-        shape = RoundedCornerShape(12.dp),
+        shape = AppShapes.card,
         tonalElevation = 2.dp,
         shadowElevation = 2.dp
     ) {
@@ -850,8 +877,8 @@ private fun RecipeCategoriesScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            contentPadding = PaddingValues(AppLayout.screenPadding),
+            verticalArrangement = Arrangement.spacedBy(AppLayout.itemSpacing)
         ) {
             itemsIndexed(
                 items = state.recipeCategories,
@@ -859,7 +886,7 @@ private fun RecipeCategoriesScreen(
             ) { index, category ->
                 OutlinedCard(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
+                    shape = AppShapes.card
                 ) {
                     Row(
                         modifier = Modifier.padding(
@@ -1025,8 +1052,8 @@ private fun IngredientCategoriesScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            contentPadding = PaddingValues(AppLayout.screenPadding),
+            verticalArrangement = Arrangement.spacedBy(AppLayout.itemSpacing)
         ) {
             itemsIndexed(
                 items = state.ingredientCategories,
@@ -1034,7 +1061,7 @@ private fun IngredientCategoriesScreen(
             ) { index, category ->
                 OutlinedCard(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
+                    shape = AppShapes.card
                 ) {
                     Row(
                         modifier = Modifier.padding(
@@ -1247,8 +1274,8 @@ private fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            contentPadding = PaddingValues(AppLayout.screenPadding),
+            verticalArrangement = Arrangement.spacedBy(AppLayout.sectionSpacing)
         ) {
             item {
                 SectionCard("Husstand") {
@@ -1304,7 +1331,7 @@ private fun SettingsScreen(
                 OutlinedButton(
                     onClick = onIngredientCategories,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
+                    shape = AppShapes.control
                 ) {
                     Text("Indkøbskategorier")
                 }
@@ -1314,7 +1341,7 @@ private fun SettingsScreen(
                 OutlinedButton(
                     onClick = onRecipeCategories,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
+                    shape = AppShapes.control
                 ) {
                     Text("Opskriftskategorier")
                 }
@@ -1324,7 +1351,7 @@ private fun SettingsScreen(
                 OutlinedButton(
                     onClick = onPlannerSettings,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
+                    shape = AppShapes.control
                 ) {
                     Text("Tilpas madplanens prioriteringer")
                 }
@@ -1334,7 +1361,7 @@ private fun SettingsScreen(
                 OutlinedButton(
                     onClick = onSyncStatus,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
+                    shape = AppShapes.control
                 ) {
                     Text("Status for synkronisering")
                 }
@@ -1344,7 +1371,7 @@ private fun SettingsScreen(
                 OutlinedButton(
                     onClick = onDataBackup,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
+                    shape = AppShapes.control
                 ) {
                     Text("Sikkerhedskopi og mine data")
                 }
@@ -1412,7 +1439,7 @@ private fun SettingsScreen(
                 OutlinedButton(
                     onClick = { showFeedback = true },
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
+                    shape = AppShapes.control
                 ) {
                     Text("Send forslag")
                 }
@@ -1422,7 +1449,7 @@ private fun SettingsScreen(
                 OutlinedButton(
                     onClick = onLogout,
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp)
+                    shape = AppShapes.control
                 ) {
                     Text("Log ud")
                 }
@@ -1498,7 +1525,7 @@ internal fun SectionCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = AppShapes.card,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surface
         ),
@@ -1525,7 +1552,7 @@ internal fun EmptyCard(
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(20.dp),
+        shape = AppShapes.card,
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
         ),
@@ -1615,7 +1642,7 @@ internal fun SearchField(
             }
         },
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = AppShapes.card,
         singleLine = true,
         colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
             focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
@@ -1656,7 +1683,7 @@ internal fun ImagePickerBox(
         modifier = modifier
             .fillMaxWidth()
             .height(height)
-            .clip(RoundedCornerShape(16.dp))
+            .clip(AppShapes.card)
             .background(MaterialTheme.colorScheme.surfaceVariant)
             .clickable { launcher.launch(arrayOf("image/*")) },
         contentAlignment = Alignment.Center
@@ -1706,14 +1733,14 @@ internal fun LargeImage(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(210.dp)
-                .clip(RoundedCornerShape(22.dp))
+                .clip(AppShapes.card)
         )
     } else {
         Surface(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(160.dp),
-            shape = RoundedCornerShape(22.dp),
+            shape = AppShapes.card,
             color = MaterialTheme.colorScheme.primaryContainer
         ) {
             Box(contentAlignment = Alignment.Center) {
@@ -1739,7 +1766,7 @@ internal fun AppThumbnail(
     val boxSize = PantryImageRules.THUMBNAIL_SIZE_DP.dp
     Surface(
         modifier = modifier.requiredSize(boxSize),
-        shape = RoundedCornerShape(16.dp),
+        shape = AppShapes.control,
         color = MaterialTheme.colorScheme.primaryContainer,
         tonalElevation = 2.dp
     ) {
@@ -1803,7 +1830,7 @@ internal fun <T> SimpleSelector(
             onClick = { expanded = true },
             modifier = (if (fillWidth) Modifier.fillMaxWidth() else Modifier)
                 .heightIn(min = minHeight),
-            shape = RoundedCornerShape(12.dp)
+            shape = AppShapes.control
         ) {
             Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }

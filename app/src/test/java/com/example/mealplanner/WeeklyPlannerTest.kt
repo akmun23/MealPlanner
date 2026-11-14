@@ -797,4 +797,91 @@ class WeeklyPlannerTest {
         assertEquals(stocked.id, result.plan[DayOfWeek.MONDAY])
     }
 
+    /**
+     * Regression for "I always get the same two or three recipes". Everything
+     * is equally well stocked, so no recipe is better than another except by
+     * size: three recipes have 14 ingredients, nine have 4. Summing the pantry
+     * bonus per ingredient made the big ones win every single week; now each
+     * recipe should be planned in roughly 7 of 12 weeks (7 slots, 12 recipes).
+     */
+    @Test
+    fun recipeSizeAloneDoesNotDecideWhatGetsPlanned() {
+        fun dinner(id: String, ingredientIds: List<String>) = Recipe(
+            id = id,
+            name = id,
+            ingredients = ingredientIds.map { RecipeIngredient(it, 100.0) }
+        )
+        val big = (1..3).map { n -> dinner("big-$n", (1..14).map { "big-$n-$it" }) }
+        val small = (1..9).map { n -> dinner("small-$n", (1..4).map { "small-$n-$it" }) }
+        val all = big + small
+        val pantry = all.flatMap { r -> r.ingredients.map { it.ingredientId } }
+            .associateWith { 1_000.0 }
+
+        val weeks = 120
+        val appearances = HashMap<String, Int>()
+        repeat(weeks) { seed ->
+            WeeklyPlanner.generate(
+                recipes = all,
+                pantry = pantry,
+                dayModes = allHome(),
+                weeklySandwichRecipeId = null,
+                currentPlan = orderedWeekDays.associateWith { null },
+                currentSandwichDay = null,
+                random = Random(seed)
+            ).plan.values.filterNotNull().distinct().forEach {
+                appearances.merge(it, 1, Int::plus)
+            }
+        }
+
+        all.forEach { recipe ->
+            val share = (appearances[recipe.id] ?: 0) * 100 / weeks
+            assertTrue(
+                "${recipe.id} was planned in $share% of weeks (fair is ~58%): $appearances",
+                share in 35..80
+            )
+        }
+    }
+
+    /**
+     * The recency penalty only looks at the latest meal, and stops after 30
+     * days. A dish eaten three times between 35 and 55 days ago is therefore
+     * "fresh" to it, although it has been on the table far more often than a
+     * dish eaten never. The frequency memory counts those meals.
+     */
+    @Test
+    fun aDishEatenOftenInTheLast60DaysLosesToOneThatWasNot() {
+        val weekStart = LocalDate.of(2026, 11, 9)
+        val often = recipe("often")
+        val rarely = recipe("rarely")
+        val history = listOf(35L, 45L, 55L).map {
+            MealHistoryEntry("often", weekStart.minusDays(it))
+        }
+        val oneDayHome = orderedWeekDays.associateWith {
+            if (it == DayOfWeek.MONDAY) DayMode.AUTO else DayMode.AWAY
+        }
+
+        fun plannedMonday(weights: PlannerWeights, seed: Int) =
+            WeeklyPlanner.generate(
+                recipes = listOf(often, rarely),
+                pantry = emptyMap(),
+                dayModes = oneDayHome,
+                weeklySandwichRecipeId = null,
+                currentPlan = orderedWeekDays.associateWith { null },
+                currentSandwichDay = null,
+                history = history,
+                weekStart = weekStart,
+                weights = weights,
+                random = Random(seed)
+            ).plan[DayOfWeek.MONDAY]
+
+        // Deterministic (jitter 0): with the memory the rarely-eaten dish always wins ...
+        val withMemory = PlannerWeights(jitter = 0.0)
+        assertTrue((0 until 20).all { plannedMonday(withMemory, it) == "rarely" })
+
+        // ... and it is the memory that decides: switched off, the dish eaten
+        // 35+ days ago is no longer disfavoured at all (both are equally good).
+        val withoutMemory = PlannerWeights(jitter = 0.0, frequency60Days = 0.0)
+        assertTrue((0 until 20).any { plannedMonday(withoutMemory, it) == "often" })
+    }
 }
+

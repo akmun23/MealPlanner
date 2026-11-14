@@ -231,7 +231,13 @@ data class ShoppingItem(
     val requiredBase: Double,
     val pantryBase: Double,
     /** Added to the shared list independently of recipes for this week. */
-    val manualOnly: Boolean = false
+    val manualOnly: Boolean = false,
+    /**
+     * Extra amount the household asked for on top of the recipes (milk for
+     * coffee). Already part of [requiredBase]; kept separately so the list can
+     * show it and the dialog can edit it.
+     */
+    val extraBase: Double = 0.0
 )
 
 data class MealHistoryEntry(
@@ -247,7 +253,7 @@ data class PlannerResult(
 @Serializable
 data class PlannerWeights(
     val pantryCoverage: Double = 20.0,
-    val ingredientReuse: Double = 12.0,
+    val ingredientReuse: Double = 6.0,
     val duplicateRecipe: Double = 120.0,
     val repeatedProtein: Double = 3.0,
     val adjacentProtein: Double = 6.0,
@@ -256,9 +262,11 @@ data class PlannerWeights(
     val recency7Days: Double = 90.0,
     val recency14Days: Double = 55.0,
     val recency30Days: Double = 25.0,
+    /** Per time a dish was eaten in the last 60 days (at most 4 counted). */
+    val frequency60Days: Double = 15.0,
     val keepSameDay: Double = 4.0,
     val previousPlanReuse: Double = 35.0,
-    val jitter: Double = 8.0
+    val jitter: Double = 10.0
 )
 
 val orderedWeekDays = listOf(

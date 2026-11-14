@@ -14,6 +14,8 @@ import androidx.room.RoomDatabase
 import androidx.room.Transaction
 import androidx.room.migration.Migration
 import androidx.sqlite.db.SupportSQLiteDatabase
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import java.time.DayOfWeek
@@ -292,10 +294,14 @@ internal class RoomSnapshotCache(
     }
 
     suspend fun save(snapshot: CloudSnapshot) {
+        // Callers run on the UI scope; serialize the household off the main thread.
+        val payload = withContext(Dispatchers.Default) {
+            RoomSnapshotCodec.encode(snapshot)
+        }
         localState.persistSnapshotAndMutations(
             snapshot = HouseholdSnapshotEntity(
                 householdId = householdId,
-                payload = RoomSnapshotCodec.encode(snapshot),
+                payload = payload,
                 updatedAtEpochMs = System.currentTimeMillis()
             ),
             mutations = emptyList()
@@ -379,6 +385,7 @@ private data class CachedCloudSnapshot(
     val lockedDays: List<String>,
     val shoppingChecked: Map<String, Boolean>,
     val shoppingIncluded: Map<String, Boolean>,
+    val shoppingExtra: Map<String, Double> = emptyMap(),
     val selectedLunchRecipeIds: List<String>,
     val weeklyPlanId: String,
     val weeklySandwichRecipeId: String?,
@@ -416,6 +423,7 @@ internal object RoomSnapshotCodec {
                     lockedDays = emptySet(),
                     shoppingChecked = emptyMap(),
                     shoppingIncluded = emptyMap(),
+                    shoppingExtra = emptyMap(),
                     selectedLunchRecipeIds = emptyList(),
                     weeklyPlanId = "offline-week-$weekStart",
                     weeklySandwichRecipeId = null,
@@ -503,6 +511,7 @@ internal object RoomSnapshotCodec {
         lockedDays = lockedDays.map { it.name },
         shoppingChecked = shoppingChecked,
         shoppingIncluded = shoppingIncluded,
+        shoppingExtra = shoppingExtra,
         selectedLunchRecipeIds = selectedLunchRecipeIds,
         weeklyPlanId = weeklyPlanId,
         weeklySandwichRecipeId = weeklySandwichRecipeId,
@@ -601,6 +610,7 @@ internal object RoomSnapshotCodec {
                 },
             shoppingChecked = shoppingChecked,
             shoppingIncluded = shoppingIncluded,
+            shoppingExtra = shoppingExtra,
             selectedLunchRecipeIds = selectedLunchRecipeIds,
             weeklyPlanId = weeklyPlanId,
             weeklySandwichRecipeId = weeklySandwichRecipeId,

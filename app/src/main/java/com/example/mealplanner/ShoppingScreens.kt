@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckCircle
@@ -31,6 +30,8 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -60,9 +61,15 @@ private data class ShoppingSections(
     val missing: List<ShoppingItem>,
     val bought: List<ShoppingItem>,
     val excluded: List<ShoppingItem>,
-    val missingByCategoryId: Map<String?, List<ShoppingItem>>,
+    /** Categories that have items to buy, with items already name-sorted. */
+    val missingByCategory: List<Pair<IngredientCategory, List<ShoppingItem>>>,
+    /** Missing items without a (known) category, name-sorted. */
+    val missingUncategorized: List<ShoppingItem>,
     val checkedCount: Int
 )
+
+private fun List<ShoppingItem>.sortedByIngredientName(): List<ShoppingItem> =
+    sortedBy { it.ingredient.name.lowercase() }
 
 @Composable
 fun ShoppingScreen(state: MealPlannerState) {
@@ -70,7 +77,7 @@ fun ShoppingScreen(state: MealPlannerState) {
     val weekId = state.weeklyPlanId
     val requestedIngredientIds by remember(state) {
         derivedStateOf {
-            state.shoppingItems().map { it.ingredient.id }.distinct().sorted()
+            state.shoppingList.map { it.ingredient.id }.distinct().sorted()
         }
     }
     var bilkaCatalog by remember(weekId) { mutableStateOf<BilkaProductCatalog?>(null) }
@@ -121,6 +128,12 @@ fun ShoppingScreen(state: MealPlannerState) {
 
     var addToPantryItem by remember(weekId) {
         mutableStateOf<ShoppingItem?>(null)
+    }
+    var extraItem by remember(weekId) {
+        mutableStateOf<ShoppingItem?>(null)
+    }
+    var sizeFor by remember(weekId) {
+        mutableStateOf<Pair<ShoppingItem, BilkaProduct>?>(null)
     }
     var allowManualAfterError by remember(weekId) { mutableStateOf(false) }
     var editPantryItem by remember {
@@ -282,7 +295,7 @@ fun ShoppingScreen(state: MealPlannerState) {
 
     val sections by remember {
         derivedStateOf {
-            val all = state.shoppingItems()
+            val all = state.shoppingList
             val included = ArrayList<ShoppingItem>()
             val missing = ArrayList<ShoppingItem>()
             val bought = ArrayList<ShoppingItem>()
@@ -305,16 +318,27 @@ fun ShoppingScreen(state: MealPlannerState) {
                 }
             }
 
+            // Sort once per data change, not on every LazyColumn content pass.
+            val categories = state.sortedIngredientCategories
+            val categoryIds = categories.mapTo(HashSet()) { it.id }
+            val missingByCategoryId = missing.groupBy {
+                it.ingredient.shoppingCategoryId
+            }
+
             ShoppingSections(
                 all = all,
                 included = included,
                 missing = missing,
-                bought = bought,
-                excluded = excluded,
-                missingByCategoryId =
-                    missing.groupBy {
-                        it.ingredient.shoppingCategoryId
-                    },
+                bought = bought.sortedByIngredientName(),
+                excluded = excluded.sortedByIngredientName(),
+                missingByCategory = categories.mapNotNull { category ->
+                    missingByCategoryId[category.id]
+                        ?.sortedByIngredientName()
+                        ?.let { category to it }
+                },
+                missingUncategorized = missing
+                    .filter { it.ingredient.shoppingCategoryId !in categoryIds }
+                    .sortedByIngredientName(),
                 checkedCount = bought.size
             )
         }
@@ -325,13 +349,31 @@ fun ShoppingScreen(state: MealPlannerState) {
     val bought = sections.bought
     val excluded = sections.excluded
     val checkedCount = sections.checkedCount
+    val priceEstimate = remember(included, bilkaContext, bilkaCatalog) {
+        estimateShoppingPrice(included, bilkaContext, bilkaCatalog)
+    }
+    sizeFor?.let { (item, product) ->
+        ConfirmPackageSizeDialog(
+            item = item,
+            product = product,
+            state = state,
+            onDismiss = { sizeFor = null }
+        )
+    }
+    extraItem?.let { item ->
+        ShoppingExtraDialog(
+            item = item,
+            state = state,
+            onDismiss = { extraItem = null }
+        )
+    }
     var showBought by rememberSaveable { mutableStateOf(false) }
     var showExcluded by rememberSaveable { mutableStateOf(false) }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        contentPadding = PaddingValues(AppLayout.screenPadding),
+        verticalArrangement = Arrangement.spacedBy(AppLayout.itemSpacing)
     ) {
         item {
             Row(
@@ -339,12 +381,7 @@ fun ShoppingScreen(state: MealPlannerState) {
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Text(
-                    "Indkøb",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f)
-                )
+                ScreenTitle("Indkøb", modifier = Modifier.weight(1f))
                 OutlinedButton(
                     onClick = { showAddIngredient = true },
                     enabled = state.weeklyPlanId != null && !state.isWeekChanging
@@ -384,7 +421,7 @@ fun ShoppingScreen(state: MealPlannerState) {
                 val percentage = if (included.isEmpty()) 0 else (checkedCount * 100 / included.size)
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
+                    shape = AppShapes.card,
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.primaryContainer
                     )
@@ -420,6 +457,23 @@ fun ShoppingScreen(state: MealPlannerState) {
                             color = MaterialTheme.colorScheme.primary,
                             trackColor = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.2f)
                         )
+                        if (priceEstimate.pricedLines > 0) {
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "Estimeret pris: ca. " + kroner(priceEstimate.totalOre),
+                                style = MaterialTheme.typography.titleSmall,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Text(
+                                "Baseret på ${priceEstimate.pricedLines} varer" +
+                                    if (priceEstimate.unpricedLines > 0) {
+                                        " · ${priceEstimate.unpricedLines} uden pris"
+                                    } else "",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
                     }
                 }
             }
@@ -445,52 +499,39 @@ fun ShoppingScreen(state: MealPlannerState) {
             }
 
             if (missing.isNotEmpty()) {
-                val categories = state.ingredientCategories.sortedBy { it.name.lowercase() }
-                val knownIds = categories.map { it.id }.toSet()
+                sections.missingByCategory.forEach { (category, categoryItems) ->
+                    item(key = "category-${category.id}") {
+                        Text(
+                            category.name,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(top = 6.dp)
+                        )
+                    }
 
-                categories.forEach { category ->
-                    val categoryItems =
-                        sections.missingByCategoryId[category.id]
-                            .orEmpty()
-                            .sortedBy { it.ingredient.name.lowercase() }
-
-                    if (categoryItems.isNotEmpty()) {
-                        item(key = "category-${category.id}") {
-                            Text(
-                                category.name,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                modifier = Modifier.padding(top = 6.dp)
-                            )
-                        }
-
-                        items(
-                            items = categoryItems,
-                            key = { "missing-${it.ingredient.id}" },
-                            contentType = { "shopping-line" }
-                        ) { item ->
-                            ShoppingItemCard(
-                                item = item,
-                                state = state,
-                                included = true,
-                                checked = false,
-                                bilkaInfo = if (item.manualOnly) null else
-                                    bilkaShoppingLine(item, bilkaContext, bilkaCatalog),
-                                onEditPantry = {
-                                    editPantryItem = item
-                                }
-                            )
-                        }
+                    items(
+                        items = categoryItems,
+                        key = { "missing-${it.ingredient.id}" },
+                        contentType = { "shopping-line" }
+                    ) { item ->
+                        ShoppingItemCard(
+                            item = item,
+                            state = state,
+                            included = true,
+                            checked = false,
+                            bilkaInfo = if (item.manualOnly) null else
+                                bilkaShoppingLine(item, bilkaContext, bilkaCatalog),
+                            onEditPantry = {
+                                editPantryItem = item
+                            },
+                            onEditExtra = { extraItem = item },
+                            onConfirmSize = bilkaProductNeedingSize(item, bilkaContext, bilkaCatalog)
+                                ?.let { product -> { sizeFor = item to product } }
+                        )
                     }
                 }
 
-                val uncategorized =
-                    sections.missingByCategoryId
-                        .filterKeys { it == null || it !in knownIds }
-                        .values
-                        .flatten()
-                        .sortedBy { it.ingredient.name.lowercase() }
-
+                val uncategorized = sections.missingUncategorized
                 if (uncategorized.isNotEmpty()) {
                     item(key = "category-other") {
                         Text(
@@ -512,10 +553,13 @@ fun ShoppingScreen(state: MealPlannerState) {
                             included = true,
                             checked = false,
                             bilkaInfo = if (item.manualOnly) null else
-                            bilkaShoppingLine(item, bilkaContext, bilkaCatalog),
+                                bilkaShoppingLine(item, bilkaContext, bilkaCatalog),
                             onEditPantry = {
                                 editPantryItem = item
-                            }
+                            },
+                            onEditExtra = { extraItem = item },
+                            onConfirmSize = bilkaProductNeedingSize(item, bilkaContext, bilkaCatalog)
+                                ?.let { product -> { sizeFor = item to product } }
                         )
                     }
                 }
@@ -533,7 +577,7 @@ fun ShoppingScreen(state: MealPlannerState) {
                 }
 
                 if (showBought) items(
-                    items = bought.sortedBy { it.ingredient.name.lowercase() },
+                    items = bought,
                     key = { it.ingredient.id },
                     contentType = { "shopping-line" }
                 ) { item ->
@@ -546,6 +590,9 @@ fun ShoppingScreen(state: MealPlannerState) {
                         onEditPantry = {
                             editPantryItem = item
                         },
+                        onEditExtra = { extraItem = item },
+                            onConfirmSize = bilkaProductNeedingSize(item, bilkaContext, bilkaCatalog)
+                                ?.let { product -> { sizeFor = item to product } },
                         // More than one legitimate purchase of the same item
                         // per week is now supported by the event-idempotent RPC.
                         onAddToPantry = if (bilkaLoading) null else {
@@ -567,7 +614,7 @@ fun ShoppingScreen(state: MealPlannerState) {
                 }
 
                 if (showExcluded) items(
-                    items = excluded.sortedBy { it.ingredient.name.lowercase() },
+                    items = excluded,
                     key = { "excluded-${it.ingredient.id}" },
                     contentType = { "shopping-line" }
                 ) { item ->
@@ -596,13 +643,15 @@ private fun ShoppingItemCard(
     checked: Boolean,
     bilkaInfo: String? = null,
     onEditPantry: (() -> Unit)? = null,
+    onEditExtra: (() -> Unit)? = null,
+    onConfirmSize: (() -> Unit)? = null,
     onAddToPantry: (() -> Unit)? = null
 ) {
     val ingredient = item.ingredient
     val missingBase = (item.requiredBase - item.pantryBase).coerceAtLeast(0.0)
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
+        shape = AppShapes.card,
         colors = CardDefaults.cardColors(
             containerColor = if (checked) MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
             else MaterialTheme.colorScheme.surface
@@ -636,6 +685,15 @@ private fun ShoppingItemCard(
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.primary
                         )
+                        if (item.extraBase > 0.0) {
+                            Text(
+                                "Mangler ${state.formatBaseAmount(ingredient, missingBase)} · " +
+                                    "Lager ${state.formatBaseAmount(ingredient, item.pantryBase)}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2
+                            )
+                        }
                     } else {
                         Text(
                             "Mangler ${state.formatBaseAmount(ingredient, missingBase)}",
@@ -643,7 +701,10 @@ private fun ShoppingItemCard(
                             color = MaterialTheme.colorScheme.primary
                         )
                         Text(
-                            "Behov ${state.formatBaseAmount(ingredient, item.requiredBase)} · " +
+                            "Behov ${state.formatBaseAmount(ingredient, item.requiredBase)}" +
+                                (if (item.extraBase > 0.0) {
+                                    " (heraf ${state.formatBaseAmount(ingredient, item.extraBase)} ekstra)"
+                                } else "") + " · " +
                                 "Lager ${state.formatBaseAmount(ingredient, item.pantryBase)}",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -688,6 +749,20 @@ private fun ShoppingItemCard(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.End
             ) {
+                if (onConfirmSize != null) {
+                    TextButton(
+                        onClick = onConfirmSize,
+                        modifier = Modifier.heightIn(min = 48.dp)
+                    ) { Text("Bekræft pakkestørrelse") }
+                }
+                if (onEditExtra != null && included) {
+                    TextButton(
+                        onClick = onEditExtra,
+                        modifier = Modifier.heightIn(min = 48.dp)
+                    ) {
+                        Text(if (item.extraBase > 0.0) "Ret ekstra" else "Ekstra mængde")
+                    }
+                }
                 TextButton(
                     onClick = {
                         state.setShoppingIncluded(
@@ -809,5 +884,181 @@ private fun AddPurchasedToPantryDialog(
                 Text("Annuller")
             }
         }
+    )
+}
+
+/**
+ * Ask for more than the recipes need ("mælk til kaffe"). The extra is added to
+ * the week's need, so it works for ingredients that are already on the list.
+ */
+@Composable
+private fun ShoppingExtraDialog(
+    item: ShoppingItem,
+    state: MealPlannerState,
+    onDismiss: () -> Unit
+) {
+    val ingredient = item.ingredient
+    val units = remember(ingredient.id) {
+        MeasurementUnit.compatibleWith(ingredient.quantityType)
+    }
+    var unit by remember(ingredient.id) {
+        mutableStateOf(ingredient.preferredUnit.takeIf { it in units } ?: units.first())
+    }
+    var amountText by remember(ingredient.id) {
+        mutableStateOf(
+            if (item.extraBase > 0.0) {
+                formatDisplayNumber(unit.fromBase(item.extraBase))
+            } else ""
+        )
+    }
+    val base = parseDanishDecimal(amountText)?.let(unit::toBase)
+    val valid = base != null && base.isFinite() && base > 0.0 && base <= 1_000_000_000.0
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Ekstra ${ingredient.name}") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "Lægges oveni det, opskrifterne kræver – fx mælk til kaffe.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    OutlinedTextField(
+                        value = amountText,
+                        onValueChange = { value ->
+                            amountText = value.filter { it.isDigit() || it == ',' || it == '.' }
+                        },
+                        label = { Text("Mængde") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                        modifier = Modifier.weight(1f)
+                    )
+                    if (units.size > 1) {
+                        SimpleSelector(
+                            label = unit.selectorLabel(),
+                            options = units,
+                            optionText = { it.selectorLabel() },
+                            onSelected = { unit = it }
+                        )
+                    } else {
+                        Text(unit.selectorLabel())
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = valid,
+                onClick = {
+                    state.setShoppingExtra(ingredient.id, base ?: return@TextButton)
+                    onDismiss()
+                }
+            ) { Text("Gem") }
+        },
+        dismissButton = {
+            Row {
+                if (item.extraBase > 0.0) {
+                    TextButton(
+                        onClick = {
+                            state.setShoppingExtra(ingredient.id, 0.0)
+                            onDismiss()
+                        }
+                    ) { Text("Fjern ekstra") }
+                }
+                TextButton(onClick = onDismiss) { Text("Annullér") }
+            }
+        }
+    )
+}
+
+/**
+ * "This product is 280 g - what is that for {ingredient}?" Saves a household
+ * conversion on the ingredient (e.g. 1 stk = 280 g) that bridges every product
+ * of it measured in that unit, so package counts and prices can be worked out.
+ */
+@Composable
+private fun ConfirmPackageSizeDialog(
+    item: ShoppingItem,
+    product: BilkaProduct,
+    state: MealPlannerState,
+    onDismiss: () -> Unit
+) {
+    val ingredient = item.ingredient
+    val type = ingredient.quantityType
+    val options = remember(ingredient.id) {
+        QuantityUnit.entries.filter { it.nativeUnit?.quantityType != type }
+    }
+    val productUnit = product.quantityKind?.nativeUnit()
+    var unit by remember(product.id) {
+        mutableStateOf(productUnit?.takeIf { it in options } ?: options.first())
+    }
+    // One product is most often one piece/pack: start from its own size.
+    var amountText by remember(product.id) {
+        mutableStateOf(
+            product.packageBaseAmount
+                ?.takeIf { productUnit != null && ConversionPhrasing.inverted(type, productUnit) }
+                ?.let { formatDisplayNumber(it) }
+                ?: ""
+        )
+    }
+    val stored = parseDanishDecimal(amountText)
+        ?.let { ConversionPhrasing.stored(type, unit, it) }
+    val size = product.packageQuantity?.let {
+        formatDisplayNumber(it) + " " + (product.packageUnit ?: "")
+    } ?: product.name
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Bekræft pakkestørrelse") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    "${product.brandLabel} er $size. Hvad svarer det til for " +
+                        "${ingredient.name}? Det gælder alle produkter af varen " +
+                        "og bruges til at regne pakker og pris ud.",
+                    style = MaterialTheme.typography.bodyMedium
+                )
+                ConversionAmountRow(
+                    type = type,
+                    options = options,
+                    unit = unit,
+                    unitLocked = false,
+                    onUnitChange = { unit = it },
+                    amountText = amountText,
+                    onAmountChange = { amountText = it }
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                enabled = stored != null,
+                onClick = {
+                    val rule = IngredientUnitConversion(
+                        unit = unit,
+                        baseAmountPerUnit = stored ?: return@TextButton,
+                        approximate = false,
+                        source = "household-confirmed"
+                    )
+                    val saved = state.updateIngredient(
+                        id = ingredient.id,
+                        name = ingredient.name,
+                        type = ingredient.quantityType,
+                        shoppingCategoryId = ingredient.shoppingCategoryId,
+                        isProtein = ingredient.isProtein,
+                        preferredUnit = ingredient.preferredUnit,
+                        imageUri = ingredient.imageUri,
+                        neverBuy = ingredient.neverBuy,
+                        unitConversions =
+                            ingredient.unitConversions.filterNot { it.unit == unit } + rule
+                    )
+                    if (saved) onDismiss()
+                }
+            ) { Text("Gem") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annullér") } }
     )
 }

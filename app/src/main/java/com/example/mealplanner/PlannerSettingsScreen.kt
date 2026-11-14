@@ -115,6 +115,13 @@ internal fun PlannerSettingsScreen(
             300f
         ) { w.copy(recency30Days = it) },
         PlannerOption(
+            "frequency",
+            "Spist ofte de sidste 60 dage",
+            "Undgå retter, du har spist flere gange på det seneste.",
+            w.frequency60Days,
+            100f
+        ) { w.copy(frequency60Days = it) },
+        PlannerOption(
             "sameDay",
             "Skift ret på samme ugedag",
             "Foretræk en anden ret på samme ugedag.",
@@ -140,16 +147,12 @@ internal fun PlannerSettingsScreen(
     SubpageScaffold(title = "Tilpas madplan", onBack = onBack) { padding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            contentPadding = PaddingValues(AppLayout.screenPadding),
+            verticalArrangement = Arrangement.spacedBy(AppLayout.itemSpacing)
         ) {
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text(
-                        "Din madplan, dine regler",
-                        style = MaterialTheme.typography.titleLarge,
-                        fontWeight = FontWeight.Bold
-                    )
+                    SectionTitle("Din madplan, dine regler")
                     Text(
                         "Ændringer gemmes på denne telefon og bruges næste gang, du genererer en madplan eller skifter en ret. 0 slår en prioritet fra."
                     )

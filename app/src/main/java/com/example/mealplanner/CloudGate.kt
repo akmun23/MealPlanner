@@ -14,7 +14,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -542,11 +541,7 @@ fun CloudGate(
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(
-                    "Kunne ikke oprette forbindelse",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold
-                )
+                SectionTitle("Kunne ikke oprette forbindelse")
                 Spacer(Modifier.height(8.dp))
                 Text(
                     "Tjek forbindelsen og prøv igen. Dine data er ikke ændret.",
@@ -685,7 +680,7 @@ private fun LoginScreen(
         Button(
             onClick = onContinueOffline,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp)
+            shape = AppShapes.control
         ) {
             Text("Fortsæt i lokal tilstand (Offline)")
         }
@@ -774,7 +769,7 @@ private fun LoginScreen(
                         email.isNotBlank() &&
                         password.length >= 6,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp)
+            shape = AppShapes.control
         ) {
             Text("Log ind på cloud-konto")
         }
@@ -802,7 +797,7 @@ private fun LoginScreen(
                         email.isNotBlank() &&
                         password.length >= NEW_ACCOUNT_MIN_PASSWORD_LENGTH,
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp)
+            shape = AppShapes.control
         ) {
             Text("Opret cloud-konto")
         }

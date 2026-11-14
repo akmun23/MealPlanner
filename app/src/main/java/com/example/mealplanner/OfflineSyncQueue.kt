@@ -402,6 +402,15 @@ internal sealed interface QueuedMutation {
         val included: Boolean
     ) : QueuedMutation
 
+    /** amountBase <= 0 removes the extra. */
+    @Serializable
+    @SerialName("shopping_extra")
+    data class SetShoppingExtra(
+        val weeklyPlanId: String,
+        val ingredientId: String,
+        val amountBase: Double
+    ) : QueuedMutation
+
     @Serializable
     @SerialName("shopping_checked")
     data class SetShoppingChecked(
@@ -496,6 +505,9 @@ internal fun QueuedMutation.key(): String = when (this) {
     is QueuedMutation.SetShoppingChecked ->
         "shopping-checked:$weeklyPlanId:$ingredientId"
 
+    is QueuedMutation.SetShoppingExtra ->
+        "shopping-extra:$weeklyPlanId:$ingredientId"
+
     is QueuedMutation.ClearShopping ->
         "shopping-clear:$weeklyPlanId"
 
@@ -524,6 +536,7 @@ internal fun QueuedMutation.priority(): Int = when (this) {
 
     is QueuedMutation.ClearShopping,
     is QueuedMutation.SetShoppingIncluded,
+    is QueuedMutation.SetShoppingExtra,
     is QueuedMutation.SetShoppingChecked -> 50
 
     is QueuedMutation.SetMealEaten -> 55
@@ -574,6 +587,7 @@ internal fun QueuedMutation.domains(): Set<CloudSyncDomain> = when (this) {
 
     is QueuedMutation.ClearShopping,
     is QueuedMutation.SetShoppingIncluded,
+    is QueuedMutation.SetShoppingExtra,
     is QueuedMutation.SetShoppingChecked ->
         setOf(CloudSyncDomain.SHOPPING)
 
@@ -621,6 +635,7 @@ internal fun QueuedMutation.domainMask(): Int = when (this) {
 
     is QueuedMutation.ClearShopping,
     is QueuedMutation.SetShoppingIncluded,
+    is QueuedMutation.SetShoppingExtra,
     is QueuedMutation.SetShoppingChecked ->
         domainMask(CloudSyncDomain.SHOPPING)
 
@@ -714,11 +729,17 @@ internal class OfflineSyncQueue(
             )
         }
 
+        // Encoding the whole household is CPU-heavy; callers run on the UI
+        // scope, so never serialize it on the main thread.
+        val encodedSnapshot = withContext(Dispatchers.Default) {
+            RoomSnapshotCodec.encode(snapshot)
+        }
+
         database.localStateDao()
             .persistSnapshotAndMutations(
                 snapshot = HouseholdSnapshotEntity(
                     householdId = householdId,
-                    payload = RoomSnapshotCodec.encode(snapshot),
+                    payload = encodedSnapshot,
                     updatedAtEpochMs = now
                 ),
                 mutations = entities
@@ -1125,6 +1146,14 @@ private suspend fun applyQueuedMutation(
             repository.replaceLunchRecipes(
                 weeklyPlanId = mutation.weeklyPlanId,
                 recipeIds = mutation.recipeIds
+            )
+        }
+
+        is QueuedMutation.SetShoppingExtra -> {
+            repository.setShoppingExtra(
+                weeklyPlanId = mutation.weeklyPlanId,
+                ingredientId = mutation.ingredientId,
+                amountBase = mutation.amountBase
             )
         }
 

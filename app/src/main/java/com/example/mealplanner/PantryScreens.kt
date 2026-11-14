@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Edit
@@ -66,6 +65,12 @@ fun PantryScreen(
     val sortOrder = PantrySortOrder.entries
         .firstOrNull { it.name == sortOrderKey }
         ?: PantrySortOrder.NAME_ASC
+    val categoryOptions by remember {
+        derivedStateOf {
+            listOf<IngredientCategory?>(null) +
+                state.sortedIngredientCategories
+        }
+    }
     var editing by remember { mutableStateOf<Ingredient?>(null) }
 
     editing?.let { ingredient ->
@@ -82,8 +87,8 @@ fun PantryScreen(
     val filtered by remember(sortOrderKey, stockFilterKey) {
         derivedStateOf {
             visiblePantryIngredients(
-                ingredients = state.ingredients.toList(),
-                categories = state.ingredientCategories.toList(),
+                ingredients = state.ingredients,
+                categories = state.ingredientCategories,
                 pantry = state.pantry,
                 searchQuery = searchQuery,
                 selectedCategoryId = selectedCategoryId,
@@ -96,22 +101,18 @@ fun PantryScreen(
     LazyColumn(
         state = listState,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(10.dp)
+        contentPadding = PaddingValues(AppLayout.screenPadding),
+        verticalArrangement = Arrangement.spacedBy(AppLayout.itemSpacing)
     ) {
         item {
-            Text(
-                "Lager",
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.Bold
-            )
+            ScreenTitle("Lager")
         }
 
         item {
             Button(
                 onClick = onAddIngredient,
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp)
+                shape = AppShapes.control
             ) {
                 Icon(Icons.Filled.Add, contentDescription = null)
                 Spacer(Modifier.width(6.dp))
@@ -134,8 +135,7 @@ fun PantryScreen(
 
                 SimpleSelector(
                     label = selectedCategory?.name ?: "Alle kategorier",
-                    options = listOf<IngredientCategory?>(null) +
-                            state.ingredientCategories.sortedBy { it.name.lowercase() },
+                    options = categoryOptions,
                     optionText = { it?.name ?: "Alle kategorier" },
                     onSelected = { selectedCategoryId = it?.id },
                     fillWidth = true
@@ -188,7 +188,7 @@ fun PantryScreen(
                                     stockFilterKey = PantryStockFilter.ALL.name
                                     sortOrderKey = PantrySortOrder.NAME_ASC.name
                                 },
-                                shape = RoundedCornerShape(12.dp)
+                                shape = AppShapes.control
                             ) {
                                 Text("Ryd filtre")
                             }
@@ -205,7 +205,7 @@ fun PantryScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { editing = ingredient },
-                shape = RoundedCornerShape(16.dp)
+                shape = AppShapes.card
             ) {
                 Row(
                     modifier = Modifier.padding(12.dp),

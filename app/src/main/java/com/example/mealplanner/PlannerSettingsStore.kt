@@ -40,6 +40,7 @@ internal class PlannerSettingsStore(context: Context) {
             weights.recency7Days,
             weights.recency14Days,
             weights.recency30Days,
+            weights.frequency60Days,
             weights.keepSameDay,
             weights.jitter
         ).all { it.isFinite() && it >= 0.0 && it <= 1000.0 }
