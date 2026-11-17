@@ -25,3 +25,5 @@ __pycache__/
 # IDE settings
 .idea/
 .kotlin/
+
+supabase/.temp/
