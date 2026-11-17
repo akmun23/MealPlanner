@@ -145,7 +145,9 @@ internal fun BilkaPurchaseDialog(
     val previous = shopping.purchase(ingredient.id)
     val candidates = PurchaseDialogRules.compatibleProducts(
         ingredient, catalog.productsFor(ingredient.id)
-    )
+    ) { product ->
+        if (product.id == defaultRow?.productId) defaultRow.packageBaseAmountOverride else null
+    }
     val initial = PurchaseDialogRules.selectedProductId(
         candidates, previous?.productId, defaultRow?.productId
     )

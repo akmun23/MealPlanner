@@ -74,6 +74,31 @@ type ProductRow = {
   quantity_kind: string | null; price_ore: number | null;
 };
 
+/** The unit a product's package_base_amount is expressed in, per quantity kind. */
+const NATIVE_UNIT: Record<string, string> = {
+  MASS: "GRAM", VOLUME: "MILLILITRE", COUNT: "PIECE", PACKAGE: "PACK",
+};
+
+/**
+ * Base amount of the ingredient in one pack of a product measured in another
+ * kind, taken from the household's own conversion for that exact unit
+ * ("1 stk = 280 g"). Null when the household has not confirmed one.
+ */
+async function bridgeFactor(
+  ctx: ShoppingService, house: string, ingredientId: string, kind: string,
+): Promise<number | null> {
+  const unit = NATIVE_UNIT[kind];
+  if (!unit) return null;
+  const rows = list<{ base_amount_per_unit: number | string }>(await ctx.admin(
+    "/rest/v1/ingredient_unit_conversions?select=base_amount_per_unit&household_id=eq." + house +
+      "&ingredient_id=eq." + encode(ingredientId) + "&unit_code=eq." + unit + "&limit=2", "GET"
+  ));
+  // Conflicting rows are never resolved by order, same as the app.
+  if (rows.length !== 1) return null;
+  const factor = Number(rows[0].base_amount_per_unit);
+  return Number.isFinite(factor) && factor > 0 && factor <= 1e9 ? factor : null;
+}
+
 /**
  * Only the explicitly purchased product/amount is applied to pantry.
  * A transaction guarded by bilka_record_purchase rejects repeated adds.
@@ -136,16 +161,26 @@ export async function recordPurchase(ctx: ShoppingService, input: CheckoutPayloa
     ));
     const product = products[0];
     if (!product) throw new CheckoutError("not_bilka_product", 400);
-    if (product.quantity_kind !== null && product.quantity_kind !== ingredientRows[0].quantity_type) {
-      throw new CheckoutError("incompatible_package_units", 400);
-    }
     const override = defaults.find((x) => x.product_id === productId)?.package_base_amount_override;
-    // Unknown source units cannot safely be compared to ingredient base units.
-    // Android asks for an explicit purchased amount in this case; accept that
-    // amount rather than validating against an untyped provider package size.
-    const packageBase = product.quantity_kind === ingredientRows[0].quantity_type
-      ? override ?? product.package_base_amount
-      : null;
+    const sameKind = product.quantity_kind === ingredientRows[0].quantity_type;
+    // A product measured in another kind is only usable with a size the
+    // household confirmed or a conversion they saved for that unit. Without
+    // either, nothing is guessed.
+    let packageBase: number | null;
+    if (product.quantity_kind === null) {
+      // Unknown source units cannot safely be compared to ingredient base units.
+      // Android asks for an explicit purchased amount in this case; accept that
+      // amount rather than validating against an untyped provider package size.
+      packageBase = null;
+    } else if (sameKind) {
+      packageBase = override ?? product.package_base_amount;
+    } else if (override != null) {
+      packageBase = override;
+    } else {
+      const factor = await bridgeFactor(ctx, house, input.ingredientId, product.quantity_kind);
+      if (factor === null) throw new CheckoutError("incompatible_package_units", 400);
+      packageBase = product.package_base_amount != null ? product.package_base_amount * factor : null;
+    }
     if (packageBase != null) {
       const expected = packageBase * packages;
       const tolerance = Math.max(0.0001, expected * 1e-7);

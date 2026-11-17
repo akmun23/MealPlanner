@@ -10,11 +10,15 @@ function equal(a: unknown, b: unknown) {
     throw new Error("Expected " + JSON.stringify(b) + " got " + JSON.stringify(a));
 }
 
-function backend(opts: { selected?: string; match?: string; kind?: string | null; neverBuy?: boolean } = {}) {
+function backend(opts: {
+  selected?: string; match?: string; kind?: string | null; neverBuy?: boolean;
+  ingredientType?: string; productAmount?: number; override?: number | null;
+  conversions?: Array<{ unit: string; factor: number }>;
+} = {}) {
   const methods: string[] = [];
   const purchases: Array<Record<string, unknown>> = [];
   const defaults = [{ ingredient_id: ingredientId, product_id: opts.selected ?? "42",
-    package_base_amount_override: null }];
+    package_base_amount_override: opts.override ?? null }];
   const shopping = {
     householdId,
     rpc: async (name: string, args: Record<string, unknown>): Promise<unknown> => {
@@ -29,15 +33,20 @@ function backend(opts: { selected?: string; match?: string; kind?: string | null
       methods.push(method + " " + path);
       if (method !== "GET") throw new Error("Checkout must write only through atomic RPC");
       if (path.includes("/weekly_plans?")) return [{ id: weekId }];
-      if (path.includes("/ingredients?")) return [{ id: ingredientId, quantity_type: "MASS", never_buy: opts.neverBuy ?? false }];
+      if (path.includes("/ingredients?")) return [{ id: ingredientId, quantity_type: opts.ingredientType ?? "MASS", never_buy: opts.neverBuy ?? false }];
       if (path.includes("/ingredient_bilka_defaults?")) return defaults;
       if (path.includes("/ingredient_bilka_candidates?")) {
         return opts.match ? [{ product_id: opts.match }] : [];
       }
       if (path.includes("/bilka_products?")) return [{
-        id: "42", package_base_amount: 1000,
+        id: "42", package_base_amount: opts.productAmount ?? 1000,
         quantity_kind: opts.kind === undefined ? "MASS" : opts.kind, price_ore: 1800,
       }];
+      if (path.includes("/ingredient_unit_conversions?")) {
+        return (opts.conversions ?? [])
+          .filter((c) => path.includes("unit_code=eq." + c.unit))
+          .map((c) => ({ base_amount_per_unit: c.factor }));
+      }
       if (path.includes("/shopping_product_overrides?")) return [];
       throw new Error("Unexpected path " + path);
     },
@@ -222,4 +231,49 @@ Deno.test("unknown Prej quantity unit permits manually verified purchased amount
   });
   equal(purchases.length, 1);
   equal(purchases[0].p_purchased_amount_base, 1250);
+});
+
+Deno.test("a gram product can be bought for a piece-counted ingredient through its household conversion", async () => {
+  // "1 stk = 280 g" is stored as pieces per gram.
+  const { shopping, purchases } = backend({
+    kind: "MASS", ingredientType: "COUNT", productAmount: 280,
+    conversions: [{ unit: "GRAM", factor: 1 / 280 }],
+  });
+  await recordPurchase(shopping, { weekId, ingredientId, productId: "42",
+    packageCount: 3, amountBase: 3 });
+  equal(purchases.length, 1);
+  equal(purchases[0].p_purchased_amount_base, 3);
+});
+
+Deno.test("a converted product still rejects an amount that does not match the packs", async () => {
+  const { shopping, purchases } = backend({
+    kind: "MASS", ingredientType: "COUNT", productAmount: 280,
+    conversions: [{ unit: "GRAM", factor: 1 / 280 }],
+  });
+  let failure = "";
+  try {
+    await recordPurchase(shopping, { weekId, ingredientId, productId: "42",
+      packageCount: 3, amountBase: 5 });
+  } catch (e) { failure = (e as CheckoutError).code; }
+  equal(failure, "package_amount_mismatch");
+  equal(purchases.length, 0);
+});
+
+Deno.test("a different-kind product without a conversion or confirmed size is still rejected", async () => {
+  const { shopping } = backend({ kind: "MASS", ingredientType: "COUNT", productAmount: 280 });
+  let failure = "";
+  try {
+    await recordPurchase(shopping, { weekId, ingredientId, productId: "42",
+      packageCount: 1, amountBase: 1 });
+  } catch (e) { failure = (e as CheckoutError).code; }
+  equal(failure, "incompatible_package_units");
+});
+
+Deno.test("a confirmed pack size makes a different-kind product usable", async () => {
+  const { shopping, purchases } = backend({
+    kind: "MASS", ingredientType: "COUNT", productAmount: 280, override: 1,
+  });
+  await recordPurchase(shopping, { weekId, ingredientId, productId: "42",
+    packageCount: 2, amountBase: 2 });
+  equal(purchases[0].p_purchased_amount_base, 2);
 });

@@ -56,6 +56,38 @@ class PurchaseDialogRulesTest {
     }
 
     @Test
+    fun aProductInAnotherUnitKindStaysSelectableThroughAHouseholdConversion() {
+        val baguette = BilkaProduct(
+            id = "baguette", name = "Baguette",
+            quantityKind = BilkaQuantityKind.MASS, packageBaseAmount = 280.0
+        )
+        val counted = ingredient(QuantityType.COUNT, MeasurementUnit.PIECE)
+        // "1 stk = 280 g" is stored as base (pieces) per gram.
+        val bridged = counted.copy(
+            unitConversions = listOf(IngredientUnitConversion(QuantityUnit.GRAM, 1.0 / 280.0))
+        )
+
+        assertEquals(
+            listOf("baguette"),
+            PurchaseDialogRules.compatibleProducts(bridged, listOf(baguette)).map { it.id }
+        )
+        assertTrue(PurchaseDialogRules.compatibleProducts(counted, listOf(baguette)).isEmpty())
+    }
+
+    @Test
+    fun aConfirmedPackSizeMakesADifferentKindSelectable() {
+        val baguette = BilkaProduct(
+            id = "baguette", name = "Baguette",
+            quantityKind = BilkaQuantityKind.MASS, packageBaseAmount = 280.0
+        )
+        val counted = ingredient(QuantityType.COUNT, MeasurementUnit.PIECE)
+
+        val kept = PurchaseDialogRules.compatibleProducts(counted, listOf(baguette)) { 1.0 }
+
+        assertEquals(listOf("baguette"), kept.map { it.id })
+    }
+
+    @Test
     fun zeroMissingAmountPrefillsPositiveQuantityInUsersOwnUnit() {
         assertEquals(
             400.0,
