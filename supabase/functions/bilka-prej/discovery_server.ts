@@ -26,7 +26,7 @@ export type DiscoveryServices = {
   householdId: string;
 };
 
-/** One import attempt is bounded by calls AND elapsed time; never spend 25 calls at once. */
+/** One import attempt is bounded by calls and elapsed time; never spend 25 calls at once. */
 const REQUESTS_PER_RUN = 8;
 const DISCOVERY_DAILY_LIMIT = 18; // Keep >= 2 app-budget slots for price refresh.
 const CACHE_DAYS = 7;
@@ -190,7 +190,7 @@ export async function discoverProducts(
       }
     }
     if (out.length) {
-      // Ignore an existing rejected choice; phase 4 must never silently resurrect it.
+      // Ignore an existing rejected choice; discovery must never silently resurrect it.
       await admin(
         "/rest/v1/ingredient_bilka_candidates?on_conflict=household_id,ingredient_id,product_id",
         "POST", out, "resolution=ignore-duplicates,return=minimal",

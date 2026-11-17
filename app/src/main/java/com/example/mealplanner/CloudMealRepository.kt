@@ -228,7 +228,7 @@ internal data class PlannedMealRow(
     @SerialName("day_of_week") val dayOfWeek: Int,
     val mode: String,
     @SerialName("recipe_id") val recipeId: String? = null,
-    // Required in database: DO NOT give this a Kotlin default.
+    // Required in database: do not give this a Kotlin default.
     // Kotlinx serialization omits default-valued properties by default,
     // which made locked=false disappear from Supabase upserts and caused
     // PostgreSQL's NOT NULL constraint to reject week sync repeatedly.
@@ -738,7 +738,7 @@ class CloudMealRepository(
                     }.decodeList<RecipeCategoryAssignmentRow>()
                 }
                 val recipesDeferred = async {
-                    // Explicit projection MUST include every persisted RecipeRow
+                    // Explicit projection must include every persisted RecipeRow
                     // field. Omitting steps/URL silently applies their Kotlin
                     // defaults during decoding and then wipes the user's edits
                     // when realtime refresh replaces the optimistic recipe.

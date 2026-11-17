@@ -14,7 +14,7 @@ internal object RecipeRequirementRules {
         return groups.map { (id, group) ->
             if (group.size == 1) return@map group.single()
             val sumBase = group.sumOf { it.amountBase }
-            // Only preserve a human-readable unit when ALL duplicate rows use
+            // Only preserve a human-readable unit when all duplicate rows use
             // the same validated frozen conversion. Otherwise retaining one
             // display label would misrepresent the physical sum.
             val first = group.first()

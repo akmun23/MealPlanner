@@ -137,8 +137,8 @@ class QuantityConversionFoundationTest {
             ham, 1.0, QuantityUnit.PACK,
             listOf(IngredientUnitConversion(QuantityUnit.PACK, 200.0))
         )!!
-        // The phase-1 editor must temporarily show 200 g, but a name/notes
-        // update must not replace the frozen recipe text "1 pakke".
+        // The editor shows this ingredient as 200 g, but a name/notes edit
+        // must not replace the frozen recipe text "1 pakke".
         val unchangedEditorQuantity =
             RecipeQuantityRules.freeze("ham", 200.0, MeasurementUnit.GRAM)!!
         assertEquals(

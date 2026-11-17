@@ -85,8 +85,8 @@ export async function saveHouseholdDefault(
     return { error: "not_a_suggested_product", status: 400 };
   }
   // Manual search deliberately displays every provider result, including
-  // ToGo products without a ToGo price. Those are browse-only and MUST
-  // NOT be accepted as the household's fixed, priced shopping SKU.
+  // ToGo products without a ToGo price. Those are browse-only and must
+  // not be accepted as the household's fixed, priced shopping SKU.
   const chain = productId.startsWith("bilkatogo:") ? "bilkatogo" : "bilka";
   const productRows = list<{ id: string; chain_slug: string; price_ore: number | null }>(
     await ctx.admin(

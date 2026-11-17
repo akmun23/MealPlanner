@@ -18,7 +18,7 @@ fun QuantityType.danishName(): String = when (this) {
     QuantityType.PACKAGE -> "pakke/dåse"
 }
 
-/** Canonical physical storage unit, NOT the preferred unit shown to users. */
+/** Canonical physical storage unit, not the preferred unit shown to users. */
 fun QuantityType.baseMeasurementUnit(): MeasurementUnit = when (this) {
     QuantityType.MASS -> MeasurementUnit.GRAM
     QuantityType.VOLUME -> MeasurementUnit.MILLILITRE
@@ -145,7 +145,7 @@ data class RecipeIngredient(
     /** User-authored recipe display, frozen at save time. Null for legacy rows. */
     val displayAmount: Double? = null,
     val displayUnitCode: String? = null,
-    /** Snapshot, NOT a live lookup of the current product packaging. */
+    /** Snapshot, not a live lookup of the current product packaging. */
     val basePerDisplayUnit: Double? = null,
     /** True if the saved conversion was a household estimate. */
     val conversionApproximate: Boolean = false

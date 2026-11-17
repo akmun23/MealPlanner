@@ -82,14 +82,15 @@ comment on function public.bilka_update_prices_only(jsonb) is
 create extension if not exists pg_cron with schema pg_catalog;
 create extension if not exists pg_net with schema extensions;
 
+-- Replace <project-ref> with your Supabase project reference before applying.
 -- This hourly job only calls the Edge Function during 05:00-07:59 Copenhagen
--- time AND after a cron token is installed in Vault. It is otherwise inert.
+-- time and after a cron token is installed in Vault. It is otherwise inert.
 select cron.schedule(
   'mealplanner-bilka-prices',
   '0 * * * *',
   $nightly_job$
     select net.http_post(
-      url := 'https://tylwghmkkooflyaptwgf.supabase.co/functions/v1/bilka-nightly-refresh',
+      url := 'https://<project-ref>.supabase.co/functions/v1/bilka-nightly-refresh',
       headers := jsonb_build_object(
         'Content-Type','application/json',
         'x-mealplanner-cron-token',

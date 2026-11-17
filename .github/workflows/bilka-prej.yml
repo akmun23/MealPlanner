@@ -29,13 +29,13 @@ jobs:
         run: deno test supabase/functions/bilka-nightly-refresh/auth_test.ts
       - name: Test Bilka-only mappings and batching
         run: deno test supabase/functions/bilka-prej/key_management_test.ts supabase/functions/bilka-prej/prej_test.ts supabase/functions/bilka-prej/discovery_test.ts supabase/functions/bilka-prej/catalog_test.ts supabase/functions/bilka-prej/manual_search_test.ts supabase/functions/bilka-prej/shopping_test.ts supabase/functions/bilka-prej/price_updates_test.ts supabase/functions/bilka-prej/barcode_test.ts
-      - name: Guard against malformed phase-5 and phase-6 SQL migrations
+      - name: Guard against malformed Bilka SQL migrations
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          phase5 = Path("supabase/migrations/20261010140000_bilka_nightly_prices.sql").read_text()
-          phase6 = Path("supabase/migrations/20261010150000_bilka_purchase_transaction.sql").read_text()
-          phase7 = Path("supabase/migrations/20261010160000_bilka_release_readiness.sql").read_text()
+          nightly_prices = Path("supabase/migrations/20261010140000_bilka_nightly_prices.sql").read_text()
+          purchase_tx = Path("supabase/migrations/20261010150000_bilka_purchase_transaction.sql").read_text()
+          readiness = Path("supabase/migrations/20261010160000_bilka_release_readiness.sql").read_text()
           vault_auth = Path("supabase/migrations/20261011123000_bilka_nightly_vault_auth.sql").read_text().lower()
           assert "extensions.gen_random_bytes(48)" in vault_auth, "Cron token must be random"
           assert "vault.create_secret" in vault_auth, "Cron token must be Vault-backed"
@@ -43,13 +43,13 @@ jobs:
           assert "grant execute on function public.bilka_nightly_token_digest()" in vault_auth
           assert "to service_role" in vault_auth
           assert "alter_job" not in vault_auth, "Do not activate scheduler until worker is deployed"
-          assert phase5.count("select cron.schedule(") == 1, "Nightly job must be scheduled exactly once"
-          assert phase5.count("$price_only$") == 2, "Price RPC requires matching SQL dollar quotes"
-          assert "id ~ '^[0-9]+$'" in phase5, "Price id pattern was corrupted"
-          assert phase6.count("$body$") == 2, "Purchase RPC requires matching SQL dollar quotes"
-          assert phase7.count("$ready$") == 2, "Readiness RPC requires matching SQL dollar quotes"
-          assert "revoke all on function public.bilka_nightly_scheduler_ready()" in phase7.lower(), "Readiness RPC must not be public"
-          assert "where public.shopping_product_overrides.purchased_amount_base is null" in phase6.lower(), "Repeat purchases must be blocked"
+          assert nightly_prices.count("select cron.schedule(") == 1, "Nightly job must be scheduled exactly once"
+          assert nightly_prices.count("$price_only$") == 2, "Price RPC requires matching SQL dollar quotes"
+          assert "id ~ '^[0-9]+$'" in nightly_prices, "Price id pattern was corrupted"
+          assert purchase_tx.count("$body$") == 2, "Purchase RPC requires matching SQL dollar quotes"
+          assert readiness.count("$ready$") == 2, "Readiness RPC requires matching SQL dollar quotes"
+          assert "revoke all on function public.bilka_nightly_scheduler_ready()" in readiness.lower(), "Readiness RPC must not be public"
+          assert "where public.shopping_product_overrides.purchased_amount_base is null" in purchase_tx.lower(), "Repeat purchases must be blocked"
           stage_fix = Path("supabase/migrations/20261011010000_fix_prej_stage_key_regex.sql").read_text()
           assert "{12,256}" not in stage_fix.split("as $")[1], "Do not use unsupported PostgreSQL regex repetition bounds"
           assert "length(p_api_key) not between 21 and 265" in stage_fix, "Keep Prej key length validation"

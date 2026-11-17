@@ -1,6 +1,6 @@
 /**
  * Replace a Prej credential without conflating saving the secret with spending
- * provider API quota. Staged credentials MUST NOT be used for searches until
+ * provider API quota. Staged credentials must not be used for searches until
  * explicitly verified via Prej at a later time.
  */
 export type ReplacementOutcome = {

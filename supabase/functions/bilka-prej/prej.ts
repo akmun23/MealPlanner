@@ -122,7 +122,7 @@ function priceBasis(label: string | null): BilkaCacheRow["unit_price_basis"] {
   return null;
 }
 
-/** A product-level minimum price is NEVER safe: only the bilka price row is used. */
+/** A product-level minimum price is never safe: only the bilka price row is used. */
 export function toBilkaCacheRow(
   product: PrejProduct,
   chain: GroceryChain = "bilka",

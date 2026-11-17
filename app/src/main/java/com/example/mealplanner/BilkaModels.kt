@@ -4,11 +4,11 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * Phase 1 contracts for the Bilka-only product catalog. Prices are integer øre,
- * and packageBaseAmount uses the same base units as Ingredient (g/ml/pieces/packs).
- * A product ID identifies a specific brand AND package size.
+ * Models for the Bilka product catalog. Prices are integer øre, and
+ * packageBaseAmount uses the same base units as Ingredient (g/ml/pieces/packs).
+ * A product id identifies one brand in one package size.
  *
- * Prej is accessed only by a future server-side integration, never by Android.
+ * The app never calls Prej itself; that goes through the bilka-prej Edge Function.
  */
 @Serializable
 enum class BilkaQuantityKind {

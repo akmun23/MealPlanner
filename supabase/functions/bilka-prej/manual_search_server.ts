@@ -10,7 +10,7 @@ type Backend = CatalogServices & {
 };
 /**
  * Keep provider results visible even if Prej supplies no ToGo price.
- * This is a browse-only placeholder, NOT a made-up retailer price.
+ * This is a browse-only placeholder, not a made-up retailer price.
  */
 type BrowsableProductRow = Omit<BilkaCacheRow, "price_ore"> & { price_ore: number | null };
 
@@ -121,7 +121,7 @@ export async function manualProductSearch(
     receivedCount = providerProducts.length;
     // Never silently discard products due to name/category relevance. Display
     // every SKU in the requested chain with an actual ToGo price, in provider
-    // order. Other-chain prices must NOT be passed off as BilkaToGo.
+    // order. Other-chain prices must not be passed off as BilkaToGo.
     afterCategory = providerProducts.length;
     const priced = providerProducts
       .map((p) => toBilkaCacheRow(p, "bilkatogo"))

@@ -293,7 +293,7 @@ async function refresh(userId: string, householdId: unknown): Promise<Response> 
   const distinct = [...new Set(defaults.map((d) => d.product_id))];
   if (!distinct.length) return json({ updated: 0, requested: 0, message: "no_selected_products" });
 
-  // Phase 2 refreshes up to one batch. Discovery/queue is phase 3.
+  // One Prej batch call covers up to 500 ids; refresh only does a single batch.
   const batches = batchIds(distinct.map(providerProductId), 500);
   const providerIds = batches[0] ?? [];
   const ids = distinct.filter((id) => providerIds.includes(providerProductId(id)));

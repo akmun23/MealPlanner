@@ -5,7 +5,7 @@ import kotlin.math.max
 
 /**
  * A purchase suggestion in the ingredient's existing physical base (g/ml/pieces).
- * It is NOT a purchase receipt and must not credit pantry or bypass Bilka's
+ * It is not a purchase receipt and must not credit pantry or bypass Bilka's
  * server-side quantity checks.
  */
 internal data class PackagePurchasePlan(
@@ -18,8 +18,9 @@ internal data class PackagePurchasePlan(
 )
 
 /**
- * Pure, no-guess rules for phase 2. The client will bind these to persisted,
- * household-approved conversion profiles in a separate change.
+ * Pure rules for switching a recipe's display unit and planning whole packs.
+ * Nothing is guessed: every cross-dimension step needs a household-approved
+ * conversion.
  */
 internal object QuantityPlanningRules {
     /** Only offer recipe units for which this ingredient has a known bridge. */

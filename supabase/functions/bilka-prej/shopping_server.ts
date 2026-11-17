@@ -40,7 +40,7 @@ export async function shoppingContext(ctx: ShoppingService, weekId: string) {
   return { defaults: list(defaults), overrides: list(overrides) };
 }
 /** Confirm only this exact idempotent checkout event; a prior purchase
- * of the same ingredient is NOT evidence that the latest checkout succeeded. */
+ * of the same ingredient is not evidence that the latest checkout succeeded. */
 export async function purchaseConfirmed(
   ctx: ShoppingService, weekId: string, purchaseId: string
 ) {

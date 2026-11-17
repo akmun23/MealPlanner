@@ -56,7 +56,7 @@ function matchesToken(haystack: string, needle: string): boolean {
   if (tokens.includes(needle)) return true;
 
   // Danish food compounds can end in the target noun (e.g. "hvedemel"),
-  // but a prefix is NOT an ingredient match: "fløde" must not suggest
+  // but a prefix is not an ingredient match: "fløde" must not suggest
   // "flødebolle" or "flødelikør".
   if (needle.length >= 4 && tokens.some((t) => t.endsWith(needle))) return true;
 

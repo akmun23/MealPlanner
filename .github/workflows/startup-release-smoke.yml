@@ -1,4 +1,4 @@
-name: Startup release smoke
+name: Startup linkage and release bundle
 
 on:
   push:

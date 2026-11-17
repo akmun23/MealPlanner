@@ -6,7 +6,7 @@ import kotlinx.serialization.Serializable
 
 /**
  * Extensible input vocabulary. These are labels, not storage dimensions.
- * GARLIC_CLOVE / GARLIC_HEAD deliberately have NO universal conversion:
+ * GARLIC_CLOVE / GARLIC_HEAD deliberately have no universal conversion:
  * one garlic head does not contain a fixed number of cloves.
  */
 @Serializable
@@ -38,7 +38,7 @@ enum class QuantityUnit(val symbol: String, val nativeUnit: MeasurementUnit?) {
 }
 
 /**
- * A user-confirmed per-ingredient bridge to that ingredient's CURRENT base.
+ * A user-confirmed per-ingredient bridge to that ingredient's current base.
  * The base is still legacy g/ml/pieces/packs until an explicit, separate
  * per-ingredient base migration. Never reinterpret historical stock silently.
  */
@@ -98,7 +98,7 @@ internal object QuantityConversionEngine {
 
 /**
  * A recipe is an immutable physical requirement plus a presentation snapshot.
- * Altering product defaults NEVER changes amountBase or the saved display.
+ * Altering product defaults never changes amountBase or the saved display.
  * Nullable fields preserve old snapshots and queued mutations.
  */
 internal object RecipeQuantityRules {
@@ -154,8 +154,8 @@ internal object RecipeQuantityRules {
         )
     }
 
-    /** Used in the next editor phase once the household has confirmed a
-     *  package/weight or clove/head conversion for this ingredient. */
+    /** Freeze a recipe amount typed in a unit the household has a confirmed
+     *  conversion for (package/weight, clove/head). */
     fun freeze(
         ingredient: Ingredient,
         displayAmount: Double,
@@ -216,8 +216,8 @@ internal object RecipeQuantityRules {
     }
 
     /**
-     * The legacy editor cannot yet express cross-dimension recipe units.
-     * It temporarily presents them in the ingredient's base dimension.
+     * The editor cannot express cross-dimension recipe units, so it shows
+     * them in the ingredient's base dimension.
      * Editing a recipe title/notes must not silently rewrite an unchanged
      * "1 pack" snapshot into "200 g". A real quantity change uses the new
      * editor amount, and supported native units remain freely editable.

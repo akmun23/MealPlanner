@@ -122,7 +122,7 @@ internal fun bilkaShoppingLine(
 }
 
 /**
- * One purchase of whole packs. Explicitly chosen alternatives belong ONLY to this
+ * One purchase of whole packs. Explicitly chosen alternatives belong only to this
  * week, never to ingredient_bilka_defaults. The server performs an atomic
  * one-time stock credit so retry/double-tap cannot add the purchase twice.
  */
@@ -202,7 +202,7 @@ internal fun BilkaPurchaseDialog(
     val estimated = if (!manual && count != null)
         BilkaPackageMath.estimatedCostOre(currentProduct?.priceOre, count)
     else null
-    // Estimated shelf price is informative, NOT an actual receipt amount.
+    // Estimated shelf price is informative, not an actual receipt amount.
     // Only an amount explicitly typed by the user is saved as paid_total_ore.
     val paidOre = if (paidText.isBlank()) {
         null
@@ -218,7 +218,7 @@ internal fun BilkaPurchaseDialog(
             else currentProduct != null && count != null && count in 1..500) &&
             (paidText.isBlank() || paidOre != null)
 
-    // Network retries of identical checkout details reuse the SAME event ID.
+    // Network retries of identical checkout details reuse the same event ID.
     // Explicit edits get a fresh ID: a second real purchase is allowed while
     // lost responses / duplicate taps cannot add the same one twice.
     val checkoutFingerprint = listOf(
