@@ -13,7 +13,9 @@ on my machine and the Supabase values come from `local.properties`.
 
 Migrations go **before** the app, because a new app that queries a table the database does not have
 yet will fail. Older app versions also have to keep working against the newer schema for as long as
-they are installed, so changes are additive (new tables, nullable columns).
+they are installed, so changes are mostly additive (new tables, nullable columns). Removing something,
+like `20261114120237_remove_deferred_recipe_leftovers.sql`, only happens once nothing in a released
+app uses it.
 `20261013090000_recipe_estimate_null_compatibility.sql` fixes a case where an older client sent a
 `null` that a new constraint did not accept.
 
@@ -41,8 +43,8 @@ libraries without debug symbols. CI runs both of these, plus `scripts/check_dex_
 which compares the release APK with the unoptimized one so a regression in shrinking shows up as a
 number.
 
-Keep `mapping.txt` (`app/build/outputs/mapping/release/`) for every released version code. It is the
-only way to read a release stack trace, and the next build overwrites it.
+Keep `mapping.txt` (`app/build/outputs/mapping/release/`) for every released version code. Without it
+the obfuscated names in a crash report cannot be translated back, and the next build overwrites it.
 
 An R8 build once crashed on startup on a real phone, so a release build gets installed and used
 before it is promoted: cold start, login, offline use, a synced household, photos, and backup and
@@ -55,8 +57,8 @@ fix the specific keep rule it needs.
 scripts/sign_release_bundle.sh app-release.aab /path/to/upload-keystore.jks upload-alias
 ```
 
-The script signs a copy with `jarsigner` and verifies it. The key and its passwords are typed at the
-terminal and never stored.
+The script signs a copy with `jarsigner` and verifies it. The keystore stays outside the repository,
+and its passwords are typed at the terminal and never stored.
 
 ## Play Console warnings
 

@@ -4,7 +4,7 @@ An Android app for planning the week's dinners with someone else. It builds a pl
 and what is already in the pantry, turns that into a shopping list, and keeps both phones in sync,
 even when one of them has no signal.
 
-I built it for my own household, so the UI is in Danish. The code, database and docs are in English.
+The UI is in Danish, because it is built for a Danish household. The code, database and docs are in English.
 
 <p>
   <img alt="Kotlin" src="https://img.shields.io/badge/Kotlin-2.4-7F52FF?logo=kotlin&logoColor=white">
@@ -39,25 +39,27 @@ The app has four tabs.
 | **Lager** (pantry) | Track what is in the fridge and cupboards as real packages, with opened/sealed state and best-before dates. |
 | **Indkøb** (shopping) | A shopping list worked out from the plan minus the pantry. Tick items off, add extras, and move bought items into the pantry. |
 
-A few things I spent the most time on:
+Parts of the code that are worth a look:
 
-- **A planner that does not feel random.** `WeeklyPlanner` scores whole weeks, not single days.
+- **A planner that varies the week.** `WeeklyPlanner` scores whole weeks, not single days.
   It rewards recipes you can cook from stock, reuses ingredients across the week, and penalises
   repeats, back-to-back identical proteins and categories, and dishes eaten recently or often (it
   looks at the last 60 days). It runs a few hundred randomised trials, improves each with a local
-  search, and then samples from the best weeks with a softmax so you get variety instead of the same
-  top pick every time. All weights are editable in the settings.
-- **Offline first.** Every change is written to a local Room database together with an outbox entry.
-  WorkManager uploads the outbox when there is a connection, and Supabase Realtime brings the other
-  phone's changes in. If two phones edit the same thing while offline, the app flags a conflict
-  instead of silently overwriting one side.
-- **Quantities that stay correct.** One recipe says "2 tbsp", the shop sells 200 g packs and the
-  pantry counts pieces. Amounts are stored in one base unit (g, ml, pieces, packs) and only converted
-  through a conversion the household has confirmed, such as "1 pack = 280 g". The app never guesses.
-  Recipes keep the unit the author typed, so changing a product later does not rewrite old recipes.
+  search, and then picks one of the candidate weeks at random, weighted by score, so you get variety
+  instead of the same top pick every time. All weights are editable in the settings.
+- **Offline first.** In a signed-in household, every change is written to a local Room database
+  together with an outbox entry. WorkManager uploads the outbox when there is a connection, and
+  Supabase Realtime brings the other phone's changes in. Most uploads are last-write-wins upserts.
+  Edits to unit conversions carry an expected revision, so a stale edit is rejected, and a batch that
+  is parked as a conflict can be resolved from the sync status page.
+- **Unit handling.** One recipe says "2 tbsp", the shop sells 200 g packs and the pantry counts
+  pieces. Amounts are stored in one base unit (g, ml, pieces, packs). Units of the same kind convert
+  with fixed factors, but crossing between kinds needs a conversion the household has confirmed, such
+  as "1 pack = 280 g", and the app does not guess one. Recipes keep the unit the author typed, so
+  changing a product later does not rewrite old recipes.
 - **Optional price lookup.** An Edge Function proxies a Danish grocery price API so the shopping
   list can show Bilka products, whole-pack counts and a rough price for the week. Each user's API key
-  is sent once to be stored in Supabase Vault and is never kept on the phone. See [docs/bilka-integration.md](docs/bilka-integration.md).
+  is sent once to be stored in Supabase Vault, and the app does not save it. See [docs/bilka-integration.md](docs/bilka-integration.md).
 
 ## How it is put together
 
@@ -95,7 +97,8 @@ JVM unit test. More detail is in [docs/architecture.md](docs/architecture.md).
 
 ## Running it
 
-You need JDK 21, the Android SDK and a Supabase project of your own.
+You need a JDK (21 or newer) to start Gradle, the Android SDK and a Supabase project of your own.
+Gradle downloads the JDK 25 that the build is configured for.
 
 1. Create `local.properties` in the project root:
 
@@ -122,10 +125,9 @@ You need JDK 21, the Android SDK and a Supabase project of your own.
    deno test supabase/functions/bilka-nightly-refresh/
    ```
 
-> **Backend note.** `supabase/migrations` holds the changes made since the first release. The
-> original core tables (households, recipes, ingredients, weekly plans, pantry) were created in the
-> dashboard before I started keeping migrations, so the folder is not enough to recreate the database
-> from scratch yet.
+> **Backend note.** The core tables (households, recipes, ingredients, weekly plans, pantry) are not
+> in `supabase/migrations`, which only holds later changes. The folder is not enough to recreate the
+> database from scratch yet.
 
 ## Repository layout
 

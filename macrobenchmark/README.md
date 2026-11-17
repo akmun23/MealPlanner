@@ -37,8 +37,8 @@ bash ./gradlew :app:assembleBenchmark :macrobenchmark:assembleBenchmark
 
 - Compare runs on the same phone, the same OS version and the same household data. A nearly empty
   list scrolls well and tells you nothing.
-- Look at the P90, P95 and P99 frame times and the Perfetto trace, not just the average. At 60 Hz
-  a frame over about 16.7 ms is a dropped frame.
+- Look at the P90, P95 and P99 frame times and the Perfetto trace, not just the average. A frame
+  that takes longer than the display's budget (about 16.7 ms at 60 Hz) shows up as jank.
 - Run once with a cold image cache and once with a warm one, and compare them separately. Photo
   URLs are signed on demand, so the first visit can show placeholders for a moment.
 - Emulators are fine for checking the setup but are not a trustworthy source of timings, and a

@@ -1,29 +1,31 @@
 # Architecture
 
-This is the longer version of the overview in the [README](../README.md). It covers the three parts
-that took the most thought: how state and sync work, the quantity model, and the planner.
+This is the longer version of the overview in the [README](../README.md). It covers how state and
+sync work, the quantity model and the planner.
 
 ## State and sync
 
 ### Local data
 
 `MealPlannerState` holds everything the UI reads for the current household: recipes, ingredients,
-pantry lots, the week plan, the shopping list and meal history. Screens only read this state and
-call methods on it.
+pantry lots, the week plan, the shopping list and meal history. Most screens read this state and call
+methods on it. The Bilka screens talk to the Edge Function through `BilkaPrejClient` instead.
 
-`RoomSnapshotCache` persists it. The household is stored as one JSON snapshot, and the
-frequently-read parts (ingredients, recipes, pantry lots) are also stored as indexed rows, so the
-app can open and read them without decoding the whole snapshot. Room is at version 3 and the schema
-files are in `app/schemas`. Migrations never drop pending edits: if one is missing the app fails
-loudly instead of clearing the queue.
+`RoomSnapshotCache` persists it. The household is stored as one JSON snapshot, and ingredients,
+recipes and pantry totals are also stored as indexed rows. Pantry lots only live in the snapshot.
+Room is at version 3 and the schema files are in `app/schemas`. Migrations do not drop pending edits:
+if one is missing, the app fails loudly instead of clearing the queue.
 
 ### Writing changes
 
-A change takes three steps, all in one Room transaction:
+In a signed-in household, a change goes through these steps:
 
 1. Update the household snapshot and the indexed rows.
-2. Add a `QueuedMutation` to the outbox table (`pending_mutations`).
+2. Add a `QueuedMutation` to the outbox table (`pending_mutations`). Steps 1 and 2 share one Room
+   transaction.
 3. Schedule a WorkManager job that needs a network connection.
+
+Local-only mode skips the outbox, and planner settings live in preferences.
 
 `QueuedMutation` is a sealed interface with one case per kind of change (`UpsertRecipe`,
 `SetWeekState`, `SaveIngredientConversions` and so on). Mutations that belong together, such as
@@ -32,24 +34,25 @@ Retries use exponential backoff.
 
 ### Conflicts
 
-Each queued batch remembers the snapshot it was based on. Before sending, the worker compares that
-with the server. If another phone has changed the same data in the meantime, the batch is marked as a
-conflict (shown in the sync status page) and is not applied. Nothing is overwritten silently.
+Most uploads are last-write-wins upserts. Each queued batch also stores the snapshot it was based
+on, and a batch can be parked in a conflict state. The sync status page shows those and lets the
+user keep their own changes or take the shared version. A parked batch is not applied until then.
 
 Some writes go through the database instead of plain upserts, because a retry must not do the work
-twice:
+twice or a stale edit must not win:
 
 - Finishing a meal subtracts stock and records the meal in a single transaction, using a receipt
   row so a repeated request is a no-op.
 - Recording a purchase uses a client-generated event id for the same reason. A network retry reuses
   the id, while a second real purchase gets a fresh one.
-- Editing an ingredient's conversions carries an expected revision (compare-and-set).
+- Editing an ingredient's conversions carries an expected revision (compare-and-set), so a stale
+  edit is rejected.
 
 ### Incoming changes
 
 `CloudMealRepository` subscribes to Postgres changes over Supabase Realtime and maps each table to a
 sync domain (ingredients, recipes, pantry, week, shopping, history). Only the affected domain is
-reloaded. `SyncGenerationTracker` drops a reload that finished after a newer local edit, so a slow
+reloaded, except that a week change also reloads the shopping list. `SyncGenerationTracker` drops a reload that finished after a newer local edit, so a slow
 response cannot undo what you just did.
 
 ## Quantities
@@ -61,13 +64,14 @@ Cooking and shopping disagree about units, so the model keeps three things apart
 - **Display.** A recipe stores the unit and number its author typed ("2 tbsp") next to the physical
   amount, frozen at save time. Changing a product's pack size later does not change old recipes.
 - **Conversions.** A household can confirm a bridge for one ingredient, such as "1 pack = 200 g" or
-  "1 clove = 5 g". Fixed factors (g to kg, ml to l) are used inside a dimension. Across dimensions
-  nothing is converted unless a confirmed bridge exists. Garlic cloves and garlic heads have no
-  built-in conversion on purpose.
+  "1 clove = 5 g". Fixed factors (g to kg, ml to l, a tablespoon to 15 ml) are used inside a
+  dimension. Across dimensions nothing is converted unless a confirmed bridge exists. Garlic cloves
+  and garlic heads have no built-in conversion on purpose.
 
 Pantry stock is a list of real packages (lots), with opened or sealed state and best-before date.
-Old totals from before lots existed become a single "unknown packaging" lot. Consuming stock
-follows a first-in-first-out order, and empty lots are pruned.
+Old totals from before lots existed become a single "unknown packaging" lot. Consuming stock uses
+opened packages first, then the earliest best-before date, then the oldest lot. Empty lots are
+pruned.
 
 When a shopping line is matched to a store product, the number of packs to buy is
 `ceil(max(0, need - stock) / packSize)`. Floating-point noise at an exact boundary (for example
@@ -80,16 +84,17 @@ a real shortfall still rounds up.
 
 1. Filter to dinner recipes that are enabled for rotation and whose required pantry items are in
    stock, and respect each day's prep-time limit.
-2. Build a few hundred candidate weeks. Each day picks from the eligible recipes with a softmax over
-   an incremental score plus a little noise.
+2. Build a few hundred candidate weeks. Each day picks from the eligible recipes at random, weighted
+   by an incremental score plus a little noise.
 3. Improve each candidate with a short local search (swapping days), skipping locked days.
 4. Score the finished week and drop duplicates that only differ by day order.
-5. Pick the final plan from the best candidates with another softmax.
+5. Pick the final plan from the remaining candidates at random, weighted by score.
 
 The score is a weighted sum (see `PlannerWeights`): pantry coverage, ingredient reuse, penalties for
 repeated recipes, proteins and categories (stronger on adjacent days), recency over 7, 14 and 30
-days, how often a dish was eaten in the last 60 days, and a small bonus for keeping a day unchanged.
-The `jitter` weight sets how adventurous the softmax is, and zero always takes the best week.
+days, how often a dish was eaten in the last 60 days, and a small penalty for leaving a recipe on
+the same day as in the previous plan. The `jitter` weight sets how adventurous the weighted pick is:
+a low value stays close to the top-scoring options.
 
 Pantry coverage is capped per recipe, so a 20-ingredient recipe cannot beat a small one just by being
 big.
