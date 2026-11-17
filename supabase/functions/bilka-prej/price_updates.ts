@@ -1,4 +1,7 @@
-import { toBilkaCacheRow, isStoredProductId, type PrejProduct, type GroceryChain } from "./prej.ts";
+import {
+  batchIds, isStoredProductId, providerProductId, toBilkaCacheRow,
+  type GroceryChain, type PrejProduct,
+} from "./prej.ts";
 
 export type PriceOnlyUpdate = {
   id: string;
@@ -30,4 +33,23 @@ export function priceOnlyUpdates(products: PrejProduct[], expectedIds: string[])
     }
   }
   return [...rows.values()];
+}
+
+/**
+ * The next Prej batch for a household's chosen products: skip those refreshed
+ * recently first, then take up to one batch of what is left. Filtering before
+ * batching keeps a household with more than 500 products from re-checking the
+ * same fresh first batch forever.
+ */
+export function refreshBatch(
+  selected: string[], recentlyUpdated: ReadonlySet<string>, size = 500,
+): { batch: string[]; skippedFresh: number; remaining: number } {
+  const stale = selected.filter((id) => !recentlyUpdated.has(id));
+  const providerIds = new Set(batchIds(stale.map(providerProductId), size)[0] ?? []);
+  const batch = stale.filter((id) => providerIds.has(providerProductId(id)));
+  return {
+    batch,
+    skippedFresh: selected.length - stale.length,
+    remaining: stale.length - batch.length,
+  };
 }

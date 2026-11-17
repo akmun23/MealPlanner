@@ -1,4 +1,4 @@
-import { priceOnlyUpdates } from "./price_updates.ts";
+import { priceOnlyUpdates, refreshBatch } from "./price_updates.ts";
 import { ALLOWED_BILKA_RPCS } from "./rpc_allowlist.ts";
 
 function equal(actual: unknown, expected: unknown) {
@@ -68,4 +68,31 @@ Deno.test("invalid negative and duplicate provider prices do not overwrite selec
   ], ["22","23"]);
   equal(rows.length, 1);
   equal(rows[0].price_ore, 1244);
+});
+
+Deno.test("refresh moves on to products beyond the first 500 once those are fresh", () => {
+  const selected = Array.from({ length: 501 }, (_, i) => String(i + 1));
+  const fresh = new Set(selected.slice(0, 500));
+
+  const next = refreshBatch(selected, fresh);
+
+  equal(next.batch, ["501"]);
+  equal(next.skippedFresh, 500);
+  equal(next.remaining, 0);
+});
+
+Deno.test("refresh takes at most one batch of stale products and reports the rest", () => {
+  const selected = Array.from({ length: 600 }, (_, i) => String(i + 1));
+
+  const next = refreshBatch(selected, new Set());
+
+  equal(next.batch.length, 500);
+  equal(next.remaining, 100);
+  equal(next.skippedFresh, 0);
+});
+
+Deno.test("a bilkatogo id counts once with its plain provider id", () => {
+  const next = refreshBatch(["7", "bilkatogo:7"], new Set());
+
+  equal(next.batch, ["7", "bilkatogo:7"]);
 });

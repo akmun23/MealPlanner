@@ -5,10 +5,10 @@ import { barcodeProductSearch } from "./barcode_server.ts";
 import { shoppingContext, recordPurchase, purchaseConfirmed, CheckoutError } from "./shopping_server.ts";
 import { ALLOWED_BILKA_RPCS } from "./rpc_allowlist.ts";
 import { replacePrejCredential } from "./key_management.ts";
-import { priceOnlyUpdates } from "./price_updates.ts";
+import { priceOnlyUpdates, refreshBatch } from "./price_updates.ts";
 import {
-  batchIds,
   dailyRemaining,
+  isStoredProductId,
   providerProductId,
   toBilkaCacheRow,
   validPrejKey,
@@ -290,24 +290,21 @@ async function refresh(userId: string, householdId: unknown): Promise<Response> 
       encodeURIComponent(householdId),
     "GET",
   ) as Array<{ product_id: string }>;
-  const distinct = [...new Set(defaults.map((d) => d.product_id))];
+  const distinct = [...new Set(defaults.map((d) => d.product_id))].filter(isStoredProductId);
   if (!distinct.length) return json({ updated: 0, requested: 0, message: "no_selected_products" });
 
-  // One Prej batch call covers up to 500 ids; refresh only does a single batch.
-  const batches = batchIds(distinct.map(providerProductId), 500);
-  const providerIds = batches[0] ?? [];
-  const ids = distinct.filter((id) => providerIds.includes(providerProductId(id)));
   const existing = await adminRequest(
-    "/rest/v1/bilka_products?select=id,price_updated_at&id=in.(" + ids.join(",") + ")",
+    "/rest/v1/bilka_products?select=id,price_updated_at&id=in.(" + distinct.join(",") + ")",
     "GET",
   ) as Array<{ id: string; price_updated_at: string | null }>;
   const ageCutoff = Date.now() - 20 * 60 * 60 * 1000;
   const recentlyUpdated = new Set(existing.filter((p) =>
     p.price_updated_at && Date.parse(p.price_updated_at) >= ageCutoff
   ).map((p) => p.id));
-  const stale = ids.filter((id) => !recentlyUpdated.has(id));
+  // One Prej batch call covers up to 500 ids, and refresh does a single batch.
+  const { batch: stale, skippedFresh, remaining: remainingProducts } = refreshBatch(distinct, recentlyUpdated);
   if (!stale.length) {
-    return json({ updated: 0, requested: 0, skippedFresh: ids.length, remainingProducts: distinct.length - ids.length });
+    return json({ updated: 0, requested: 0, skippedFresh, remainingProducts });
   }
 
   const key = await rpc("prej_read_key", { p_user_id: userId });
@@ -356,8 +353,8 @@ async function refresh(userId: string, householdId: unknown): Promise<Response> 
   return json({
     updated: Number(updated),
     requested: stale.length,
-    skippedFresh: ids.length - stale.length,
-    remainingProducts: distinct.length - ids.length,
+    skippedFresh,
+    remainingProducts,
     providerRemaining: remaining,
   });
 }
