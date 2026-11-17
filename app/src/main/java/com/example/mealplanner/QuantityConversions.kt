@@ -38,6 +38,14 @@ enum class QuantityUnit(val symbol: String, val nativeUnit: MeasurementUnit?) {
 }
 
 /**
+ * A conversion bridges the ingredient's own base to another unit. A unit that
+ * already belongs to the ingredient's type (grams for a weighed ingredient) has
+ * nothing to bridge, so it is never offered.
+ */
+internal fun QuantityUnit.canBridge(type: QuantityType): Boolean =
+    nativeUnit?.quantityType != type
+
+/**
  * A user-confirmed per-ingredient bridge to that ingredient's current base.
  * The base is still legacy g/ml/pieces/packs until an explicit, separate
  * per-ingredient base migration. Never reinterpret historical stock silently.

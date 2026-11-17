@@ -2046,10 +2046,21 @@ internal fun IngredientEditorScreen(
                     items = QuantityType.entries,
                     selected = type,
                     label = { it.danishName() },
-                    onSelected = {
-                        type = it
-                        preferredUnit = MeasurementUnit.defaultFor(it)
-                        conversionProfiles.clear()
+                    onSelected = { newType ->
+                        // Re-tapping the current type must not touch anything, and
+                        // a real change only drops conversions that stop making
+                        // sense for the new type.
+                        if (newType != type) {
+                            type = newType
+                            preferredUnit = MeasurementUnit.defaultFor(newType)
+                            conversionProfiles.retainAll { it.unit.canBridge(newType) }
+                            val editing = editingConversionUnit
+                            if (editing != null && conversionProfiles.none { it.unit == editing }) {
+                                editingConversionUnit = null
+                                showConversionForm = false
+                                conversionFactorText = ""
+                            }
+                        }
                     }
                 )
 
@@ -2164,7 +2175,7 @@ internal fun IngredientEditorScreen(
                     }
                     if (showConversionForm) {
                         val options = QuantityUnit.entries.filter { unit ->
-                            unit.nativeUnit?.quantityType != type &&
+                            unit.canBridge(type) &&
                                 (conversionProfiles.none { it.unit == unit } ||
                                     editingConversionUnit == unit)
                         }

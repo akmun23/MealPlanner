@@ -990,7 +990,7 @@ private fun ConfirmPackageSizeDialog(
     val ingredient = item.ingredient
     val type = ingredient.quantityType
     val options = remember(ingredient.id) {
-        QuantityUnit.entries.filter { it.nativeUnit?.quantityType != type }
+        QuantityUnit.entries.filter { it.canBridge(type) }
     }
     val productUnit = product.quantityKind?.nativeUnit()
     var unit by remember(product.id) {
