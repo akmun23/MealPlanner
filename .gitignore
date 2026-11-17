@@ -21,3 +21,7 @@ local.properties
 # Local Android Studio device selection (host-specific path/serial).
 /.idea/deploymentTargetSelector.xml
 __pycache__/
+
+# IDE settings
+.idea/
+.kotlin/
